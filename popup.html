@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: Arial, sans-serif;
+      background-color: #1e1e2e;
+      color: #ffffff;
+    }
+    label { font-size: 11px; text-transform: uppercase; color: #a6adc8; font-weight: bold; }
+    .status-row {
+      display: flex; align-items: center; gap: 8px;
+      margin: 10px 0; padding: 8px; background: #313244; border-radius: 4px;
+      font-size: 12px;
+    }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot.online { background: #4ade80; }
+    .dot.offline { background: #f87171; }
+    button {
+      width: 100%; padding: 10px; border: none; border-radius: 4px;
+      font-weight: bold; cursor: pointer; margin-top: 4px;
+    }
+    .scan-btn { background: #a6e3a1; color: #11111b; margin-top: 8px; }
+    .refresh-btn { background: #45475a; color: #cdd6f4; margin-top: 4px; font-size: 11px; }
+    #status { margin-top: 10px; font-size: 12px; text-align: center; color: #f9e2af; }
+  </style>
+</head>
+<body>
+  <h3>VisionTap Scanner</h3>
+
+  <div class="status-row">
+    <span id="serverDot" class="dot offline"></span>
+    <span id="serverLabel">Scanner Server: checking...</span>
+  </div>
+
+  <label>Press Alt+M on ECNL tab to start/stop the loop</label>
+
+  <button id="scanBtn" class="scan-btn">Start/Stop Loop (Alt+M)</button>
+  <button id="refreshBtn" class="refresh-btn">Refresh ECNL Page</button>
+
+  <div id="status">Ready. Make sure start.bat is running.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

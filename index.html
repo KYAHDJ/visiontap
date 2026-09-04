@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VisionTap Live Tracker</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #334155;
+    --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #4ade80; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: "Segoe UI", system-ui, sans-serif; }
+  header { padding: 18px 24px; display: flex; align-items: center; gap: 12px;
+           flex-wrap: wrap; border-bottom: 2px solid var(--panel2); }
+  header h1 { margin: 0; font-size: 20px; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+           background: var(--panel2); color: var(--muted); }
+  .badge.live { background: #052e16; color: var(--accent); }
+  .meta { margin-left: auto; color: var(--muted); font-size: 13px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 14px; padding: 20px 24px; }
+  .stat { background: var(--panel); border: 1px solid var(--panel2);
+          border-radius: 12px; padding: 14px; text-align: center; }
+  .stat .val { font-size: 26px; font-weight: 700; }
+  .stat .lbl { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .stat .val.good { color: var(--accent); }
+  .stat .val.bad { color: var(--danger); }
+  .empty { margin: 24px; padding: 48px; text-align: center; color: var(--muted);
+           border: 2px dashed var(--panel2); border-radius: 12px; }
+  .table-wrap { overflow-x: auto; margin: 0 24px 24px; border-radius: 12px;
+                border: 1px solid var(--panel2); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--panel2); }
+  th { position: sticky; top: 0; background: var(--panel); color: var(--muted);
+       font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; }
+  tr:hover td { background: #16233b; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .pill.ok { background: #052e16; color: var(--accent); }
+  .pill.no { background: #3a0d0d; color: #fca5a5; }
+  footer { padding: 16px 24px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VisionTap Live Tracker</h1>
+  <span class="badge live" id="liveBadge">LIVE</span>
+  <span class="badge" id="countBadge">0 tasks</span>
+  <div class="meta">updated <span id="updated">--</span></div>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="empty" id="empty">No task data yet. Waiting for the first submission...</div>
+
+<div class="table-wrap" id="tableWrap" style="display:none;">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Time</th>
+        <th>Animal</th>
+        <th>Count (ours)</th>
+        <th>Correct?</th>
+        <th>Total (sec)</th>
+        <th>Withdrawable</th>
+        <th>Battery</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<footer>Data fed from the linked Google Form responses (Apps Script JSON feed).</footer>
+
+<script>
+const POLL_MS = 5000;
+const DATA_URLS = ["./data/runs.json", "./runs.json", "../data/runs.json"];
+
+async function loadRuns() {
+  const cb = "?t=" + Date.now();
+  let data = null;
+  for (const url of DATA_URLS) {
+    try {
+      const res = await fetch(url + cb, { cache: "no-cache" });
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (Array.isArray(json)) { data = json; break; }
+    } catch (e) { /* next */ }
+  }
+  render(data);
+}
+
+function esc(v) {
+  return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function render(data) {
+  const rows = data && data.length ? data.slice().reverse() : [];
+  const statsEl = document.getElementById("stats");
+  const countBadge = document.getElementById("countBadge");
+  const empty = document.getElementById("empty");
+  const tableWrap = document.getElementById("tableWrap");
+  const tbody = document.getElementById("rows");
+  document.getElementById("updated").textContent = new Date().toLocaleTimeString();
+
+  if (!rows.length) {
+    empty.style.display = "block";
+    tableWrap.style.display = "none";
+    statsEl.innerHTML = "";
+    countBadge.textContent = "0 tasks";
+    return;
+  }
+  empty.style.display = "none";
+  tableWrap.style.display = "block";
+  countBadge.textContent = rows.length + " task" + (rows.length === 1 ? "" : "s");
+
+  // Aggregate stats.
+  const total = rows.length;
+  let known = 0, right = 0;
+  for (const r of rows) {
+    if (r.correct === true || String(r.correct).toUpperCase() === "TRUE") { known++; right++; }
+    else if (r.correct === false || String(r.correct).toUpperCase() === "FALSE") { known++; }
+  }
+  const acc = known ? (right / known * 100) : null;
+  const latest = rows[rows.length - 1];
+  const times = rows.map(r => Number(r.totalSec)).filter(n => !isNaN(n));
+  const avg = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
+  const max = times.length ? Math.max(...times) : null;
+  const min = times.length ? Math.min(...times) : null;
+
+  const stat = (label, val, cls) =>
+    `<div class="stat"><div class="val ${cls || ""}">${esc(val)}</div><div class="lbl">${label}</div></div>`;
+
+  statsEl.innerHTML =
+    stat("Total tasks", total) +
+    stat("Accuracy", acc == null ? "—" : acc.toFixed(1) + "%", acc == null ? "" : (acc >= 90 ? "good" : acc >= 70 ? "" : "bad")) +
+    stat("Avg time", avg == null ? "—" : avg.toFixed(1) + "s") +
+    stat("Latest total", latest.totalSec != null ? latest.totalSec + "s" : "—") +
+    stat("Latest battery", latest.battery != null ? latest.battery + "%" : "—") +
+    stat("Latest withdrawable", latest.withdrawable != null ? "₱" + latest.withdrawable : "—") +
+    stat("Max / Min time", (max == null || min == null) ? "—" : max + "s / " + min + "s");
+
+  // Rows (newest first).
+  tbody.innerHTML = rows.slice().reverse().map((r, i) => {
+    const correct = r.correct === true || String(r.correct).toUpperCase() === "TRUE";
+    const wrong = r.correct === false || String(r.correct).toUpperCase() === "FALSE";
+    const pill = wrong ? '<span class="pill no">WRONG</span>'
+               : correct ? '<span class="pill ok">OK</span>'
+               : '<span class="pill" style="background:var(--panel2)">—</span>';
+    const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : "—";
+    return `<tr>
+      <td>${r.taskNum != null ? esc(r.taskNum) : (rows.length - i)}</td>
+      <td>${esc(time)}</td>
+      <td>${esc(r.animal || "—")}</td>
+      <td>${esc(r.count != null ? r.count : "—")}</td>
+      <td>${pill}</td>
+      <td>${esc(r.totalSec != null ? r.totalSec : "—")}</td>
+      <td>${r.withdrawable != null ? "₱" + esc(r.withdrawable) : "—"}</td>
+      <td>${r.battery != null ? esc(r.battery) + "%" : "—"}</td>
+    </tr>`;
+  }).join("");
+}
+
+function tick() { loadRuns(); }
+loadRuns();
+setInterval(tick, POLL_MS);
+</script>
+</body>
+</html>

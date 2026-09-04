@@ -1,0 +1,18 @@
+# VisionTap — ECNL web interface
+node_modules/
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# Debug / temp artifacts (not part of the shipped pipeline)
+pcapp/*/debug/
+*.tmp
+
+# Stale/abandoned mobile builds (superseded by the desktop pipeline)
+VisionTap-Kiwi-Mobile.zip
+VisionTap-Firefox-Mobile.zip

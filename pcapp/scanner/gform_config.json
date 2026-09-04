@@ -1,0 +1,12 @@
+{
+  "FORM_RESPONSE_URL": "https://docs.google.com/forms/d/e/YOUR_FORM_ID/formResponse",
+  "ENABLED": false,
+  "ENTRY_IDS": {
+    "battery": "entry.0000000001",
+    "animal": "entry.0000000002",
+    "count": "entry.0000000003",
+    "correct": "entry.0000000004",
+    "totalSec": "entry.0000000005",
+    "withdrawable": "entry.0000000006"
+  }
+}

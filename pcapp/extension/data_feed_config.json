@@ -1,0 +1,8 @@
+{
+  "FEED_URL": "https://script.google.com/macros/s/YOUR_APPS_SCRIPT_ID/exec",
+  "ENABLED": false,
+  "POLL_SECONDS": 15,
+  "MAX_ROWS": 200,
+  "GIT_PUSH": true,
+  "REPO_ROOT": "C:/VisionTap"
+}
