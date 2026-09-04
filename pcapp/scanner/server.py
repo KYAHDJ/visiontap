@@ -17,6 +17,72 @@ import easyocr
 PORT = 5555
 SCRIPT_DIR = Path(__file__).resolve().parent
 REFERENCES_DIR = (SCRIPT_DIR / ".." / ".." / "references").resolve()
+REPO_ROOT = (SCRIPT_DIR / ".." / "..").resolve()
+SESSION_STATE_PATH = REPO_ROOT / "session_state.json"
+
+SESSION_DEFAULTS = {
+    "session": 1,
+    "correct_since_reset": 0,
+    "next_batch": 10,
+    "batch_ready": False,
+    "reset_requested": False,
+    "reset_at": None,
+    "last_battery": None,
+    "last_withdrawable": None,
+}
+
+_sess_lock = threading.Lock()
+
+
+def load_session_state():
+    try:
+        with open(SESSION_STATE_PATH, "r", encoding="utf-8") as fh:
+            s = json.load(fh)
+        for k, v in SESSION_DEFAULTS.items():
+            s.setdefault(k, v)
+        return s
+    except Exception:
+        return dict(SESSION_DEFAULTS)
+
+
+def save_session_state(s):
+    try:
+        SESSION_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(SESSION_STATE_PATH, "w", encoding="utf-8") as fh:
+            json.dump(s, fh, indent=2)
+    except Exception as e:
+        print(f"[session] save failed: {e}", flush=True)
+
+
+def update_session_state(report):
+    """Tracks the current ECNL 'session'. A session is 250 tasks; when the page
+    reports pointsDone == pointsTotal (250 of 250), we flag a reset so the
+    tracker wipes and starts over (keeping battery/withdrawable). Otherwise we
+    count correct answers and flag a batch push every 10 correct tasks."""
+    with _sess_lock:
+        s = load_session_state()
+        if report.get("battery") is not None:
+            s["last_battery"] = report.get("battery")
+        if report.get("withdrawable") is not None:
+            s["last_withdrawable"] = report.get("withdrawable")
+
+        p_done = report.get("pointsDone")
+        p_total = report.get("pointsTotal")
+        session_done = (
+            p_done is not None and p_total is not None
+            and str(p_done).strip().isdigit()
+            and str(p_total).strip().isdigit()
+            and int(p_done) >= int(p_total) > 0
+        )
+        if session_done:
+            s["reset_requested"] = True
+        elif not s["reset_requested"]:
+            if report.get("correct") is True:
+                s["correct_since_reset"] += 1
+                if s["correct_since_reset"] >= s["next_batch"]:
+                    s["batch_ready"] = True
+                    s["next_batch"] = s["next_batch"] + 10
+        save_session_state(s)
 
 ANIMAL_NAMES = ["chicken", "dog", "frog", "monkey", "pig"]
 ANIMAL_WORDS = {
@@ -240,7 +306,15 @@ def push_report_to_form(report):
 
 
 def queue_report(report):
-    threading.Thread(target=push_report_to_form, args=(report,), daemon=True).start()
+    threading.Thread(target=_process_report, args=(report,), daemon=True).start()
+
+
+def _process_report(report):
+    try:
+        update_session_state(report)
+    except Exception as e:
+        print(f"[report] session update failed: {e}", flush=True)
+    push_report_to_form(report)
 
 
 class ScannerHandler(BaseHTTPRequestHandler):
@@ -251,6 +325,8 @@ class ScannerHandler(BaseHTTPRequestHandler):
                 "refs": len(text_refs) + len(sprite_refs),
                 "ocr": reader is not None
             })
+        elif self.path == "/session":
+            self._json_response(200, {"status": "ok", "session": load_session_state()})
         else:
             self._json_response(404, {"error": "not found"})
 
@@ -259,8 +335,33 @@ class ScannerHandler(BaseHTTPRequestHandler):
             self._handle_detect()
         elif self.path == "/report":
             self._handle_report()
+        elif self.path == "/session":
+            self._handle_session()
         else:
             self._json_response(404, {"error": "not found"})
+
+    def _handle_session(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            action = data.get("action")
+            with _sess_lock:
+                s = load_session_state()
+                if action == "batch_done":
+                    s["batch_ready"] = False
+                elif action == "reset_done":
+                    s["session"] = int(s.get("session", 1)) + 1
+                    s["correct_since_reset"] = 0
+                    s["next_batch"] = 10
+                    s["batch_ready"] = False
+                    s["reset_requested"] = False
+                    s["reset_at"] = int(time.time() * 1000)
+                    # battery/withdrawable intentionally carried over
+                save_session_state(s)
+            self._json_response(200, {"status": "ok", "session": s})
+        except Exception as e:
+            self._json_response(500, {"error": "server_error", "message": str(e)})
 
     def _handle_report(self):
         try:

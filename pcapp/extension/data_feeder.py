@@ -1,11 +1,19 @@
 """
 data_feeder.py - VisionTap GitHub Pages data feed
--------------------------------------------------
-Polls a Google Apps Script web-app URL (which reads the responses from the
-Google Form's linked Sheet and returns JSON), then:
-  1. Writes the rows to data/runs.json at the repo root (newest first).
-  2. (Optional) git add + commit + push data/runs.json to origin/main so GitHub
-     Pages can render the live tracker from that file.
+--------------------------------------------------
+Drives the live GitHub tracker using a session model:
+
+  * A "session" is 250 tasks. When the ECNL work page reports
+    pointsDone == pointsTotal (250 of 250), the scanner flags a reset.
+  * On reset the tracker is wiped back to zero, but the latest battery and
+    withdrawable carry over into the next session.
+  * Every 10 *correct* tasks the scanner flags a batch push. The tracker
+    "freezes" between batches, then jumps with the newest correct+incorrect
+    tasks (capped at 300).
+
+Data source = the Google Apps Script JSON feed of the form's linked Sheet.
+Session state = read/written through the local scanner's /session endpoint so
+there is a single writer on this machine.
 
 Fully local. Only ever pushes the single data/runs.json file.
 
@@ -26,8 +34,7 @@ from pathlib import Path
 import requests
 
 CONFIG_PATH = Path(__file__).resolve().parent / "data_feed_config.json"
-
-_runs = []
+LOCAL_SCANNER = "http://127.0.0.1:5555"
 
 
 def load_config():
@@ -63,13 +70,57 @@ def fetch_rows(url, tries=3):
     raise last_err
 
 
-def write_runs(root, rows, max_rows):
+def get_session():
+    """Fetch the current session state from the local scanner."""
+    try:
+        resp = requests.get(LOCAL_SCANNER + "/session", timeout=10)
+        resp.raise_for_status()
+        return resp.json().get("session") or {}
+    except Exception as e:
+        print(f"[feeder] could not read session state: {e}", flush=True)
+        return {}
+
+
+def post_session(action):
+    try:
+        resp = requests.post(LOCAL_SCANNER + "/session",
+                             json={"action": action}, timeout=10)
+        resp.raise_for_status()
+        return resp.json().get("session") or {}
+    except Exception as e:
+        print(f"[feeder] session ack '{action}' failed: {e}", flush=True)
+        return {}
+
+
+def ts_ms(row):
+    # Apps Script timestamps are ISO strings (UTC). Convert to epoch ms for
+    # comparison against reset_at. Rows without a parseable timestamp default
+    # to 0 (included) so they never get dropped accidentally.
+    raw = row.get("timestamp")
+    if not raw:
+        return 0
+    try:
+        from datetime import datetime, timezone
+        txt = str(raw).replace("Z", "+00:00").replace("z", "+00:00")
+        return int(datetime.fromisoformat(txt).timestamp() * 1000)
+    except Exception:
+        return 0
+
+
+def current_session_rows(rows, reset_at):
+    if reset_at:
+        return [r for r in rows if ts_ms(r) >= reset_at]
+    return list(rows)
+
+
+def write_runs(root, meta, rows, max_rows):
     rows = rows[:max_rows]
+    payload = {"meta": meta, "runs": rows}
     path = Path(root) / "data" / "runs.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump(rows, fh, indent=2)
-    return rows
+        json.dump(payload, fh, indent=2)
+    return payload
 
 
 def git_push(root):
@@ -110,21 +161,59 @@ def main():
     url = cfg.get("FEED_URL", "")
     root = cfg.get("REPO_ROOT", os.getcwd())
     poll = int(cfg.get("POLL_SECONDS", 15))
-    max_rows = int(cfg.get("MAX_ROWS", 200))
+    max_rows = int(cfg.get("MAX_ROWS", 300))
     do_push = bool(cfg.get("GIT_PUSH", True))
 
     if not url:
         print("[feeder] no FEED_URL configured.", flush=True)
         return
 
-    print(f"[feeder] polling {url} every {poll}s -> {root}/data/runs.json", flush=True)
+    print(f"[feeder] polling {url} every {poll}s -> {root}/data/runs.json (max {max_rows})", flush=True)
     while True:
         try:
+            sess = get_session()
             rows = fetch_rows(url)
-            written = write_runs(root, rows, max_rows)
-            print(f"[feeder] wrote {len(written)} rows.", flush=True)
-            if do_push:
-                git_push(root)
+            reset_requested = bool(sess.get("reset_requested"))
+            batch_ready = bool(sess.get("batch_ready"))
+            session = int(sess.get("session", 1))
+            reset_at = sess.get("reset_at")
+            battery = sess.get("last_battery")
+            withdrawable = sess.get("last_withdrawable")
+
+            if reset_requested:
+                # Wipe tracker back to zero; battery/withdrawable carry over.
+                meta = {
+                    "session": session + 1,
+                    "last_battery": battery,
+                    "last_withdrawable": withdrawable,
+                    "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "status": "reset",
+                }
+                write_runs(root, meta, [], max_rows)
+                if do_push:
+                    git_push(root)
+                post_session("reset_done")
+                print(f"[feeder] SESSION {session + 1} reset. Cleared tracker (kept battery/withdrawable).", flush=True)
+
+            elif batch_ready:
+                # Jump: publish current-session correct+incorrect tasks (cap 300).
+                sess_rows = current_session_rows(rows, reset_at)
+                meta = {
+                    "session": session,
+                    "last_battery": battery,
+                    "last_withdrawable": withdrawable,
+                    "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "status": "live",
+                }
+                written = write_runs(root, meta, sess_rows, max_rows)
+                if do_push:
+                    git_push(root)
+                post_session("batch_done")
+                print(f"[feeder] BATCH push: {len(written.get('runs', []))} rows (session {session}).", flush=True)
+
+            else:
+                # Freeze: no new commits while waiting for the next batch of 10 correct.
+                print(f"[feeder] frozen. session={session} correct={sess.get('correct_since_reset')}/next={sess.get('next_batch')}", flush=True)
         except Exception as e:
             print(f"[feeder] error: {e}", flush=True)
         time.sleep(poll)

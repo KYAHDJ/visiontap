@@ -13,6 +13,9 @@ __pycache__/
 pcapp/*/debug/
 *.tmp
 
+# Runtime session state (recreated locally by the scanner; not part of the repo)
+session_state.json
+
 # Stale/abandoned mobile builds (superseded by the desktop pipeline)
 VisionTap-Kiwi-Mobile.zip
 VisionTap-Firefox-Mobile.zip

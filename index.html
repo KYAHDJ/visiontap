@@ -47,13 +47,13 @@
 <header>
   <h1>VisionTap Live Tracker</h1>
   <span class="badge live" id="liveBadge">LIVE</span>
+  <span class="badge" id="sessionBadge" style="display:none;">Session 1</span>
   <span class="badge" id="countBadge">0 tasks</span>
   <div class="meta">updated <span id="updated">--</span></div>
 </header>
 
-<div class="stats" id="stats"></div>
-
 <div class="empty" id="empty">No task data yet. Waiting for the first submission...</div>
+<div class="stats" id="stats"></div>
 
 <div class="table-wrap" id="tableWrap" style="display:none;">
   <table>
@@ -81,16 +81,17 @@ const DATA_URLS = ["./data/runs.json", "./runs.json", "../data/runs.json"];
 
 async function loadRuns() {
   const cb = "?t=" + Date.now();
-  let data = null;
+  let data = null, meta = null;
   for (const url of DATA_URLS) {
     try {
       const res = await fetch(url + cb, { cache: "no-cache" });
       if (!res.ok) continue;
       const json = await res.json();
-      if (Array.isArray(json)) { data = json; break; }
+      if (Array.isArray(json)) { data = json; meta = {}; break; }
+      if (json && Array.isArray(json.runs)) { data = json.runs; meta = json.meta || {}; break; }
     } catch (e) { /* next */ }
   }
-  render(data);
+  render(data, meta);
 }
 
 function esc(v) {
@@ -98,19 +99,39 @@ function esc(v) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function render(data) {
+function render(data, meta) {
+  meta = meta || {};
   const rows = data && data.length ? data.slice().reverse() : [];
   const statsEl = document.getElementById("stats");
   const countBadge = document.getElementById("countBadge");
+  const sessionBadge = document.getElementById("sessionBadge");
   const empty = document.getElementById("empty");
   const tableWrap = document.getElementById("tableWrap");
   const tbody = document.getElementById("rows");
   document.getElementById("updated").textContent = new Date().toLocaleTimeString();
+  const stat = (label, val, cls) =>
+    `<div class="stat"><div class="val ${cls || ""}">${esc(val)}</div><div class="lbl">${label}</div></div>`;
+
+  const sessionNum = (meta.session != null) ? meta.session : 1;
+  if (meta.session != null || meta.status === "reset" || rows.length) {
+    sessionBadge.style.display = "";
+    sessionBadge.textContent = "Session " + sessionNum
+      + (meta.status === "reset" ? " (reset)" : "");
+  } else {
+    sessionBadge.style.display = "none";
+  }
+
+  const battery = meta.last_battery != null ? meta.last_battery : (rows.length ? rows[rows.length - 1].battery : null);
+  const withdr = meta.last_withdrawable != null ? meta.last_withdrawable : (rows.length ? rows[rows.length - 1].withdrawable : null);
 
   if (!rows.length) {
     empty.style.display = "block";
     tableWrap.style.display = "none";
-    statsEl.innerHTML = "";
+    statsEl.innerHTML =
+      stat("Session", sessionNum) +
+      stat("Battery (kept)", battery != null ? battery + "%" : "—") +
+      stat("Withdrawable (kept)", withdr != null ? "₱" + esc(withdr) : "—") +
+      stat("Total tasks", 0);
     countBadge.textContent = "0 tasks";
     return;
   }
@@ -132,16 +153,13 @@ function render(data) {
   const max = times.length ? Math.max(...times) : null;
   const min = times.length ? Math.min(...times) : null;
 
-  const stat = (label, val, cls) =>
-    `<div class="stat"><div class="val ${cls || ""}">${esc(val)}</div><div class="lbl">${label}</div></div>`;
-
   statsEl.innerHTML =
     stat("Total tasks", total) +
     stat("Accuracy", acc == null ? "—" : acc.toFixed(1) + "%", acc == null ? "" : (acc >= 90 ? "good" : acc >= 70 ? "" : "bad")) +
     stat("Avg time", avg == null ? "—" : avg.toFixed(1) + "s") +
     stat("Latest total", latest.totalSec != null ? latest.totalSec + "s" : "—") +
-    stat("Latest battery", latest.battery != null ? latest.battery + "%" : "—") +
-    stat("Latest withdrawable", latest.withdrawable != null ? "₱" + latest.withdrawable : "—") +
+    stat("Latest battery", battery != null ? battery + "%" : "—") +
+    stat("Latest withdrawable", withdr != null ? "₱" + esc(withdr) : "—") +
     stat("Max / Min time", (max == null || min == null) ? "—" : max + "s / " + min + "s");
 
   // Rows (newest first).

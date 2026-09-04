@@ -2,7 +2,7 @@
   "FEED_URL": "https://script.google.com/macros/s/AKfycbyVFLD4fOma1a3nvh7Z8Q7xLPXKfERXhgRur6MK2znSgmlOL4Bw80S2RIOyKvKbVGbN6g/exec",
   "ENABLED": true,
   "POLL_SECONDS": 15,
-  "MAX_ROWS": 200,
+  "MAX_ROWS": 300,
   "GIT_PUSH": true,
   "REPO_ROOT": "C:/VisionTap"
 }
