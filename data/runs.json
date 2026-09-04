@@ -1,12 +1,48 @@
 {
   "meta": {
     "session": 1,
-    "last_battery": 72,
+    "last_battery": 71,
     "last_withdrawable": "97.055",
-    "last_updated": "2026-09-04T17:42:06Z",
+    "last_updated": "2026-09-04T17:43:07Z",
     "status": "live"
   },
   "runs": [
+    {
+      "timestamp": "2026-09-04T17:42:52.106Z",
+      "battery": 71,
+      "animal": "chicken",
+      "count": 6,
+      "correct": true,
+      "totalSec": 14,
+      "withdrawable": "97.055"
+    },
+    {
+      "timestamp": "2026-09-04T17:42:35.986Z",
+      "battery": 71,
+      "animal": "chicken",
+      "count": 4,
+      "correct": true,
+      "totalSec": 13,
+      "withdrawable": "97.055"
+    },
+    {
+      "timestamp": "2026-09-04T17:42:21.142Z",
+      "battery": 71,
+      "animal": "monkey",
+      "count": 4,
+      "correct": true,
+      "totalSec": 14,
+      "withdrawable": "97.055"
+    },
+    {
+      "timestamp": "2026-09-04T17:42:05.026Z",
+      "battery": 71,
+      "animal": "monkey",
+      "count": 8,
+      "correct": true,
+      "totalSec": 13,
+      "withdrawable": "97.055"
+    },
     {
       "timestamp": "2026-09-04T17:41:50.046Z",
       "battery": 71,
@@ -2669,42 +2705,6 @@
       "count": 4,
       "correct": true,
       "totalSec": 13,
-      "withdrawable": "93.955"
-    },
-    {
-      "timestamp": "2026-09-04T16:23:47.041Z",
-      "battery": 100,
-      "animal": "chicken",
-      "count": 3,
-      "correct": true,
-      "totalSec": 13,
-      "withdrawable": "93.955"
-    },
-    {
-      "timestamp": "2026-09-04T16:23:31.809Z",
-      "battery": 100,
-      "animal": "pig",
-      "count": 5,
-      "correct": true,
-      "totalSec": 13,
-      "withdrawable": "93.955"
-    },
-    {
-      "timestamp": "2026-09-04T16:23:16.904Z",
-      "battery": 100,
-      "animal": "dog",
-      "count": 7,
-      "correct": true,
-      "totalSec": 14,
-      "withdrawable": "93.955"
-    },
-    {
-      "timestamp": "2026-09-04T16:23:00.965Z",
-      "battery": 100,
-      "animal": "chicken",
-      "count": 4,
-      "correct": true,
-      "totalSec": 14,
       "withdrawable": "93.955"
     }
   ]
