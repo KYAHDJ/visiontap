@@ -23,6 +23,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import requests
+
 CONFIG_PATH = Path(__file__).resolve().parent / "data_feed_config.json"
 
 _runs = []
@@ -38,15 +40,27 @@ def load_config():
     return {}
 
 
-def fetch_rows(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "VisionTap/1.0"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    if isinstance(data, dict) and data.get("ok"):
-        return data.get("rows") or []
-    if isinstance(data, list):
-        return data
-    raise ValueError("apps script returned unexpected shape")
+def fetch_rows(url, tries=3):
+    # Use requests: it follows Apps Script's redirect to script.googleusercontent
+    # reliably. Apps Script web apps have slow cold-start responses, so use a
+    # generous timeout and retry a few times.
+    last_err = None
+    for attempt in range(tries):
+        try:
+            resp = requests.get(url, timeout=90)
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, dict):
+                if data.get("ok"):
+                    return data.get("rows") or []
+                raise ValueError("apps script responded with error: " + json.dumps(data)[:200])
+            if isinstance(data, list):
+                return data
+            raise ValueError("apps script returned unexpected shape")
+        except Exception as e:
+            last_err = e
+            time.sleep(5 * (attempt + 1))
+    raise last_err
 
 
 def write_runs(root, rows, max_rows):
