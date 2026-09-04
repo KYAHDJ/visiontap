@@ -1,5 +1,14 @@
 [
   {
+    "timestamp": "2026-09-04T15:07:32.638Z",
+    "battery": 100,
+    "animal": "pig",
+    "count": 4,
+    "correct": true,
+    "totalSec": 14,
+    "withdrawable": "90.898"
+  },
+  {
     "timestamp": "2026-09-04T15:07:16.633Z",
     "battery": 100,
     "animal": "pig",
@@ -1788,15 +1797,6 @@
     "count": 8,
     "correct": true,
     "totalSec": 14,
-    "withdrawable": "87.823"
-  },
-  {
-    "timestamp": "2026-09-04T13:38:43.372Z",
-    "battery": 56,
-    "animal": "frog",
-    "count": 7,
-    "correct": false,
-    "totalSec": 13,
     "withdrawable": "87.823"
   }
 ]
