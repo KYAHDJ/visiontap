@@ -1,12 +1,12 @@
 {
-  "FORM_RESPONSE_URL": "https://docs.google.com/forms/d/e/YOUR_FORM_ID/formResponse",
-  "ENABLED": false,
+  "FORM_RESPONSE_URL": "https://docs.google.com/forms/d/e/1FAIpQLSfm1FdaBJC5eYEqjZihAuOeTZtNpW8KPQrI7qBkKehaLkBEUA/formResponse",
+  "ENABLED": true,
   "ENTRY_IDS": {
-    "battery": "entry.0000000001",
-    "animal": "entry.0000000002",
-    "count": "entry.0000000003",
-    "correct": "entry.0000000004",
-    "totalSec": "entry.0000000005",
-    "withdrawable": "entry.0000000006"
+    "battery": "entry.2011396880",
+    "animal": "entry.688296903",
+    "count": "entry.242068038",
+    "correct": "entry.1033381240",
+    "totalSec": "entry.1170431402",
+    "withdrawable": "entry.785099128"
   }
 }
