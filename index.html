@@ -6,104 +6,189 @@
 <title>VisionTap Live Tracker</title>
 <style>
   :root {
-    --bg: #0f172a; --panel: #1e293b; --panel2: #334155;
-    --text: #e2e8f0; --muted: #94a3b8;
-    --accent: #4ade80; --warn: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+    --bg1: #0b1020; --bg2: #121a33;
+    --panel: rgba(30, 41, 59, 0.72); --panel-solid: #1e293b; --panel2: #253454;
+    --line: rgba(148, 163, 184, 0.16);
+    --text: #e2e8f0; --muted: #8ea3c0;
+    --green: #4ade80; --green-dim: #052e16;
+    --red: #f87171; --red-dim: #3a0d0d;
+    --amber: #fbbf24; --blue: #38bdf8; --violet: #a78bfa;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font-family: "Segoe UI", system-ui, sans-serif; }
-  header { padding: 18px 24px; display: flex; align-items: center; gap: 12px;
-           flex-wrap: wrap; border-bottom: 2px solid var(--panel2); }
-  header h1 { margin: 0; font-size: 20px; }
-  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
-           background: var(--panel2); color: var(--muted); }
-  .badge.live { background: #052e16; color: var(--accent); }
-  .badge.sess { background: #0c4a6e; color: var(--info); }
-  .badge.reset { background: #3a0d0d; color: #fca5a5; }
-  .meta { margin-left: auto; color: var(--muted); font-size: 13px; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-           gap: 14px; padding: 20px 24px; }
-  .stat { background: var(--panel); border: 1px solid var(--panel2);
-          border-radius: 12px; padding: 14px; text-align: center; }
-  .stat .val { font-size: 26px; font-weight: 700; }
-  .stat .lbl { color: var(--muted); font-size: 12px; margin-top: 4px; }
-  .stat .val.good { color: var(--accent); }
-  .stat .val.bad { color: var(--danger); }
-  .progress { background: var(--panel2); border-radius: 999px; height: 10px;
-              margin-top: 8px; overflow: hidden; }
-  .progress > div { height: 100%; background: var(--accent); border-radius: 999px; }
-  .empty { margin: 24px; padding: 48px; text-align: center; color: var(--muted);
-           border: 2px dashed var(--panel2); border-radius: 12px; }
-  h2.sec { margin: 0; padding: 14px 24px 6px; font-size: 16px; }
-  h2.sec .n { color: var(--muted); font-weight: 600; }
-  h2.sec.ok { color: var(--accent); }
-  h2.sec.no { color: #fca5a5; }
-  .table-wrap { overflow-x: auto; margin: 4px 24px 18px; border-radius: 12px;
-                border: 1px solid var(--panel2); }
-  .table-wrap.hidden { display: none; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 500px at 85% -10%, rgba(56, 189, 248, 0.14), transparent 60%),
+      radial-gradient(800px 480px at 0% 0%, rgba(167, 139, 250, 0.12), transparent 55%),
+      linear-gradient(160deg, var(--bg1) 0%, var(--bg2) 100%);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+
+  header {
+    position: sticky; top: 0; z-index: 50;
+    padding: 14px 26px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: rgba(11, 16, 32, 0.82);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 19px; letter-spacing: .3px; }
+  header h1 .dot { color: var(--blue); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 4px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; background: var(--panel2);
+    border: 1px solid var(--line); color: var(--text);
+  }
+  .badge .pulse {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+  .badge.sess { color: var(--blue); }
+  .badge.reset { color: var(--red); }
+  .badge.reset .pulse { background: var(--red); }
+  .meta { margin-left: auto; color: var(--muted); font-size: 12.5px; display: flex; gap: 16px; align-items: center; }
+  .meta b { color: var(--text); font-weight: 600; }
+
+  main { padding: 22px 26px 40px; max-width: 1180px; margin: 0 auto; }
+
+  .stats {
+    display: grid; gap: 14px; margin-bottom: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 16px; padding: 16px 18px;
+    position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  }
+  .card.g::before { background: var(--green); }
+  .card.r::before { background: var(--red); }
+  .card.a::before { background: var(--amber); }
+  .card.b::before { background: var(--blue); }
+  .card.v::before { background: var(--violet); }
+  .card .lbl { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+  .card .val { font-size: 26px; font-weight: 700; margin-top: 6px; line-height: 1.1; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .card .val.g { color: var(--green); }
+  .card .val.r { color: var(--red); }
+  .bar { height: 9px; border-radius: 99px; background: rgba(148,163,184,.18); margin-top: 10px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--blue), var(--green)); transition: width .6s ease; }
+
+  .panel-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .tabs { display: flex; gap: 6px; padding: 12px 14px 0; border-bottom: 1px solid var(--line); }
+  .tab-btn {
+    appearance: none; border: none; cursor: pointer;
+    background: transparent; color: var(--muted);
+    font-size: 13.5px; font-weight: 600; font-family: inherit;
+    padding: 10px 18px; border-radius: 10px 10px 0 0;
+    display: flex; align-items: center; gap: 8px;
+    transition: color .15s, background .15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); background: rgba(148,163,184,.12); }
+  .tab-btn .n {
+    font-size: 11.5px; padding: 1px 9px; border-radius: 99px; font-weight: 700;
+  }
+  .tab-btn.ok .n { background: var(--green-dim); color: var(--green); }
+  .tab-btn.wrong .n { background: var(--red-dim); color: var(--red); }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--panel2); }
-  th { position: sticky; top: 0; background: var(--panel); color: var(--muted);
-       font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; }
-  tr:hover td { background: #16233b; }
-  footer { padding: 16px 24px; color: var(--muted); font-size: 12px; text-align: center; }
+  th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--panel-solid); color: var(--muted);
+       font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  tbody tr { transition: background .12s; }
+  tbody tr:hover td { background: rgba(56,189,248,.06); }
+  tbody tr:nth-child(even) td { background: rgba(148,163,184,.03); }
+  tbody tr:nth-child(even):hover td { background: rgba(56,189,248,.06); }
+  .aco { color: var(--green); font-weight: 700; }
+  .bad { color: var(--red); font-weight: 700; }
+  .muted { color: var(--muted); }
+
+  .empty {
+    text-align: center; color: var(--muted); padding: 70px 20px;
+  }
+  .empty .big { font-size: 40px; color: rgba(148,163,184,.25); font-weight: 300; }
+  .empty p { margin: 8px 0 0; font-size: 14px; }
+
+  footer { padding: 18px 26px; color: var(--muted); font-size: 12px; text-align: center; border-top: 1px solid var(--line); }
+  @media (max-width: 600px) {
+    main { padding: 16px 12px 30px; }
+    header { padding: 12px 14px; }
+    .meta { margin-left: 0; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>VisionTap Live Tracker</h1>
-  <span class="badge live" id="liveBadge">LIVE</span>
+  <h1><span class="dot">●</span> VisionTap Live Tracker</h1>
+  <span class="badge"><span class="pulse"></span>LIVE</span>
   <span class="badge sess" id="sessionBadge" style="display:none;">Session 1</span>
   <span class="badge" id="countBadge">0 correct</span>
-  <div class="meta">updated <span id="updated">--</span></div>
+  <div class="meta" id="metaLine"><span>updated <b id="updated">--</b></span><span id="age">--</span></div>
 </header>
 
-<div class="empty" id="empty">No task data yet. Waiting for the first submission...</div>
-<div class="stats" id="stats"></div>
+<main>
+  <section class="stats" id="stats"></section>
 
-<h2 class="sec ok" id="okTitle">Correct <span class="n">(0)</span></h2>
-<div class="table-wrap hidden" id="okWrap">
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Time</th>
-        <th>Animal</th>
-        <th>Count</th>
-        <th>Total (sec)</th>
-        <th>Withdrawable</th>
-        <th>Battery</th>
-      </tr>
-    </thead>
-    <tbody id="okRows"></tbody>
-  </table>
-</div>
+  <div class="panel-wrap">
+    <div class="tabs">
+      <button class="tab-btn ok active" data-tab="ok">Correct <span class="n" id="okTabCount">0</span></button>
+      <button class="tab-btn wrong" data-tab="wrong">Wrong <span class="n" id="wrongTabCount">0</span></button>
+    </div>
 
-<h2 class="sec no" id="wrongTitle">Wrong <span class="n">(0)</span></h2>
-<div class="table-wrap hidden" id="wrongWrap">
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Time</th>
-        <th>Animal</th>
-        <th>Count (ours)</th>
-        <th>Their answer</th>
-        <th>Total (sec)</th>
-        <th>Withdrawable</th>
-        <th>Battery</th>
-      </tr>
-    </thead>
-    <tbody id="wrongRows"></tbody>
-  </table>
-</div>
+    <div class="panel active" id="panel-ok">
+      <div class="empty" id="emptyOk">
+        <div class="big">✓</div>
+        <p>No correct tasks yet this session.</p>
+      </div>
+      <div class="table-wrap hidden" id="okWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Time</th><th>Animal</th><th>Count</th>
+              <th>Total (sec)</th><th>Withdrawable</th><th>Battery</th>
+            </tr>
+          </thead>
+          <tbody id="okRows"></tbody>
+        </table>
+      </div>
+    </div>
 
-<footer>Data fed from the linked Google Form responses (Apps Script JSON feed).</footer>
+    <div class="panel" id="panel-wrong">
+      <div class="empty" id="emptyWrong">
+        <div class="big">✗</div>
+        <p>No wrong tasks yet this session. Keep it that way!</p>
+      </div>
+      <div class="table-wrap hidden" id="wrongWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Time</th><th>Animal</th><th>Count</th><th>Their answer</th>
+              <th>Total (sec)</th><th>Withdrawable</th><th>Battery</th>
+            </tr>
+          </thead>
+          <tbody id="wrongRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>VisionTap · data fed from the linked Google Form responses (Apps Script JSON feed)</footer>
 
 <script>
 const POLL_MS = 5000;
 const DATA_URLS = ["./data/runs.json", "./runs.json", "../data/runs.json"];
+let lastLoadTs = null;
 
 async function loadRuns() {
   const cb = "?t=" + Date.now();
@@ -117,6 +202,7 @@ async function loadRuns() {
       if (Array.isArray(json)) { corrects = json; meta = {}; break; }
     } catch (e) { /* next */ }
   }
+  lastLoadTs = Date.now();
   render(corrects, wrongs, meta);
 }
 
@@ -125,27 +211,21 @@ function esc(v) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function renderRow(r, idx) {
-  const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : "—";
-  return `<tr>
-    <td>${r.taskNum != null ? esc(r.taskNum) : (idx + 1)}</td>
-    <td>${esc(time)}</td>
-    <td>${esc(r.animal || "—")}</td>
-    <td>${esc(r.count != null ? r.count : "—")}</td>
-    <td>${esc(r.totalSec != null ? r.totalSec : "—")}</td>
-    <td>${r.withdrawable != null ? "₱" + esc(r.withdrawable) : "—"}</td>
-    <td>${r.battery != null ? esc(r.battery) + "%" : "—"}</td>
-  </tr>`;
+function fmtTime(ts) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function renderRowWrong(r, idx) {
-  const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : "—";
+function renderRow(r, idx, opts) {
+  const time = fmtTime(r.timestamp);
+  const num = r.taskNum != null ? esc(r.taskNum) : (idx + 1);
+  const their = opts && opts.theirs ? `<td class="bad">${esc(r.theirs != null ? r.theirs : "—")}</td>` : "";
   return `<tr>
-    <td>${r.taskNum != null ? esc(r.taskNum) : (idx + 1)}</td>
-    <td>${esc(time)}</td>
+    <td class="muted">${num}</td>
+    <td>${time}</td>
     <td>${esc(r.animal || "—")}</td>
     <td>${esc(r.count != null ? r.count : "—")}</td>
-    <td>${esc(r.theirs != null ? r.theirs : "—")}</td>
+    ${their}
     <td>${esc(r.totalSec != null ? r.totalSec : "—")}</td>
     <td>${r.withdrawable != null ? "₱" + esc(r.withdrawable) : "—"}</td>
     <td>${r.battery != null ? esc(r.battery) + "%" : "—"}</td>
@@ -156,70 +236,80 @@ function render(corrects, wrongs, meta) {
   meta = meta || {};
   const okRows = corrects.slice();
   const badRows = wrongs.slice();
-  const statsEl = document.getElementById("stats");
-  const countBadge = document.getElementById("countBadge");
-  const sessionBadge = document.getElementById("sessionBadge");
-  const empty = document.getElementById("empty");
-  const okTitle = document.getElementById("okTitle");
-  const wrongTitle = document.getElementById("wrongTitle");
-  const okWrap = document.getElementById("okWrap");
-  const wrongWrap = document.getElementById("wrongWrap");
-  const okTbody = document.getElementById("okRows");
-  const wrongTbody = document.getElementById("wrongRows");
-  document.getElementById("updated").textContent = new Date().toLocaleTimeString();
 
   const sessionNum = (meta.session != null) ? meta.session : 1;
   const pointsDone = meta.points_done != null ? meta.points_done : okRows.length;
   const pointsTotal = meta.points_total != null ? meta.points_total : 250;
-  const battery = meta.last_battery != null ? meta.last_battery : (okRows.length ? okRows[okRows.length - 1].battery : (badRows.length ? badRows[badRows.length - 1].battery : null));
-  const withdr = meta.last_withdrawable != null ? meta.last_withdrawable : (okRows.length ? okRows[okRows.length - 1].withdrawable : (badRows.length ? badRows[badRows.length - 1].withdrawable : null));
+  const battery = meta.last_battery != null ? meta.last_battery
+    : (okRows.length ? okRows[0].battery : (badRows.length ? badRows[0].battery : null));
+  const withdr = meta.last_withdrawable != null ? meta.last_withdrawable
+    : (okRows.length ? okRows[0].withdrawable : (badRows.length ? badRows[0].withdrawable : null));
 
+  // Header badges.
+  const sessionBadge = document.getElementById("sessionBadge");
   sessionBadge.style.display = "";
-  sessionBadge.textContent = "Session " + sessionNum + (meta.status === "reset" ? " (reset)" : "");
+  sessionBadge.textContent = "Session " + sessionNum + (meta.status === "reset" ? " · reset" : "");
   sessionBadge.className = "badge " + (meta.status === "reset" ? "reset" : "sess");
+  document.getElementById("countBadge").textContent =
+    okRows.length + " correct · " + badRows.length + " wrong";
 
-  countBadge.textContent = okRows.length + " correct · " + badRows.length + " wrong";
-  empty.style.display = (okRows.length || badRows.length) ? "none" : "block";
-  okWrap.classList.toggle("hidden", okRows.length === 0);
-  wrongWrap.classList.toggle("hidden", badRows.length === 0);
-  okTitle.innerHTML = "Correct <span class=\"n\">(" + okRows.length + ")</span>";
-  wrongTitle.innerHTML = "Wrong <span class=\"n\">(" + badRows.length + ")</span>";
+  // Tabs + badges.
+  document.getElementById("okTabCount").textContent = okRows.length;
+  document.getElementById("wrongTabCount").textContent = badRows.length;
 
+  // Panels / empty states.
+  document.getElementById("emptyOk").style.display = okRows.length ? "none" : "block";
+  document.getElementById("okWrap").style.display = okRows.length ? "block" : "none";
+  document.getElementById("emptyWrong").style.display = badRows.length ? "none" : "block";
+  document.getElementById("wrongWrap").style.display = badRows.length ? "block" : "none";
+  document.getElementById("okRows").innerHTML = okRows.map((r, i) => renderRow(r, i, {})).join("");
+  document.getElementById("wrongRows").innerHTML = badRows.map((r, i) => renderRow(r, i, { theirs: true })).join("");
+
+  // Stats cards.
   const total = okRows.length + badRows.length;
   const acc = total ? (okRows.length / total * 100) : null;
   const times = okRows.concat(badRows).map(r => Number(r.totalSec)).filter(n => !isNaN(n));
   const avg = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
   const max = times.length ? Math.max(...times) : null;
   const min = times.length ? Math.min(...times) : null;
-
-  const stat = (label, val, cls) =>
-    `<div class="stat"><div class="val ${cls || ""}">${esc(val)}</div><div class="lbl">${label}</div></div>`;
   const pct = pointsTotal > 0 ? Math.max(0, Math.min(100, pointsDone / pointsTotal * 100)) : 0;
+  const newest = okRows[0] || badRows[0] || null;
 
-  const progressStat =
-    `<div class="stat">
-       <div class="val">${esc(pointsDone)} / ${esc(pointsTotal)}</div>
-       <div class="lbl">Session progress</div>
-       <div class="progress"><div style="width:${pct.toFixed(1)}%"></div></div>
-     </div>`;
+  const stat = (label, val, sub, cls) =>
+    `<div class="card ${cls}"><div class="lbl">${label}</div><div class="val">${val}</div><div class="sub">${sub}</div></div>`;
 
-  statsEl.innerHTML =
-    stat("Correct tasks", okRows.length, "good") +
-    stat("Wrong tasks", badRows.length, "bad") +
-    progressStat +
-    stat("Accuracy", acc == null ? "—" : acc.toFixed(1) + "%", acc == null ? "" : (acc >= 90 ? "good" : acc >= 70 ? "" : "bad")) +
-    stat("Avg time", avg == null ? "—" : avg.toFixed(1) + "s") +
-    stat("Battery", battery != null ? battery + "%" : "—") +
-    stat("Withdrawable", withdr != null ? "₱" + esc(withdr) : "—") +
-    stat("Max / Min time", (max == null || min == null) ? "—" : max + "s / " + min + "s");
-
-  okTbody.innerHTML = okRows.map(renderRow).join("");
-  wrongTbody.innerHTML = badRows.map(renderRowWrong).join("");
+  document.getElementById("stats").innerHTML =
+    stat("Correct", okRows.length, "tasks passed", "g") +
+    stat("Wrong", badRows.length, acc == null ? "no data yet" : acc.toFixed(1) + "% accuracy", "r") +
+    stat("Progress", esc(pointsDone) + " / " + esc(pointsTotal),
+      `<div class="bar"><div style="width:${pct.toFixed(1)}%"></div></div>`, "b") +
+    stat("Total time", avg == null ? "—" : "avg " + avg.toFixed(1) + "s",
+      (max == null || min == null) ? "—" : "fastest " + min + "s · slowest " + max + "s", "a") +
+    stat("Battery", battery != null ? battery + "%" : "—",
+      "latest reading", "a") +
+    stat("Withdrawable", withdr != null ? "₱" + esc(withdr) : "—",
+      newest && newest.withdrawable ? "per latest task" : "carried over", "v");
 }
 
-function tick() { loadRuns(); }
+// ---- Last-updated age timer ----
+function tickAge() {
+  const ageEl = document.getElementById("age");
+  if (!lastLoadTs) { ageEl.textContent = ""; return; }
+  const s = Math.floor((Date.now() - lastLoadTs) / 1000);
+  ageEl.textContent = s < 60 ? "checked " + s + "s ago" : "checked " + Math.floor(s / 60) + "m ago";
+}
+
+// ---- Tabs ----
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + btn.dataset.tab));
+  });
+});
+
 loadRuns();
-setInterval(tick, POLL_MS);
+setInterval(loadRuns, POLL_MS);
+setInterval(tickAge, 1000);
 </script>
 </body>
 </html>
