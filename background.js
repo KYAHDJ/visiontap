@@ -4,6 +4,12 @@ let loopStartTime = null;
 let taskCount = 0;
 let currentSourceTabId = null;
 let loopStopRequested = false;
+let lastPoints = { done: null, total: null };
+
+// Per-outcome counters (shown in the HUD and on the popup).
+let correctCount = 0;
+let wrongCount = 0;
+let errorCount = 0;
 
 const SCANNER_URL = "http://127.0.0.1:5555";
 
@@ -48,11 +54,34 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+// ---- Auto-start: when an ECNL work page appears and the loop isn't running,
+// start it automatically (unless the user explicitly stopped the loop).
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  const url = tab && tab.url ? tab.url : "";
+  if (/ecnlmediamarket\.com\/(solving-animals|solving-math)/.test(url)) {
+    if (!isLoopRunning && !loopStopRequested) {
+      console.log("[VisionTap] Auto-starting loop on work page:", url);
+      startLoop(tabId);
+    }
+  }
+});
+
 // ---- Message handler ----
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "trigger_scan") {
     const tabId = request.tabId || sender.tab?.id;
     if (tabId) toggleLoop(tabId);
+    sendResponse({ status: isLoopRunning ? "running" : "stopped" });
+    return true;
+  }
+
+  if (request.action === "ensure_running") {
+    const tabId = request.tabId || sender.tab?.id;
+    if (tabId && !isLoopRunning && !loopStopRequested) {
+      console.log("[VisionTap] ensure_running -> starting loop.");
+      startLoop(tabId);
+    }
     sendResponse({ status: isLoopRunning ? "running" : "stopped" });
     return true;
   }
@@ -94,6 +123,10 @@ function startLoop(tabId) {
   loopStopRequested = false;
   loopStartTime = Date.now();
   taskCount = 0;
+  correctCount = 0;
+  wrongCount = 0;
+  errorCount = 0;
+  lastPoints = { done: null, total: null };
   lastSubmittedImageHash = null;
   currentSourceTabId = tabId;
   touchAction();
@@ -223,6 +256,16 @@ function captureAndSendReport(tabId, report) {
         pointsTotal = meta.pointsTotal != null ? String(meta.pointsTotal) : null;
       }
     } catch (e) {}
+    // Fall back to the points snapshot taken while the task was visible.
+    if (pointsDone == null) pointsDone = lastPoints.done;
+    if (pointsTotal == null) pointsTotal = lastPoints.total;
+
+    // Tally the outcome for the HUD/popup counters.
+    if (correct === true) correctCount++;
+    else if (correct === false) wrongCount++;
+    else errorCount++;
+    broadcastHUD({});
+
     sendTaskReport(Object.assign({}, report, { correct, theirs, withdrawable, pointsDone, pointsTotal }));
   }, 2500);
 }
@@ -258,6 +301,10 @@ async function hardRestart() {
     isProcessing = false;
     loopStartTime = Date.now();
     taskCount = 0;
+    correctCount = 0;
+    wrongCount = 0;
+    errorCount = 0;
+    lastPoints = { done: null, total: null };
     lastSubmittedImageHash = null;
     currentSourceTabId = ecnlTabId;
     touchAction();
@@ -291,6 +338,9 @@ async function broadcastHUD(partial) {
     statusText: partial.statusText || previousStatus || "Idle.",
     timerText: partial.timerText || `${minutes}:${seconds}`,
     tasksCompleted: partial.tasksCompleted !== undefined ? partial.tasksCompleted : taskCount,
+    correctCount: partial.correctCount !== undefined ? partial.correctCount : correctCount,
+    wrongCount: partial.wrongCount !== undefined ? partial.wrongCount : wrongCount,
+    errorCount: partial.errorCount !== undefined ? partial.errorCount : errorCount,
     isRunning: partial.isRunning !== undefined ? partial.isRunning : isLoopRunning
   };
   try {
@@ -365,6 +415,17 @@ async function runIteration() {
 
     // Scanner online check
     updateHUD(`[${taskCount + 1}] Task ready. Checking scanner...`, true);
+
+    // Snapshot the ECNL progress points while the task is visible (better odds
+    // than reading them after submit, when the page may already be transitioning).
+    try {
+      const meta = await chrome.tabs.sendMessage(tabId, { action: "get_task_meta" });
+      if (meta) {
+        if (meta.pointsDone != null) lastPoints.done = String(meta.pointsDone);
+        if (meta.pointsTotal != null) lastPoints.total = String(meta.pointsTotal);
+      }
+    } catch (e) {}
+
     const scannerOnline = await checkScanner();
     if (!scannerOnline) {
       updateHUD("Scanner OFFLINE. Run pcapp/scanner/start.bat", false);
@@ -485,6 +546,8 @@ async function runIteration() {
 
   } catch (err) {
     console.error("[VisionTap] Iteration error:", err);
+    errorCount++;
+    broadcastHUD({});
     updateHUD(`[${taskCount + 1}] Error: ${err.message}`, true);
     isProcessing = false;
     scheduleNext(3000);

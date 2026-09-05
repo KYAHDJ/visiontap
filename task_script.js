@@ -8,7 +8,13 @@
 (function stayOnAnimalsPage() {
   try {
     const href = window.location.href;
+    // Never bounce away from a login/auth page: the auto-login helper needs to
+    // run there, and a redirect would interrupt the user signing in.
+    const AUTH_HINTS = ['login', 'signin', 'sign-in', 'log-in', 'auth', 'account', 'password'];
+    const isAuthPage = AUTH_HINTS.some(h => href.toLowerCase().includes(h)) ||
+      !!(document && document.querySelector('input[type="password"]'));
     if (href.includes("ecnlmediamarket.com") &&
+        !isAuthPage &&
         !href.includes("/solving-animals") &&
         !href.includes("/solving-math")) {
       console.warn("[VisionTap] On non-work ECNL page, forcing /solving-animals:", href);
@@ -16,6 +22,55 @@
       return;
     }
   } catch (e) {}
+})();
+
+// AUTO-LOGIN: on an ECNL login page, wait ~5s for the browser to autofill both
+// inputs, then press the login button. Fully hands-off.
+(async function autoLogin() {
+  try {
+    const href = (window.location.href || "").toLowerCase();
+    const hasPassField = !!(document && document.querySelector('input[type="password"]'));
+    const isLoginPage = /login|signin|sign-in|log-in|auth/i.test(href) || hasPassField;
+    if (!isLoginPage) return;
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const pickUser = () => document.querySelector(
+      'input[type="email"], input[type="text"], input[type="tel"], input[name*="user" i], input[name*="email" i], input[name*="phone" i], input[name*="username" i]');
+    const pickPass = () => document.querySelector('input[type="password"]');
+    const pickLoginBtn = () => {
+      const text = /log\s?in|sign\s?in|signin|login|submit|enter/i;
+      const els = Array.from(document.querySelectorAll(
+        'input[type="submit"], button[type="submit"], button, input[type="button"]'));
+      return els.find(el => {
+        const t = (el.value || el.innerText || el.textContent || "").trim();
+        return el.type === "submit" || text.test(t);
+      }) || null;
+    };
+
+    console.log("[VisionTap] Login page detected. Waiting 5s for autofill...");
+    await sleep(5000);
+
+    // A few retries in case autofill is slow; press login once both are filled.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const user = pickUser();
+      const pass = pickPass();
+      const filled = user && pass &&
+        (user.value || "").trim() !== "" &&
+        (pass.value || "").trim() !== "";
+      if (filled) {
+        const btn = pickLoginBtn();
+        if (btn) {
+          console.log("[VisionTap] Auto-login: credentials present, clicking login.");
+          btn.click();
+          return;
+        }
+      }
+      await sleep(2000);
+    }
+    console.log("[VisionTap] Auto-login: fields not filled after retries; left untouched.");
+  } catch (e) {
+    console.warn("[VisionTap] autoLogin error:", e);
+  }
 })();
 
 (async function initServerErrorChecker() {
@@ -51,6 +106,12 @@ const isMathPage = window.location.href.includes("ecnlmediamarket.com/solving-ma
 const isAnimalsPage = window.location.href.includes("ecnlmediamarket.com/solving-animals");
 
 if (isMathPage || isAnimalsPage) {
+
+  // Auto-start: tell the background to start the loop if it isn't already
+  // running (and the user hasn't explicitly stopped it).
+  try {
+    chrome.runtime.sendMessage({ action: "ensure_running" }).catch(() => {});
+  } catch (e) {}
 
   const nukeAds = () => {
     const selectors = [
@@ -108,7 +169,7 @@ if (isMathPage || isAnimalsPage) {
           <span>VisionTap Scanner</span>
           <span id="vt-hud-state" style="color: #4ade80;">READY</span>
         </div>
-        <div>Time: <span id="vt-hud-timer" style="color: #facc15;">00:00</span> | Done: <span id="vt-hud-count" style="color: #38bdf8;">0</span></div>
+        <div>Time: <span id="vt-hud-timer" style="color: #facc15;">00:00</span> | Correct: <span id="vt-hud-correct" style="color: #4ade80;">0</span> | Wrong: <span id="vt-hud-wrong" style="color: #f87171;">0</span> | Error: <span id="vt-hud-error" style="color: #facc15;">0</span></div>
         <div id="vt-hud-status" style="margin-top: 4px; color: #94a3b8; max-width: 320px; white-space: pre-wrap; word-wrap: break-word;">Waiting for Alt+M...</div>
         <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Alt+M to scan | Backtick to scan</div>
       `;
@@ -307,8 +368,13 @@ if (isMathPage || isAnimalsPage) {
       const hud = getOrCreateHUD();
       document.getElementById('vt-hud-status').innerText = request.statusText;
       document.getElementById('vt-hud-timer').innerText = request.timerText;
-      document.getElementById('vt-hud-count').innerText = request.tasksCompleted;
-      
+      const c = document.getElementById('vt-hud-correct');
+      const w = document.getElementById('vt-hud-wrong');
+      const e = document.getElementById('vt-hud-error');
+      if (c && request.correctCount !== undefined) c.innerText = request.correctCount;
+      if (w && request.wrongCount !== undefined) w.innerText = request.wrongCount;
+      if (e && request.errorCount !== undefined) e.innerText = request.errorCount;
+
       const stateEl = document.getElementById('vt-hud-state');
       if (request.isRunning) {
         stateEl.innerText = "SCANNING";
@@ -497,10 +563,32 @@ if (isMathPage || isAnimalsPage) {
       const wm = low.match(/withdrawable\s*[:=]?\s*[₱$]?\s*([0-9]+(?:\.[0-9]+)?)/);
       if (wm && wm[1]) out.withdrawable = wm[1];
 
-      // Task Points: 128 of 250  (also "128/250")
-      const pm = low.match(/points\s*[:=]?\s*([0-9]+)\s*(?:of|\/)\s*([0-9]+)/i);
+      // Task Points: 128 of 250 | 128/250 | 128 / 250 | "Points Earned: 128/250"
+      const pm = low.match(/(?:points?\s*earned[^0-9]*|points?\s*tasks?[^0-9]*|points?\s*[:=]?|[\(]?)\s*([0-9]+)\s*(?:of|\/)\s*([0-9]+)/i)
+        || low.match(/points\s*[:=]?\s*([0-9]+)\s*(?:of|\/)\s*([0-9]+)/i)
+        || low.match(/([0-9]+)\s*\/\s*([0-9]+)/);
       if (pm) { out.pointsDone = pm[1]; out.pointsTotal = pm[2]; }
 
+      // Fallback: any element whose text looks like "128 / 250" (progress).
+      if (out.pointsDone == null) {
+        const els = Array.from(document.querySelectorAll('[class*="point"], [id*="point"], [class*="progress"], [id*="progress"], [data-points], [data-points-done], [data-points-total]'));
+        for (const el of els) {
+          const t = (el.innerText || el.textContent || el.getAttribute('data-points') || '') || '';
+          const m2 = t.match(/([0-9]+)\s*(?:of|\/)\s*([0-9]+)/i);
+          if (m2) {
+            out.pointsDone = m2[1];
+            out.pointsTotal = m2[2];
+            break;
+          }
+        }
+      }
+      if (out.pointsDone == null || out.pointsTotal == null) {
+        const dEl = document.querySelector('[data-points-done], [data-done], [data-progress]');
+        if (dEl) {
+          const attr = dEl.getAttribute('data-points-done') || dEl.getAttribute('data-done') || dEl.getAttribute('data-progress');
+          if (attr && /^\d+$/.test(attr)) out.pointsDone = attr;
+        }
+      }
       // Fallback: data attributes on task elements.
       if (out.withdrawable == null) {
         const el = document.querySelector('[data-withdrawable], [data-task-withdrawable]');

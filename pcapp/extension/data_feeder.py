@@ -107,15 +107,25 @@ def ts_ms(row):
         return 0
 
 
+def _verdict(row):
+    c = row.get("correct")
+    if c is True or str(c).upper() == "TRUE":
+        return "correct"
+    if c is False or str(c).upper() == "FALSE":
+        return "wrong"
+    return "unknown"
+
+
 def current_session_rows(rows, reset_at):
     if reset_at:
         return [r for r in rows if ts_ms(r) >= reset_at]
     return list(rows)
 
 
-def write_runs(root, meta, rows, max_rows):
-    rows = rows[:max_rows]
-    payload = {"meta": meta, "runs": rows}
+def write_runs(root, meta, corrects, wrongs, max_corrects=300, max_wrongs=300):
+    corrects = corrects[:max_corrects]
+    wrongs = wrongs[:max_wrongs]
+    payload = {"meta": meta, "corrects": corrects, "wrongs": wrongs}
     path = Path(root) / "data" / "runs.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -179,37 +189,57 @@ def main():
             reset_at = sess.get("reset_at")
             battery = sess.get("last_battery")
             withdrawable = sess.get("last_withdrawable")
+            points_done = sess.get("points_done")
+            points_total = sess.get("points_total") or 250
+
+            sess_rows = current_session_rows(rows, reset_at)
+            corrects = [r for r in sess_rows if _verdict(r) == "correct"]
+            wrongs = [r for r in sess_rows if _verdict(r) == "wrong"]
 
             if reset_requested:
                 # Wipe tracker back to zero; battery/withdrawable carry over.
                 meta = {
                     "session": session + 1,
+                    "points_done": 0,
+                    "points_total": points_total,
                     "last_battery": battery,
                     "last_withdrawable": withdrawable,
                     "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "status": "reset",
                 }
-                write_runs(root, meta, [], max_rows)
+                write_runs(root, meta, [], [], max_rows, max_rows)
                 if do_push:
                     git_push(root)
                 post_session("reset_done")
                 print(f"[feeder] SESSION {session + 1} reset. Cleared tracker (kept battery/withdrawable).", flush=True)
 
             elif batch_ready:
-                # Jump: publish current-session correct+incorrect tasks (cap 300).
-                sess_rows = current_session_rows(rows, reset_at)
+                # Jump: publish current-session correct+wrong tasks. If ECNL
+                # reports progress (e.g. 145/250) we cap corrects at that actual
+                # count instead of the hard max, so the page mirrors the real
+                # session. Fall back to max_rows when progress is unknown.
+                cap = max_rows
+                if points_done is not None:
+                    try:
+                        pd = int(points_done)
+                        if pd > 0:
+                            cap = min(pd, max_rows)
+                    except (TypeError, ValueError):
+                        pass
                 meta = {
                     "session": session,
+                    "points_done": int(points_done) if points_done is not None else None,
+                    "points_total": points_total,
                     "last_battery": battery,
                     "last_withdrawable": withdrawable,
                     "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "status": "live",
                 }
-                written = write_runs(root, meta, sess_rows, max_rows)
+                write_runs(root, meta, corrects[:cap], wrongs, cap if cap else max_rows, max_rows)
                 if do_push:
                     git_push(root)
                 post_session("batch_done")
-                print(f"[feeder] BATCH push: {len(written.get('runs', []))} rows (session {session}).", flush=True)
+                print(f"[feeder] BATCH push: {len(corrects[:cap])} correct, {len(wrongs)} wrong (session {session}, points {points_done}/{points_total})", flush=True)
 
             else:
                 # Freeze: no new commits while waiting for the next batch of 10 correct.

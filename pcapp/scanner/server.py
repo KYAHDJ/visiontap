@@ -29,6 +29,8 @@ SESSION_DEFAULTS = {
     "reset_at": None,
     "last_battery": None,
     "last_withdrawable": None,
+    "points_done": None,
+    "points_total": 250,
 }
 
 _sess_lock = threading.Lock()
@@ -68,6 +70,10 @@ def update_session_state(report):
 
         p_done = report.get("pointsDone")
         p_total = report.get("pointsTotal")
+        if p_done is not None and str(p_done).strip().isdigit():
+            s["points_done"] = int(p_done)
+        if p_total is not None and str(p_total).strip().isdigit():
+            s["points_total"] = int(p_total)
         session_done = (
             p_done is not None and p_total is not None
             and str(p_done).strip().isdigit()
@@ -357,6 +363,9 @@ class ScannerHandler(BaseHTTPRequestHandler):
                     s["batch_ready"] = False
                     s["reset_requested"] = False
                     s["reset_at"] = int(time.time() * 1000)
+                    s["points_done"] = 0
+                    if not s.get("points_total") or int(s.get("points_total", 0)) <= 0:
+                        s["points_total"] = 250
                     # battery/withdrawable intentionally carried over
                 save_session_state(s)
             self._json_response(200, {"status": "ok", "session": s})

@@ -19,6 +19,8 @@
   .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
            background: var(--panel2); color: var(--muted); }
   .badge.live { background: #052e16; color: var(--accent); }
+  .badge.sess { background: #0c4a6e; color: var(--info); }
+  .badge.reset { background: #3a0d0d; color: #fca5a5; }
   .meta { margin-left: auto; color: var(--muted); font-size: 13px; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
            gap: 14px; padding: 20px 24px; }
@@ -28,18 +30,23 @@
   .stat .lbl { color: var(--muted); font-size: 12px; margin-top: 4px; }
   .stat .val.good { color: var(--accent); }
   .stat .val.bad { color: var(--danger); }
+  .progress { background: var(--panel2); border-radius: 999px; height: 10px;
+              margin-top: 8px; overflow: hidden; }
+  .progress > div { height: 100%; background: var(--accent); border-radius: 999px; }
   .empty { margin: 24px; padding: 48px; text-align: center; color: var(--muted);
            border: 2px dashed var(--panel2); border-radius: 12px; }
-  .table-wrap { overflow-x: auto; margin: 0 24px 24px; border-radius: 12px;
+  h2.sec { margin: 0; padding: 14px 24px 6px; font-size: 16px; }
+  h2.sec .n { color: var(--muted); font-weight: 600; }
+  h2.sec.ok { color: var(--accent); }
+  h2.sec.no { color: #fca5a5; }
+  .table-wrap { overflow-x: auto; margin: 4px 24px 18px; border-radius: 12px;
                 border: 1px solid var(--panel2); }
+  .table-wrap.hidden { display: none; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--panel2); }
   th { position: sticky; top: 0; background: var(--panel); color: var(--muted);
        font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; }
   tr:hover td { background: #16233b; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-  .pill.ok { background: #052e16; color: var(--accent); }
-  .pill.no { background: #3a0d0d; color: #fca5a5; }
   footer { padding: 16px 24px; color: var(--muted); font-size: 12px; text-align: center; }
 </style>
 </head>
@@ -47,15 +54,34 @@
 <header>
   <h1>VisionTap Live Tracker</h1>
   <span class="badge live" id="liveBadge">LIVE</span>
-  <span class="badge" id="sessionBadge" style="display:none;">Session 1</span>
-  <span class="badge" id="countBadge">0 tasks</span>
+  <span class="badge sess" id="sessionBadge" style="display:none;">Session 1</span>
+  <span class="badge" id="countBadge">0 correct</span>
   <div class="meta">updated <span id="updated">--</span></div>
 </header>
 
 <div class="empty" id="empty">No task data yet. Waiting for the first submission...</div>
 <div class="stats" id="stats"></div>
 
-<div class="table-wrap" id="tableWrap" style="display:none;">
+<h2 class="sec ok" id="okTitle">Correct <span class="n">(0)</span></h2>
+<div class="table-wrap hidden" id="okWrap">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Time</th>
+        <th>Animal</th>
+        <th>Count</th>
+        <th>Total (sec)</th>
+        <th>Withdrawable</th>
+        <th>Battery</th>
+      </tr>
+    </thead>
+    <tbody id="okRows"></tbody>
+  </table>
+</div>
+
+<h2 class="sec no" id="wrongTitle">Wrong <span class="n">(0)</span></h2>
+<div class="table-wrap hidden" id="wrongWrap">
   <table>
     <thead>
       <tr>
@@ -63,13 +89,13 @@
         <th>Time</th>
         <th>Animal</th>
         <th>Count (ours)</th>
-        <th>Correct?</th>
+        <th>Their answer</th>
         <th>Total (sec)</th>
         <th>Withdrawable</th>
         <th>Battery</th>
       </tr>
     </thead>
-    <tbody id="rows"></tbody>
+    <tbody id="wrongRows"></tbody>
   </table>
 </div>
 
@@ -81,17 +107,17 @@ const DATA_URLS = ["./data/runs.json", "./runs.json", "../data/runs.json"];
 
 async function loadRuns() {
   const cb = "?t=" + Date.now();
-  let data = null, meta = null;
+  let corrects = [], wrongs = [], meta = {};
   for (const url of DATA_URLS) {
     try {
       const res = await fetch(url + cb, { cache: "no-cache" });
       if (!res.ok) continue;
       const json = await res.json();
-      if (Array.isArray(json)) { data = json; meta = {}; break; }
-      if (json && Array.isArray(json.runs)) { data = json.runs; meta = json.meta || {}; break; }
+      if (json && Array.isArray(json.corrects)) { corrects = json.corrects; meta = json.meta || {}; wrongs = json.wrongs || []; break; }
+      if (Array.isArray(json)) { corrects = json; meta = {}; break; }
     } catch (e) { /* next */ }
   }
-  render(data, meta);
+  render(corrects, wrongs, meta);
 }
 
 function esc(v) {
@@ -99,88 +125,96 @@ function esc(v) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function render(data, meta) {
+function renderRow(r, idx) {
+  const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : "—";
+  return `<tr>
+    <td>${r.taskNum != null ? esc(r.taskNum) : (idx + 1)}</td>
+    <td>${esc(time)}</td>
+    <td>${esc(r.animal || "—")}</td>
+    <td>${esc(r.count != null ? r.count : "—")}</td>
+    <td>${esc(r.totalSec != null ? r.totalSec : "—")}</td>
+    <td>${r.withdrawable != null ? "₱" + esc(r.withdrawable) : "—"}</td>
+    <td>${r.battery != null ? esc(r.battery) + "%" : "—"}</td>
+  </tr>`;
+}
+
+function renderRowWrong(r, idx) {
+  const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : "—";
+  return `<tr>
+    <td>${r.taskNum != null ? esc(r.taskNum) : (idx + 1)}</td>
+    <td>${esc(time)}</td>
+    <td>${esc(r.animal || "—")}</td>
+    <td>${esc(r.count != null ? r.count : "—")}</td>
+    <td>${esc(r.theirs != null ? r.theirs : "—")}</td>
+    <td>${esc(r.totalSec != null ? r.totalSec : "—")}</td>
+    <td>${r.withdrawable != null ? "₱" + esc(r.withdrawable) : "—"}</td>
+    <td>${r.battery != null ? esc(r.battery) + "%" : "—"}</td>
+  </tr>`;
+}
+
+function render(corrects, wrongs, meta) {
   meta = meta || {};
-  const rows = data && data.length ? data.slice().reverse() : [];
+  const okRows = corrects.slice().reverse();
+  const badRows = wrongs.slice().reverse();
   const statsEl = document.getElementById("stats");
   const countBadge = document.getElementById("countBadge");
   const sessionBadge = document.getElementById("sessionBadge");
   const empty = document.getElementById("empty");
-  const tableWrap = document.getElementById("tableWrap");
-  const tbody = document.getElementById("rows");
+  const okTitle = document.getElementById("okTitle");
+  const wrongTitle = document.getElementById("wrongTitle");
+  const okWrap = document.getElementById("okWrap");
+  const wrongWrap = document.getElementById("wrongWrap");
+  const okTbody = document.getElementById("okRows");
+  const wrongTbody = document.getElementById("wrongRows");
   document.getElementById("updated").textContent = new Date().toLocaleTimeString();
-  const stat = (label, val, cls) =>
-    `<div class="stat"><div class="val ${cls || ""}">${esc(val)}</div><div class="lbl">${label}</div></div>`;
 
   const sessionNum = (meta.session != null) ? meta.session : 1;
-  if (meta.session != null || meta.status === "reset" || rows.length) {
-    sessionBadge.style.display = "";
-    sessionBadge.textContent = "Session " + sessionNum
-      + (meta.status === "reset" ? " (reset)" : "");
-  } else {
-    sessionBadge.style.display = "none";
-  }
+  const pointsDone = meta.points_done != null ? meta.points_done : okRows.length;
+  const pointsTotal = meta.points_total != null ? meta.points_total : 250;
+  const battery = meta.last_battery != null ? meta.last_battery : (okRows.length ? okRows[okRows.length - 1].battery : (badRows.length ? badRows[badRows.length - 1].battery : null));
+  const withdr = meta.last_withdrawable != null ? meta.last_withdrawable : (okRows.length ? okRows[okRows.length - 1].withdrawable : (badRows.length ? badRows[badRows.length - 1].withdrawable : null));
 
-  const battery = meta.last_battery != null ? meta.last_battery : (rows.length ? rows[rows.length - 1].battery : null);
-  const withdr = meta.last_withdrawable != null ? meta.last_withdrawable : (rows.length ? rows[rows.length - 1].withdrawable : null);
+  sessionBadge.style.display = "";
+  sessionBadge.textContent = "Session " + sessionNum + (meta.status === "reset" ? " (reset)" : "");
+  sessionBadge.className = "badge " + (meta.status === "reset" ? "reset" : "sess");
 
-  if (!rows.length) {
-    empty.style.display = "block";
-    tableWrap.style.display = "none";
-    statsEl.innerHTML =
-      stat("Session", sessionNum) +
-      stat("Battery (kept)", battery != null ? battery + "%" : "—") +
-      stat("Withdrawable (kept)", withdr != null ? "₱" + esc(withdr) : "—") +
-      stat("Total tasks", 0);
-    countBadge.textContent = "0 tasks";
-    return;
-  }
-  empty.style.display = "none";
-  tableWrap.style.display = "block";
-  countBadge.textContent = rows.length + " task" + (rows.length === 1 ? "" : "s");
+  countBadge.textContent = okRows.length + " correct · " + badRows.length + " wrong";
+  empty.style.display = (okRows.length || badRows.length) ? "none" : "block";
+  okWrap.classList.toggle("hidden", okRows.length === 0);
+  wrongWrap.classList.toggle("hidden", badRows.length === 0);
+  okTitle.innerHTML = "Correct <span class=\"n\">(" + okRows.length + ")</span>";
+  wrongTitle.innerHTML = "Wrong <span class=\"n\">(" + badRows.length + ")</span>";
 
-  // Aggregate stats.
-  const total = rows.length;
-  let known = 0, right = 0;
-  for (const r of rows) {
-    if (r.correct === true || String(r.correct).toUpperCase() === "TRUE") { known++; right++; }
-    else if (r.correct === false || String(r.correct).toUpperCase() === "FALSE") { known++; }
-  }
-  const acc = known ? (right / known * 100) : null;
-  const latest = rows[rows.length - 1];
-  const times = rows.map(r => Number(r.totalSec)).filter(n => !isNaN(n));
+  const total = okRows.length + badRows.length;
+  const acc = total ? (okRows.length / total * 100) : null;
+  const times = okRows.concat(badRows).map(r => Number(r.totalSec)).filter(n => !isNaN(n));
   const avg = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
   const max = times.length ? Math.max(...times) : null;
   const min = times.length ? Math.min(...times) : null;
 
+  const stat = (label, val, cls) =>
+    `<div class="stat"><div class="val ${cls || ""}">${esc(val)}</div><div class="lbl">${label}</div></div>`;
+  const pct = pointsTotal > 0 ? Math.max(0, Math.min(100, pointsDone / pointsTotal * 100)) : 0;
+
+  const progressStat =
+    `<div class="stat">
+       <div class="val">${esc(pointsDone)} / ${esc(pointsTotal)}</div>
+       <div class="lbl">Session progress</div>
+       <div class="progress"><div style="width:${pct.toFixed(1)}%"></div></div>
+     </div>`;
+
   statsEl.innerHTML =
-    stat("Total tasks", total) +
+    stat("Correct tasks", okRows.length, "good") +
+    stat("Wrong tasks", badRows.length, "bad") +
+    progressStat +
     stat("Accuracy", acc == null ? "—" : acc.toFixed(1) + "%", acc == null ? "" : (acc >= 90 ? "good" : acc >= 70 ? "" : "bad")) +
     stat("Avg time", avg == null ? "—" : avg.toFixed(1) + "s") +
-    stat("Latest total", latest.totalSec != null ? latest.totalSec + "s" : "—") +
-    stat("Latest battery", battery != null ? battery + "%" : "—") +
-    stat("Latest withdrawable", withdr != null ? "₱" + esc(withdr) : "—") +
+    stat("Battery", battery != null ? battery + "%" : "—") +
+    stat("Withdrawable", withdr != null ? "₱" + esc(withdr) : "—") +
     stat("Max / Min time", (max == null || min == null) ? "—" : max + "s / " + min + "s");
 
-  // Rows (newest first).
-  tbody.innerHTML = rows.slice().reverse().map((r, i) => {
-    const correct = r.correct === true || String(r.correct).toUpperCase() === "TRUE";
-    const wrong = r.correct === false || String(r.correct).toUpperCase() === "FALSE";
-    const pill = wrong ? '<span class="pill no">WRONG</span>'
-               : correct ? '<span class="pill ok">OK</span>'
-               : '<span class="pill" style="background:var(--panel2)">—</span>';
-    const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : "—";
-    return `<tr>
-      <td>${r.taskNum != null ? esc(r.taskNum) : (rows.length - i)}</td>
-      <td>${esc(time)}</td>
-      <td>${esc(r.animal || "—")}</td>
-      <td>${esc(r.count != null ? r.count : "—")}</td>
-      <td>${pill}</td>
-      <td>${esc(r.totalSec != null ? r.totalSec : "—")}</td>
-      <td>${r.withdrawable != null ? "₱" + esc(r.withdrawable) : "—"}</td>
-      <td>${r.battery != null ? esc(r.battery) + "%" : "—"}</td>
-    </tr>`;
-  }).join("");
+  okTbody.innerHTML = okRows.map(renderRow).join("");
+  wrongTbody.innerHTML = badRows.map(renderRowWrong).join("");
 }
 
 function tick() { loadRuns(); }
