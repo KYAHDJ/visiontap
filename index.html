@@ -218,7 +218,7 @@ function fmtTime(ts) {
 
 function renderRow(r, idx, opts) {
   const time = fmtTime(r.timestamp);
-  const num = r.taskNum != null ? esc(r.taskNum) : (idx + 1);
+  const num = r.taskNum != null ? esc(r.taskNum) : ((opts.base || idx + 1) - idx);
   const their = opts && opts.theirs ? `<td class="bad">${esc(r.theirs != null ? r.theirs : "—")}</td>` : "";
   return `<tr>
     <td class="muted">${num}</td>
@@ -262,8 +262,8 @@ function render(corrects, wrongs, meta) {
   document.getElementById("okWrap").style.display = okRows.length ? "block" : "none";
   document.getElementById("emptyWrong").style.display = badRows.length ? "none" : "block";
   document.getElementById("wrongWrap").style.display = badRows.length ? "block" : "none";
-  document.getElementById("okRows").innerHTML = okRows.map((r, i) => renderRow(r, i, {})).join("");
-  document.getElementById("wrongRows").innerHTML = badRows.map((r, i) => renderRow(r, i, { theirs: true })).join("");
+  document.getElementById("okRows").innerHTML = okRows.map((r, i) => renderRow(r, i, { base: pointsDone })).join("");
+  document.getElementById("wrongRows").innerHTML = badRows.map((r, i) => renderRow(r, i, { theirs: true, base: badRows.length })).join("");
 
   // Stats cards.
   const total = okRows.length + badRows.length;
