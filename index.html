@@ -154,8 +154,8 @@ function renderRowWrong(r, idx) {
 
 function render(corrects, wrongs, meta) {
   meta = meta || {};
-  const okRows = corrects.slice().reverse();
-  const badRows = wrongs.slice().reverse();
+  const okRows = corrects.slice();
+  const badRows = wrongs.slice();
   const statsEl = document.getElementById("stats");
   const countBadge = document.getElementById("countBadge");
   const sessionBadge = document.getElementById("sessionBadge");
