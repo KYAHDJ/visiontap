@@ -1,14 +1,104 @@
 {
   "meta": {
     "session": 1,
-    "points_done": 121,
+    "points_done": 131,
     "points_total": 250,
     "last_battery": 11,
     "last_withdrawable": "204.056",
-    "last_updated": "2026-09-06T21:16:28Z",
+    "last_updated": "2026-09-06T21:19:08Z",
     "status": "live"
   },
   "corrects": [
+    {
+      "timestamp": "2026-09-06T21:18:56.331Z",
+      "battery": 11,
+      "animal": "chicken",
+      "count": 7,
+      "correct": true,
+      "totalSec": 14,
+      "withdrawable": "204.056"
+    },
+    {
+      "timestamp": "2026-09-06T21:18:40.138Z",
+      "battery": 11,
+      "animal": "frog",
+      "count": 6,
+      "correct": true,
+      "totalSec": 13,
+      "withdrawable": "204.056"
+    },
+    {
+      "timestamp": "2026-09-06T21:18:24.861Z",
+      "battery": 11,
+      "animal": "dog",
+      "count": 5,
+      "correct": true,
+      "totalSec": 15,
+      "withdrawable": "204.056"
+    },
+    {
+      "timestamp": "2026-09-06T21:18:07.382Z",
+      "battery": 11,
+      "animal": "frog",
+      "count": 7,
+      "correct": true,
+      "totalSec": 13,
+      "withdrawable": ""
+    },
+    {
+      "timestamp": "2026-09-06T21:17:53.156Z",
+      "battery": 11,
+      "animal": "monkey",
+      "count": 4,
+      "correct": true,
+      "totalSec": 14,
+      "withdrawable": "204.056"
+    },
+    {
+      "timestamp": "2026-09-06T21:17:36.048Z",
+      "battery": 11,
+      "animal": "monkey",
+      "count": 6,
+      "correct": true,
+      "totalSec": 13,
+      "withdrawable": "204.056"
+    },
+    {
+      "timestamp": "2026-09-06T21:17:20.950Z",
+      "battery": 11,
+      "animal": "dog",
+      "count": 3,
+      "correct": true,
+      "totalSec": 14,
+      "withdrawable": "204.056"
+    },
+    {
+      "timestamp": "2026-09-06T21:17:04.701Z",
+      "battery": 11,
+      "animal": "pig",
+      "count": 3,
+      "correct": true,
+      "totalSec": 13,
+      "withdrawable": "204.056"
+    },
+    {
+      "timestamp": "2026-09-06T21:16:49.475Z",
+      "battery": 11,
+      "animal": "chicken",
+      "count": 5,
+      "correct": true,
+      "totalSec": 14,
+      "withdrawable": "204.056"
+    },
+    {
+      "timestamp": "2026-09-06T21:16:33.309Z",
+      "battery": 11,
+      "animal": "chicken",
+      "count": 5,
+      "correct": true,
+      "totalSec": 13,
+      "withdrawable": "204.056"
+    },
     {
       "timestamp": "2026-09-06T21:16:18.029Z",
       "battery": 11,
