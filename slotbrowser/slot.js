@@ -79,6 +79,8 @@ class Slot {
     this.consecutiveDetectFails = 0;
     this._pageLogs = {};
     this._lastBlockerLog = 0;
+    this._injected = false;
+    this._scannerPid = null;
   }
 
   attach() {
@@ -115,12 +117,13 @@ class Slot {
 
     wc.on("did-navigate-in-page", (_e, url) => {
       this.currentUrl = url || "";
-      this.log(`NAV-INPAGE -> ${url || ""}`);
+      this._injected = false;
       this.inject().catch(() => {});
     });
 
     wc.on("did-finish-load", () => {
       this.currentUrl = wc.getURL() || "";
+      this._injected = false;
       this.inject().catch(() => {});
     });
 
@@ -158,18 +161,15 @@ class Slot {
 
   async inject() {
     if (!this.wcIsAlive()) return;
+    if (this._injected) return;
     try {
       if (this.currentUrl.includes("ecnlmediamarket.com")) {
-        // Pass slot ID to the host bridge
-        await this.wc.executeJavaScript(
-          `if(window.__vtHost && window.__vtHost.setSlotId) window.__vtHost.setSlotId("${this.id}");`
-        ).catch(() => {});
-        // Inject credentials directly into page context for auto-login
         const credsJson = JSON.stringify(this._creds || null);
         await this.wc.executeJavaScript(
           `window.__vtCreds = ${credsJson};`
         ).catch(() => {});
         await this.wc.executeJavaScript(INJECT_JS).catch(() => {});
+        this._injected = true;
       }
     } catch (e) {}
   }
@@ -426,7 +426,13 @@ class Slot {
     try {
       const { spawn } = require("child_process");
       const scannerDir = path.join(__dirname, "..", "pcapp", "scanner");
-      const py = spawn("python", ["server.py"], { cwd: scannerDir, stdio: "ignore", detached: true });
+      const py = spawn("pythonw", ["server.py"], {
+        cwd: scannerDir,
+        stdio: "ignore",
+        detached: true,
+        windowsHide: true
+      });
+      this._scannerPid = py.pid;
       py.unref();
       for (let i = 0; i < 10; i++) {
         await sleep(1000);
@@ -437,10 +443,11 @@ class Slot {
   }
 
   async scannerKill() {
+    if (!this._scannerPid) return;
     try {
-      const { exec } = require("child_process");
-      await new Promise(r => exec("taskkill /f /im python.exe", r));
+      process.kill(this._scannerPid, "SIGKILL");
     } catch (e) {}
+    this._scannerPid = null;
   }
 
   startStaggered(delay) {
@@ -692,7 +699,7 @@ class Slot {
         this.status("Waiting for task input box...");
       }
       this.touchProgress();
-      await sleep(600);
+      await sleep(2000);
     }
     return false;
   }
