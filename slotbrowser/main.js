@@ -128,7 +128,7 @@ function broadcastState() {
 
 // ---- Grid layout ----
 const TOOLBAR_H = 82;
-const PHONE_W = 420;
+const PHONE_W = 360;
 const PHONE_ASPECT = 0.52;
 const GUTTER = 8;
 
@@ -167,14 +167,10 @@ function autoFitWindow() {
   if (settings.gridColumns > 0) return;
   const n = slots.size;
   if (n === 0) return;
-  const [, h] = win.getContentSize();
+  const [curW, h] = win.getContentSize();
   const phoneW = Math.round(Math.min(PHONE_W, (h - TOOLBAR_H) * PHONE_ASPECT));
-  let area;
-  try { area = screen.getDisplayMatching(win.getBounds()).workArea; } catch (e) { area = { width: 1920 }; }
-  const maxW = Math.floor((area.width || 1920) * 0.96);
-  const want = Math.min(maxW, n * (phoneW + GUTTER) + GUTTER);
-  const cur = win.getContentSize()[0];
-  if (Math.abs(cur - want) > 4) win.setContentSize(want, h);
+  const want = n * (phoneW + GUTTER) + GUTTER;
+  if (want < curW - 4) win.setContentSize(want, h);
 }
 
 function wireSession(ses) {
@@ -434,7 +430,7 @@ function initIpc() {
 
 // ---- Window ----
 function createWindow() {
-  const def = { width: 440, height: 900 };
+  const def = { width: 380, height: 700 };
   let w = def.width;
   let h = def.height;
   const ws = settings.windowSize || {};
@@ -453,12 +449,10 @@ function createWindow() {
     w = Math.min(w, area.width);
     h = Math.min(h, area.height);
   } catch (e) {}
-  const bounds = readJson(WIN_BOUNDS_FILE, {});
   win = new BrowserWindow({
     width: w,
     height: h,
-    x: bounds.x,
-    y: bounds.y,
+    center: true,
     minWidth: 340,
     minHeight: 560,
     frame: false,
