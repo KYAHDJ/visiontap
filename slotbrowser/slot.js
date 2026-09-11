@@ -12,9 +12,9 @@ const WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const COLORS_RE = /\/solving-colors/;
 
 const STALL_RESET_MS = 120000;
-const HEARTBEAT_MS = 60000;
-const COMMAND_POLL_MS = 30000;
-const HUD_TICK_MS = 10000;
+const HEARTBEAT_MS = 30000;
+const COMMAND_POLL_MS = 15000;
+const HUD_TICK_MS = 5000;
 
 let INJECT_JS = "";
 
@@ -577,7 +577,7 @@ class Slot {
           return;
         }
         this.isProcessing = false;
-        this.scheduleNext(5000);
+        this.scheduleNext(1500);
         return;
       }
 
@@ -585,7 +585,7 @@ class Slot {
       if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
         this.status("Same image. Waiting for next task...");
         this.isProcessing = false;
-        this.scheduleNext(5000);
+        this.scheduleNext(2000);
         return;
       }
 
@@ -699,7 +699,7 @@ class Slot {
         this.status("Waiting for task input box...");
       }
       this.touchProgress();
-      await sleep(2000);
+      await sleep(600);
     }
     return false;
   }
