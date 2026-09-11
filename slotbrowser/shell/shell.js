@@ -281,6 +281,12 @@
     minBtn.addEventListener("click", () => vt.minimize());
     closeBtn.addEventListener("click", () => vt.close());
     pauseToggle.addEventListener("change", () => vt.pauseAll(pauseToggle.checked));
+    const restartBtn = document.getElementById("restartBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const startBtn = document.getElementById("startBtn");
+    if (restartBtn) restartBtn.addEventListener("click", () => { restartBtn.textContent = "…"; vt.restartAll().then(() => { setTimeout(() => { restartBtn.innerHTML = "&#8635;"; }, 1500); }); });
+    if (stopBtn) stopBtn.addEventListener("click", () => { stopBtn.textContent = "…"; vt.stopAll().then(() => { setTimeout(() => { stopBtn.innerHTML = "&#9632;"; }, 1500); }); });
+    if (startBtn) startBtn.addEventListener("click", () => { startBtn.textContent = "…"; vt.startAll().then(() => { setTimeout(() => { startBtn.innerHTML = "&#9654;"; }, 1500); }); });
     document.addEventListener("keydown", (e) => {
       if (e.altKey && !e.shiftKey && !e.ctrlKey && e.key.toLowerCase() === "m") vt.addSlot();
       if (e.altKey && e.key.toLowerCase() === ",") vt.openSettings();

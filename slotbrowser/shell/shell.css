@@ -55,6 +55,12 @@ body {
 .btn.primary:hover { background: #155e75; }
 .btn.icon { padding: 6px 10px; font-size: 14px; line-height: 1; }
 .btn.danger:hover { background: #7f1d1d; border-color: #b91c1c; }
+.btn.ctrl { padding: 4px 10px; font-size: 16px; line-height: 1; border-radius: 6px; background: #1e293b; border: 1px solid #475569; color: #e2e8f0; cursor: pointer; margin-left: 4px; }
+.btn.ctrl:hover { background: #334155; }
+.btn.ctrl.primary { background: #166534; border-color: #22c55e; color: #dcfce7; }
+.btn.ctrl.primary:hover { background: #22c55e; color: #fff; }
+.btn.ctrl.danger { background: #991b1b; border-color: #ef4444; color: #fee2e2; }
+.btn.ctrl.danger:hover { background: #ef4444; color: #fff; }
 
 #slotChrome {
   position: fixed;

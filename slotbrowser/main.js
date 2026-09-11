@@ -170,7 +170,14 @@ function autoFitWindow() {
   const [curW, h] = win.getContentSize();
   const phoneW = Math.round(Math.min(PHONE_W, (h - TOOLBAR_H) * PHONE_ASPECT));
   const want = n * (phoneW + GUTTER) + GUTTER;
-  if (want < curW - 4) win.setContentSize(want, h);
+  const { width: scrW, height: scrH } = screen.getPrimaryDisplay().workAreaSize;
+  const newW = Math.max(380, Math.min(want, scrW));
+  const newH = Math.min(1000, Math.max(560, h));
+  const newX = Math.round(scrW / 2 - newW / 2);
+  const newY = Math.round(scrH / 2 - newH / 2);
+  if (Math.abs(curW - newW) > 5) win.setContentSize(newW, h);
+  const [curX, curY] = win.getPosition();
+  if (Math.abs(curX - newX) > 10 || Math.abs(curY - newY) > 10) win.setPosition(newX, newY);
 }
 
 function wireSession(ses) {
@@ -396,6 +403,20 @@ function initIpc() {
   });
   ipcMain.handle("vt-win-minimize", () => { if (win) win.minimize(); });
   ipcMain.handle("vt-win-close", () => { if (win) win.close(); });
+  ipcMain.handle("vt-server-restart", () => {
+    if (win) win.webContents.send("vt-server-action", "restart");
+    for (const [id, slot] of slots) { slot.reload(); }
+  });
+  ipcMain.handle("vt-server-stop", () => {
+    if (win) win.webContents.send("vt-server-action", "stop");
+    for (const [id, slot] of slots) { slot.setPaused(true); }
+    stopRequested = true;
+  });
+  ipcMain.handle("vt-server-start", () => {
+    if (win) win.webContents.send("vt-server-action", "start");
+    stopRequested = false;
+    for (const [id, slot] of slots) { slot.setPaused(false); slot.ensureRunning(); }
+  });
   ipcMain.handle("vt-win-minimize-to-tray", () => { if (win) win.hide(); });
   ipcMain.handle("vt-settings-set-start-minimized", (_e, enabled) => {
     settings.startMinimized = !!enabled;

@@ -20,5 +20,9 @@ contextBridge.exposeInMainWorld("visiontap", {
   close: () => ipcRenderer.invoke("vt-win-close"),
   openSettings: () => ipcRenderer.invoke("vt-settings-open"),
   closeSettingsWin: () => ipcRenderer.invoke("vt-settings-close"),
-  createDesktopShortcut: () => ipcRenderer.invoke("vt-desktop-shortcut")
+  createDesktopShortcut: () => ipcRenderer.invoke("vt-desktop-shortcut"),
+  restartAll: () => ipcRenderer.invoke("vt-server-restart"),
+  stopAll: () => ipcRenderer.invoke("vt-server-stop"),
+  startAll: () => ipcRenderer.invoke("vt-server-start"),
+  onServerAction: (cb) => ipcRenderer.on("vt-server-action", (_e, action) => cb(action))
 });
