@@ -1,0 +1,698 @@
+// VisionTap Slot - per-slot loop controller.
+// Drives one WebContentsView: waits for task, OCRs via local scanner,
+// fills answer, reports result. Locked to solving-colors only.
+
+const fs = require("fs");
+const path = require("path");
+
+const SCANNER_URL = "http://127.0.0.1:5566";
+const KEEPER_HEARTBEAT_URL = "http://127.0.0.1:8177/heartbeat";
+const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
+const WORK_URL = "https://ecnlmediamarket.com/solving-colors";
+const COLORS_RE = /\/solving-colors/;
+
+const STALL_RESET_MS = 120000;
+const HEARTBEAT_MS = 30000;
+const COMMAND_POLL_MS = 15000;
+const HUD_TICK_MS = 5000;
+
+let INJECT_JS = "";
+
+function ensureScripts(injectPath) {
+  if (!INJECT_JS) INJECT_JS = fs.readFileSync(injectPath, "utf8");
+}
+
+function hashImage(dataUrl) {
+  if (!dataUrl) return null;
+  const s = dataUrl.slice(dataUrl.indexOf(",") + 1);
+  let h = 0;
+  const step = Math.max(1, Math.floor(s.length / 512));
+  for (let i = 0; i < s.length; i += step) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+class Slot {
+  constructor({ id, name, view, logger }) {
+    this.id = id;
+    this.name = name;
+    this.view = view;
+    this.wc = view.webContents;
+    this.logger = logger || null;
+    this.log = (msg) => { if (this.logger) this.logger(msg); else console.warn(msg); };
+
+    // Load credentials from state/credentials.json
+    this._creds = null;
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const credsFile = path.join(__dirname, "state", "credentials.json");
+      const allCreds = JSON.parse(fs.readFileSync(credsFile, "utf8"));
+      this._creds = allCreds[String(id)] || allCreds["1"] || null;
+    } catch (e) {}
+
+    this.isLoopRunning = false;
+    this.isProcessing = false;
+    this.loopStartTime = null;
+    this.taskCount = 0;
+    this.correctCount = 0;
+    this.wrongCount = 0;
+    this.errorCount = 0;
+    this.loopStopRequested = false;
+    this.lastPoints = { done: null, total: null };
+    this.lastActionTs = 0;
+    this.lastProgressTs = 0;
+    this.lastSubmittedImageHash = null;
+    this.paused = false;
+    this.lastHudText = "";
+    this.currentUrl = "";
+    this.hudEnabled = true;
+    this.delayMult = 1;
+    this.zoom = 1;
+
+    this.hudTimer = null;
+    this.heartbeatTimer = null;
+    this.commandTimer = null;
+    this.nextTimer = null;
+    this.reportTimer = null;
+    this.consecutiveDetectFails = 0;
+    this._pageLogs = {};
+    this._lastBlockerLog = 0;
+  }
+
+  attach() {
+    const wc = this.wc;
+
+    // Block any navigation away from solving-colors (allow login pages)
+    wc.on("will-navigate", (_e, url) => {
+      this.log(`NAV-WILL -> ${url}`);
+      if (url && /ecnlmediamarket\.com/i.test(url) && !COLORS_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+        _e.preventDefault();
+        this.log(`NAV-BLOCKED: ${url} -> forcing solving-colors`);
+        wc.loadURL(WORK_URL).catch(() => {});
+      }
+    });
+
+    wc.on("did-navigate", (_e, url) => {
+      this.currentUrl = url || "";
+      this.log(`NAV-TOP -> ${url || ""}`);
+      // Safety: if landed on non-colors ecnl page, redirect
+      if (url && /ecnlmediamarket\.com/i.test(url) && !COLORS_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+        this.log(`NAV-FIX: redirecting to solving-colors`);
+        wc.loadURL(WORK_URL).catch(() => {});
+      }
+    });
+
+    wc.on("did-redirect-navigation", (_e, url) => {
+      this.log(`NAV-REDIRECT -> ${url}`);
+      if (url && /ecnlmediamarket\.com/i.test(url) && !COLORS_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+        _e.preventDefault();
+        this.log(`NAV-REDIRECT-BLOCKED: ${url}`);
+        wc.loadURL(WORK_URL).catch(() => {});
+      }
+    });
+
+    wc.on("did-navigate-in-page", (_e, url) => {
+      this.currentUrl = url || "";
+      this.log(`NAV-INPAGE -> ${url || ""}`);
+      this.inject().catch(() => {});
+    });
+
+    wc.on("did-finish-load", () => {
+      this.currentUrl = wc.getURL() || "";
+      this.inject().catch(() => {});
+    });
+
+    wc.on("ipc-message", (_e, channel, _id, msg) => {
+      if (channel !== "vt-slot-msg") return;
+      if (msg && msg.type === "stale_refresh") {
+        this.log(`Page reported stale (src=${msg.src || "?"}). Recovery reload.`);
+        this.refreshPage(`page-stale:${msg.src || "?"}`, true);
+      } else if (msg && msg.type === "ensure_running") {
+        this.ensureRunning();
+      } else if (msg && msg.type === "vt_log") {
+        this.log(msg.msg || "");
+      }
+    });
+
+    wc.on("render-process-gone", (_e, details) => {
+      console.warn(`[${this.name}] renderer gone: reason=${details.reason} exit=${details.exitCode}`);
+      this.lastGoneTs = Date.now();
+      const now = Date.now();
+      if (this.reloadCooldownUntil && now < this.reloadCooldownUntil) return;
+      if (this.isLoopRunning && this.lastGoneTs - (this._lastReloadTs || 0) > 10000) {
+        this._lastReloadTs = this.lastGoneTs;
+        setTimeout(() => { try { this.wc.reload(); } catch (e) {} }, 1500);
+      }
+    });
+  }
+
+  wcIsAlive() {
+    try { return this.wc && !this.wc.isDestroyed(); } catch (e) { return false; }
+  }
+
+  setZoom(z) { this.zoom = z; try { this.wc.setZoomFactor(z); } catch (e) {} }
+  setHud(on) { this.hudEnabled = !!on; }
+  setDelay(mult) { this.delayMult = mult > 0 ? mult : 1; }
+
+  async inject() {
+    if (!this.wcIsAlive()) return;
+    try {
+      if (this.currentUrl.includes("ecnlmediamarket.com")) {
+        // Pass slot ID to the host bridge
+        await this.wc.executeJavaScript(
+          `if(window.__vtHost && window.__vtHost.setSlotId) window.__vtHost.setSlotId("${this.id}");`
+        ).catch(() => {});
+        // Inject credentials directly into page context for auto-login
+        const credsJson = JSON.stringify(this._creds || null);
+        await this.wc.executeJavaScript(
+          `window.__vtCreds = ${credsJson};`
+        ).catch(() => {});
+        await this.wc.executeJavaScript(INJECT_JS).catch(() => {});
+      }
+    } catch (e) {}
+  }
+
+  async api(method, arg) {
+    if (!this.wcIsAlive()) return null;
+    const js = `(async () => {
+      if (!window.__vtapi) return null;
+      try { return await window.__vtapi.${method}(${arg == null ? "" : JSON.stringify(arg)}); }
+      catch (e) { return null; }
+    })()`;
+    try { return await this.wc.executeJavaScript(js); } catch (e) { return null; }
+  }
+
+  ensureRunning() {
+    if (!this.isLoopRunning && !this.loopStopRequested) this.startLoop();
+  }
+
+  toggleLoop() {
+    if (this.isLoopRunning) this.stopLoop("Stopped by user.");
+    else this.startLoop();
+  }
+
+  startLoop() {
+    if (this.isLoopRunning) return;
+    if (!this.wcIsAlive()) return;
+    this.isLoopRunning = true;
+    this.isProcessing = false;
+    this.loopStopRequested = false;
+    this.loopStartTime = Date.now();
+    this.taskCount = 0;
+    this.correctCount = 0;
+    this.wrongCount = 0;
+    this.errorCount = 0;
+    this.lastPoints = { done: null, total: null };
+    this.lastSubmittedImageHash = null;
+    this.touchAction();
+    this.touchProgress();
+    this.startLiveTimer();
+    this.startKeeperClients();
+    this.status("Loop started. Scanning...");
+    this.startStaggered();
+    this.tickTimer = setInterval(() => {
+      if (!this.isLoopRunning) return;
+      this.log(`TICK url=${this.currentUrl || "?"}`);
+    }, 120000);
+  }
+
+  stopLoop(reason) {
+    this.isLoopRunning = false;
+    this.isProcessing = false;
+    this.loopStopRequested = true;
+    this.stopLiveTimer();
+    this.stopKeeperClients();
+    if (this.nextTimer) { clearTimeout(this.nextTimer); this.nextTimer = null; }
+    if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
+    this.status(`Stopped: ${reason}`);
+  }
+
+  setPaused(p) {
+    if (this.paused === p) return;
+    this.paused = p;
+    if (p) this.status("Paused (window hidden)");
+    else if (this.isLoopRunning) { this.status("Resuming..."); this.startStaggered(1500); }
+  }
+
+  // ---- HUD ----
+  startLiveTimer() {
+    this.stopLiveTimer();
+    this.hudTimer = setInterval(() => {
+      if (!this.isLoopRunning || this.paused) return;
+      const elapsed = this.loopStartTime ? Math.floor((Date.now() - this.loopStartTime) / 1000) : 0;
+      const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+      const ss = String(elapsed % 60).padStart(2, "0");
+      this.pushHud({ timerText: `${mm}:${ss}`, isRunning: true });
+    }, HUD_TICK_MS);
+  }
+
+  stopLiveTimer() { if (this.hudTimer) clearInterval(this.hudTimer); this.hudTimer = null; }
+
+  status(text) { this.lastHudText = text; this.pushHud({}); }
+
+  pushHud(partial) {
+    if (!this.hudEnabled || !this.wcIsAlive()) return;
+    const elapsed = this.loopStartTime ? Math.floor((Date.now() - this.loopStartTime) / 1000) : 0;
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+    const ss = String(elapsed % 60).padStart(2, "0");
+    const state = {
+      slotName: this.name,
+      statusText: partial.statusText !== undefined ? partial.statusText : this.lastHudText,
+      timerText: partial.timerText || `${mm}:${ss}`,
+      correctCount: this.correctCount,
+      wrongCount: this.wrongCount,
+      errorCount: this.errorCount,
+      isRunning: this.isLoopRunning
+    };
+    this.api("hud", state).catch(() => {});
+  }
+
+  // ---- keeper ----
+  startKeeperClients() {
+    this.stopKeeperClients();
+    this.heartbeatTimer = setInterval(() => this.sendKeeperHeartbeat(), HEARTBEAT_MS);
+    this.commandTimer = setInterval(() => this.pollKeeperCommand(), COMMAND_POLL_MS);
+    this.sendKeeperHeartbeat();
+  }
+
+  stopKeeperClients() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+    if (this.commandTimer) clearInterval(this.commandTimer);
+    this.commandTimer = null;
+  }
+
+  async sendKeeperHeartbeat() {
+    try {
+      await fetch(KEEPER_HEARTBEAT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ progress: this.lastProgressTs || 0 }),
+        cache: "no-store"
+      });
+    } catch (e) {}
+  }
+
+  async pollKeeperCommand() {
+    try {
+      const res = await fetch(KEEPER_COMMAND_URL, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.command === "reset" && this.isLoopRunning && !this.isProcessing) {
+        const now = Date.now();
+        const stallProgress = now - (this.lastProgressTs || 0);
+        const stallAction = now - (this.lastActionTs || 0);
+        if (stallProgress > STALL_RESET_MS && stallAction > STALL_RESET_MS) {
+          this.log(`HARD-RESET: no progress for ${Math.round(stallProgress / 1000)}s`);
+          this.hardRestart();
+        }
+      }
+    } catch (e) {}
+  }
+
+  // ---- report ----
+  async sendTaskReport(payload) {
+    try {
+      let battery = null;
+      try {
+        const b = await fetch("http://127.0.0.1:8177/battery", { cache: "no-store" });
+        const j = await b.json();
+        battery = j && j.battery != null ? j.battery : null;
+      } catch (e) {}
+      payload = Object.assign({}, payload, { battery, slot: this.name });
+      await fetch(`${SCANNER_URL}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store"
+      });
+    } catch (e) {}
+  }
+
+  captureAndSendReport(report) {
+    if (this.reportTimer) clearTimeout(this.reportTimer);
+    this.reportTimer = setTimeout(async () => {
+      let correct = null, theirs = null, withdrawable = null, pointsDone = null, pointsTotal = null;
+      try {
+        const v = await this.api("getVerdict");
+        if (v) { correct = v.correct == null ? null : !!v.correct; theirs = v.theirs || null; }
+      } catch (e) {}
+      try {
+        const m = await this.api("getTaskMeta");
+        if (m) {
+          withdrawable = m.withdrawable != null ? String(m.withdrawable) : null;
+          pointsDone = m.pointsDone != null ? String(m.pointsDone) : null;
+          pointsTotal = m.pointsTotal != null ? String(m.pointsTotal) : null;
+        }
+      } catch (e) {}
+      if (pointsDone == null) pointsDone = this.lastPoints.done;
+      if (pointsTotal == null) pointsTotal = this.lastPoints.total;
+
+      // Fallback: points rose = correct answer
+      if (correct == null) {
+        const oldV = parseInt(String(this.lastPoints.done || ""), 10);
+        const newV = parseInt(String(pointsDone || ""), 10);
+        if (isFinite(oldV) && isFinite(newV) && newV > oldV) {
+          correct = true;
+          this.log(`Verdict: points rose ${oldV}->${newV}; counted CORRECT.`);
+        }
+      }
+
+      if (correct === true) this.correctCount++;
+      else if (correct === false) this.wrongCount++;
+      this.pushHud({});
+
+      this.sendTaskReport(Object.assign({}, report, { correct, theirs, withdrawable, pointsDone, pointsTotal }));
+    }, 1500);
+  }
+
+  // ---- refresh ----
+  async refreshPage(reason, navigate) {
+    if (this.isProcessing) { this.log(`SUPPRESSED reload during iteration (${reason}).`); return; }
+    this.log(`RELOAD reason=${reason}${navigate ? " -> solving-colors" : ""}`);
+    if (!this.wcIsAlive()) return;
+    try { if (navigate) await this.wc.loadURL(WORK_URL); else this.wc.reload(); } catch (e) {}
+    this.touchAction();
+  }
+
+  async hardRestart() {
+    const wasRunning = this.isLoopRunning;
+    this.log(`HARD-RESTART wasRunning=${wasRunning}`);
+    this.isLoopRunning = false;
+    this.isProcessing = false;
+    this.stopLiveTimer();
+    this.stopKeeperClients();
+    if (!this.wcIsAlive()) return;
+    try { this.wc.reload(); } catch (e) {}
+    if (!wasRunning) return;
+    setTimeout(() => {
+      if (this.loopStopRequested || !wasRunning) return;
+      this.isLoopRunning = true;
+      this.isProcessing = false;
+      this.loopStartTime = Date.now();
+      this.taskCount = 0;
+      this.correctCount = 0;
+      this.wrongCount = 0;
+      this.errorCount = 0;
+      this.lastPoints = { done: null, total: null };
+      this.lastSubmittedImageHash = null;
+      this.touchAction();
+      this.touchProgress();
+      this.startLiveTimer();
+      this.startKeeperClients();
+      this.status("[Failsafe] Restarting loop...");
+      this.runIteration();
+    }, 5000);
+  }
+
+  async ensureWorkPage() {
+    if (!this.wcIsAlive()) return;
+    try { await this.wc.loadURL(WORK_URL); } catch (e) {}
+  }
+
+  touchAction() { this.lastActionTs = Date.now(); }
+  touchProgress() { this.lastProgressTs = Date.now(); }
+
+  async scanHealth() {
+    try { const res = await fetch(`${SCANNER_URL}/health`, { cache: "no-store" }); return res.ok; }
+    catch (e) { return false; }
+  }
+
+  startStaggered(delay) {
+    if (this.nextTimer) clearTimeout(this.nextTimer);
+    const d = delay != null ? delay : (this.id % 4) * 1500 + 500;
+    this.nextTimer = setTimeout(() => this.runIteration(), d);
+  }
+
+  scheduleNext(delay) {
+    if (!this.isLoopRunning) return;
+    let d = Math.round((delay || 0) * this.delayMult);
+    if (this.paused) {
+      if (!this.nextTimer) {
+        this.nextTimer = setTimeout(() => {
+          this.nextTimer = null;
+          if (this.paused) this.scheduleNext(5000);
+          else if (this.isLoopRunning) this.runIteration();
+        }, 5000);
+      }
+      return;
+    }
+    this.nextTimer = setTimeout(() => {
+      this.nextTimer = null;
+      if (this.isLoopRunning) this.runIteration();
+    }, d);
+  }
+
+  // ---- main loop ----
+  async runIteration() {
+    if (!this.isLoopRunning || this.isProcessing || this.paused) return;
+    if (!this.wcIsAlive()) return;
+    this.isProcessing = true;
+
+    try {
+      await this.inject();
+
+      let page = null;
+      try { page = await this.api("pageReady"); } catch (e) {}
+      const throttle = (tag) => {
+        const now = Date.now();
+        if (this._pageLogs[tag] && now - this._pageLogs[tag] < 30000) return;
+        this._pageLogs[tag] = now;
+        return true;
+      };
+
+      // Page checks - redirect to solving-colors if needed
+      if (!page || !page.isECNL) {
+        const curUrl = this.currentUrl || "";
+        const onECNL = /ecnlmediamarket\.com/i.test(curUrl);
+        if (onECNL) {
+          // On ECNL but __vtapi not ready yet — retry shortly
+          if (throttle("noecnl")) this.log(`PAGE __vtapi not ready on ECNL, retrying url=${curUrl}`);
+          this.status("Waiting for page script...");
+          this.isProcessing = false;
+          this.scheduleNext(1500);
+          return;
+        }
+        if (throttle("noecnl")) this.log(`PAGE noECNL url=${(page && page.url) || curUrl || "?"}`);
+        this.status("Not on ECNL. Loading solving-colors...");
+        await this.ensureWorkPage();
+        this.isProcessing = false;
+        this.scheduleNext(4000);
+        return;
+      }
+      if (page.isAuth) {
+        if (throttle("auth")) this.log(`PAGE auth url=${page.url || "?"}`);
+        this.status("Login page. Auto-login running, waiting...");
+        this.touchProgress();
+        this.isProcessing = false;
+        // After 8 seconds, if still on auth page, force redirect to solving-colors
+        this.scheduleNext(8000);
+        return;
+      }
+      if (!page.isWork) {
+        if (throttle("other")) this.log(`PAGE other url=${page.url || "?"}`);
+        this.status("Not on solving-colors. Redirecting...");
+        await this.ensureWorkPage();
+        this.isProcessing = false;
+        this.scheduleNext(4000);
+        return;
+      }
+
+      // Wait for input box
+      const inputReady = await this.waitForInputBox();
+      if (!inputReady) {
+        this.status("Input box not found. Refreshing...");
+        this.isProcessing = false;
+        this.touchAction();
+        await this.refreshPage("input-not-found", true);
+        this.scheduleNext(4000);
+        return;
+      }
+
+      this.status(`[${this.taskCount + 1}] Task ready. Checking scanner...`);
+
+      // Snapshot points
+      try {
+        const meta = await this.api("getTaskMeta");
+        if (meta) {
+          if (meta.pointsDone != null) this.lastPoints.done = String(meta.pointsDone);
+          if (meta.pointsTotal != null) this.lastPoints.total = String(meta.pointsTotal);
+        }
+      } catch (e) {}
+
+      const scannerOnline = await this.scanHealth();
+      if (!scannerOnline) {
+        this.status("Scanner OFFLINE. Run start.bat");
+        this.isProcessing = false;
+        this.scheduleNext(5000);
+        return;
+      }
+
+      // Grab image
+      this.status(`[${this.taskCount + 1}] Grabbing image...`);
+      let imageData = null;
+      try { imageData = await this.api("grabImage", true); imageData = imageData && imageData.imageData; } catch (e) {}
+      if (!imageData) {
+        this.consecutiveDetectFails++;
+        this.status(`[${this.taskCount + 1}] No image. Retry (${this.consecutiveDetectFails})`);
+        this.touchAction();
+        if (this.consecutiveDetectFails >= 3) {
+          this.log("No image 3x. Recovery reload.");
+          this.isProcessing = false;
+          await this.refreshPage("no-image-x3", true);
+          this.consecutiveDetectFails = 0;
+          this.scheduleNext(4000);
+          return;
+        }
+        this.isProcessing = false;
+        this.scheduleNext(1500);
+        return;
+      }
+
+      const curHash = hashImage(imageData);
+      if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
+        this.status("Same image. Waiting for next task...");
+        this.isProcessing = false;
+        this.scheduleNext(1500);
+        return;
+      }
+
+      const imgSizeKB = Math.round((imageData.length * 3 / 4) / 1024);
+      this.status(`[${this.taskCount + 1}] Image (${imgSizeKB}KB). Detecting...`);
+      this.touchAction();
+
+      // Detect — DON'T pass target_num, let scanner OCR it (same as Chrome extension)
+      let result;
+      try {
+        const scanRes = await fetch(`${SCANNER_URL}/detect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: imageData })
+        });
+        result = await scanRes.json();
+      } catch (e) {
+        this.status(`[${this.taskCount + 1}] Scanner connection failed.`);
+        this.isProcessing = false;
+        this.scheduleNext(3000);
+        return;
+      }
+
+      if (result.error) {
+        this.consecutiveDetectFails++;
+        this.log(`[${this.taskCount + 1}] Detect FAIL: ${result.error} ${result.message || ""}`);
+        this.status(`[${this.taskCount + 1}] Detection failed: ${result.message || result.error}`);
+        if (this.consecutiveDetectFails >= 3) {
+          this.log("Detection failed 3x. Recovery reload.");
+          this.isProcessing = false;
+          await this.refreshPage("detect-fail-x3", true);
+          this.consecutiveDetectFails = 0;
+          this.scheduleNext(4000);
+          return;
+        }
+        this.isProcessing = false;
+        this.scheduleNext(1500);
+        return;
+      }
+
+      // Build answer: task asks for the COLOR name at position N (same as VisionTapColor Chrome extension)
+      const color = result.color;
+      this.consecutiveDetectFails = 0;
+      this.taskCount++;
+      this.lastSubmittedImageHash = curHash;
+
+      if (!color || color === "unknown") {
+        this.status(`[${this.taskCount}] Unknown color detected. Skipping...`);
+        this.isProcessing = false;
+        this.scheduleNext(1500);
+        return;
+      }
+
+      const answer = color;
+      this.status(`[${this.taskCount}] DETECTED: ${answer}. Pasting...`);
+
+      // Fill and submit
+      let pasted = false;
+      try {
+        const r = await this.api("fill", answer);
+        pasted = !!(r && (r.status === "filled"));
+      } catch (e) {}
+
+      this.captureAndSendReport({
+        questionId: curHash != null ? String(curHash) : String(this.taskCount),
+        taskNum: this.taskCount,
+        color: answer,
+        image: imageData,
+        pasted,
+        ts: Date.now()
+      });
+
+      this.status(`[${this.taskCount}] Submitted: ${answer}. Next task...`);
+      this.touchAction();
+      this.touchProgress();
+      this.isProcessing = false;
+      this.scheduleNext(1200);
+      return;
+    } catch (err) {
+      console.error(`[${this.name}] Iteration error:`, err);
+      this.errorCount++;
+      this.status(`[${this.taskCount + 1}] Error: ${err.message}`);
+      this.isProcessing = false;
+      this.scheduleNext(3000);
+    }
+  }
+
+  async waitForInputBox() {
+    const deadline = Date.now() + 120000;
+    let lastInputHud = 0;
+    let lastDebugLog = 0;
+    while (this.isLoopRunning && !this.paused && Date.now() < deadline) {
+      let ready = false;
+      try {
+        const r = await this.api("checkInputReady");
+        ready = !!(r && r.ready);
+        if (!ready && Date.now() - lastDebugLog > 10000) {
+          lastDebugLog = Date.now();
+          this.log(`INPUT-CHECK ready=${r && r.ready} url=${(r && r.url) || "?"}`);
+        }
+      } catch (e) {
+        if (Date.now() - lastDebugLog > 10000) {
+          lastDebugLog = Date.now();
+          this.log(`INPUT-CHECK error: ${e.message}`);
+        }
+      }
+      if (ready) return true;
+      if (Date.now() - lastInputHud > 3000) {
+        lastInputHud = Date.now();
+        this.status("Waiting for task input box...");
+      }
+      this.touchProgress();
+      await sleep(600);
+    }
+    return false;
+  }
+
+  snapshot() {
+    return {
+      id: this.id,
+      name: this.name,
+      running: this.isLoopRunning,
+      paused: this.paused,
+      url: this.currentUrl || "",
+      taskCount: this.taskCount,
+      correctCount: this.correctCount,
+      wrongCount: this.wrongCount,
+      errorCount: this.errorCount,
+      status: this.lastHudText || "",
+      pointsDone: this.lastPoints.done,
+      pointsTotal: this.lastPoints.total,
+      hudEnabled: this.hudEnabled,
+      zoom: this.zoom,
+      delayMult: this.delayMult,
+      stopRequested: this.loopStopRequested
+    };
+  }
+}
+
+module.exports = { Slot, ensureScripts };
