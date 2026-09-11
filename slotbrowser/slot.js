@@ -452,7 +452,7 @@ class Slot {
 
   startStaggered(delay) {
     if (this.nextTimer) clearTimeout(this.nextTimer);
-    const d = delay != null ? delay : (this.id % 4) * 1500 + 500;
+    const d = delay != null ? delay : (this.id % 4) * 500 + 200;
     this.nextTimer = setTimeout(() => this.runIteration(), d);
   }
 
@@ -583,9 +583,9 @@ class Slot {
 
       const curHash = hashImage(imageData);
       if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
-        this.status("Same image. Waiting for next task...");
+      this.status("Same image. Waiting for next task...");
         this.isProcessing = false;
-        this.scheduleNext(2000);
+        this.scheduleNext(800);
         return;
       }
 
@@ -662,8 +662,7 @@ class Slot {
       this.touchAction();
       this.touchProgress();
       this.isProcessing = false;
-      this.scannerKill().catch(() => {});
-      this.scheduleNext(2500);
+      this.scheduleNext(800);
       return;
     } catch (err) {
       console.error(`[${this.name}] Iteration error:`, err);
@@ -699,7 +698,7 @@ class Slot {
         this.status("Waiting for task input box...");
       }
       this.touchProgress();
-      await sleep(600);
+      await sleep(200);
     }
     return false;
   }
