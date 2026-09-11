@@ -12,9 +12,9 @@ const WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const COLORS_RE = /\/solving-colors/;
 
 const STALL_RESET_MS = 120000;
-const HEARTBEAT_MS = 30000;
-const COMMAND_POLL_MS = 15000;
-const HUD_TICK_MS = 5000;
+const HEARTBEAT_MS = 60000;
+const COMMAND_POLL_MS = 30000;
+const HUD_TICK_MS = 10000;
 
 let INJECT_JS = "";
 
@@ -420,6 +420,29 @@ class Slot {
     catch (e) { return false; }
   }
 
+  async scannerEnsure() {
+    const online = await this.scanHealth();
+    if (online) return true;
+    try {
+      const { spawn } = require("child_process");
+      const scannerDir = path.join(__dirname, "..", "pcapp", "scanner");
+      const py = spawn("python", ["server.py"], { cwd: scannerDir, stdio: "ignore", detached: true });
+      py.unref();
+      for (let i = 0; i < 10; i++) {
+        await sleep(1000);
+        if (await this.scanHealth()) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  async scannerKill() {
+    try {
+      const { exec } = require("child_process");
+      await new Promise(r => exec("taskkill /f /im python.exe", r));
+    } catch (e) {}
+  }
+
   startStaggered(delay) {
     if (this.nextTimer) clearTimeout(this.nextTimer);
     const d = delay != null ? delay : (this.id % 4) * 1500 + 500;
@@ -522,9 +545,9 @@ class Slot {
         }
       } catch (e) {}
 
-      const scannerOnline = await this.scanHealth();
+      const scannerOnline = await this.scannerEnsure();
       if (!scannerOnline) {
-        this.status("Scanner OFFLINE. Run start.bat");
+        this.status("Scanner OFFLINE. Starting...");
         this.isProcessing = false;
         this.scheduleNext(5000);
         return;
@@ -547,7 +570,7 @@ class Slot {
           return;
         }
         this.isProcessing = false;
-        this.scheduleNext(1500);
+        this.scheduleNext(5000);
         return;
       }
 
@@ -555,7 +578,7 @@ class Slot {
       if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
         this.status("Same image. Waiting for next task...");
         this.isProcessing = false;
-        this.scheduleNext(1500);
+        this.scheduleNext(5000);
         return;
       }
 
@@ -632,7 +655,8 @@ class Slot {
       this.touchAction();
       this.touchProgress();
       this.isProcessing = false;
-      this.scheduleNext(1200);
+      this.scannerKill().catch(() => {});
+      this.scheduleNext(2500);
       return;
     } catch (err) {
       console.error(`[${this.name}] Iteration error:`, err);

@@ -61,6 +61,13 @@ app.commandLine.appendSwitch("renderer-process-limit=2");
 app.commandLine.appendSwitch("disable-dev-shm-usage");
 app.commandLine.appendSwitch("disable-accelerated-2d-canvas");
 app.commandLine.appendSwitch("disable-gpu-compositing");
+app.commandLine.appendSwitch("disable-gpu-vsync");
+app.commandLine.appendSwitch("disable-software-rasterizer");
+app.commandLine.appendSwitch("disable-animations");
+app.commandLine.appendSwitch("disable-smooth-scrolling");
+app.commandLine.appendSwitch("metrics-recording-only");
+app.commandLine.appendSwitch("disable-field-trial-config");
+app.commandLine.appendSwitch("disable-background-networking");
 
 function readSettings() { return settings; }
 

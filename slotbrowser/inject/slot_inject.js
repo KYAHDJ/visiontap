@@ -114,11 +114,7 @@
   }
 
   // ---- EXACT Chrome extension: 60-Second Inactivity Reload Watchdog ----
-  let idleTimer = setTimeout(() => window.location.reload(), 60000);
-  function resetIdleTimer() {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => window.location.reload(), 60000);
-  }
+  // REMOVED for battery saving — only reload on actual stall detection
 
   // ---- EXACT Chrome extension: ad_blocker nuke (DOM removal, same as ad_blocker.js) ----
   const AD_SELECTORS = [
@@ -157,13 +153,22 @@
   }
 
   nukeAds();
+  let _adObserver = null;
+  let _nukeCount = 0;
   try {
-    const observer = new MutationObserver(nukeAds);
+    _adObserver = new MutationObserver(() => {
+      _nukeCount++;
+      if (_nukeCount > 10) {
+        if (_adObserver) _adObserver.disconnect();
+        return;
+      }
+      nukeAds();
+    });
     if (document.body) {
-      observer.observe(document.body, { childList: true, subtree: true });
+      _adObserver.observe(document.body, { childList: true, subtree: true });
     } else {
       document.addEventListener('DOMContentLoaded', () => {
-        observer.observe(document.body, { childList: true, subtree: true });
+        if (document.body) _adObserver.observe(document.body, { childList: true, subtree: true });
       });
     }
   } catch (e) {}
@@ -356,7 +361,7 @@
     if (staleTimer) clearTimeout(staleTimer);
     staleTimer = setTimeout(() => {
       signal({ type: "stale_refresh", src: "staleTimer" });
-    }, 90000);
+    }, 300000);
   };
   resetStaleTimer();
   try { new MutationObserver(resetStaleTimer).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
