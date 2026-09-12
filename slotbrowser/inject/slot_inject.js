@@ -203,7 +203,6 @@
 
       const creds = (window.__vtCreds) || ((host && host.getCreds) ? await host.getCreds() : null);
       if (!creds || !creds.user || !creds.pass) {
-        signal({ type: "vt_log", msg: "No credentials configured." });
         return;
       }
 

@@ -49,7 +49,10 @@ class Slot {
       const path = require("path");
       const credsFile = path.join(__dirname, "state", "credentials.json");
       const allCreds = JSON.parse(fs.readFileSync(credsFile, "utf8"));
-      this._creds = allCreds[String(id)] || allCreds["1"] || null;
+      const slotCreds = allCreds[String(id)];
+      if (slotCreds && slotCreds.user && slotCreds.pass) {
+        this._creds = slotCreds;
+      }
     } catch (e) {}
 
     this.isLoopRunning = false;
