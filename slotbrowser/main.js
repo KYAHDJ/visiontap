@@ -136,24 +136,12 @@ function layout() {
   if (!win || win.isDestroyed()) return;
   const list = Array.from(slots.values());
   if (!list.length) return;
-  const { width: scrW, height: scrH } = screen.getPrimaryDisplay().workAreaSize;
-  const ch = Math.min(1000, Math.max(560, scrH * 0.85)) - TOOLBAR_H;
+  const [w, h] = win.getContentSize();
+  const ch = h - TOOLBAR_H;
   const phoneW = Math.round(Math.min(PHONE_W, ch * PHONE_ASPECT));
-  const cols = Math.min(list.length, Math.max(1, Math.floor((scrW - GUTTER) / (phoneW + GUTTER))));
+  const cols = Math.min(list.length, Math.max(1, Math.floor((w + GUTTER) / (phoneW + GUTTER))));
   const rows = Math.ceil(list.length / cols);
-  const targetW = Math.max(380, cols * (phoneW + GUTTER) + GUTTER);
-  const targetH = ch + TOOLBAR_H;
-  const newX = Math.round(scrW / 2 - targetW / 2);
-  const newY = Math.round(scrH / 2 - targetH / 2);
-  const [curW, curH] = win.getContentSize();
-  if (Math.abs(curW - targetW) > 5 || Math.abs(curH - targetH) > 5) {
-    win.setContentSize(targetW, targetH);
-  }
-  const [curX, curY] = win.getPosition();
-  if (Math.abs(curX - newX) > 10 || Math.abs(curY - newY) > 10) {
-    win.setPosition(newX, newY);
-  }
-  const cw = targetW / cols;
+  const cw = w / cols;
   const cellH = ch / rows;
   const slotW = Math.min(cw, Math.round(cellH * PHONE_ASPECT), phoneW);
   list.forEach((s, i) => {
@@ -168,7 +156,29 @@ function layout() {
   });
 }
 
-function autoFitWindow() { layout(); }
+function autoFitWindow() {
+  if (!win || win.isDestroyed() || win.isMaximized()) return;
+  const n = slots.size;
+  if (n === 0) return;
+  const { width: scrW, height: scrH } = screen.getPrimaryDisplay().workAreaSize;
+  const phoneW = Math.round(Math.min(PHONE_W, (scrH * 0.85 - TOOLBAR_H) * PHONE_ASPECT));
+  const cols = Math.min(n, Math.max(1, Math.floor((scrW - GUTTER) / (phoneW + GUTTER))));
+  const targetW = Math.max(380, cols * (phoneW + GUTTER) + GUTTER);
+  const targetH = Math.min(1000, Math.max(560, Math.round(scrH * 0.85)));
+  const newX = Math.round(scrW / 2 - targetW / 2);
+  const newY = Math.round(scrH / 2 - targetH / 2);
+  const [curW, curH] = win.getContentSize();
+  const [curX, curY] = win.getPosition();
+  const needResize = Math.abs(curW - targetW) > 5 || Math.abs(curH - targetH) > 5;
+  const needMove = Math.abs(curX - newX) > 10 || Math.abs(curY - newY) > 10;
+  if (needResize || needMove) {
+    win.setBounds({ x: newX, y: newY, width: targetW, height: targetH });
+    win.once("resize", () => layout());
+    setTimeout(() => layout(), 100);
+  } else {
+    layout();
+  }
+}
 
 function wireSession(ses) {
   ses.setSpellCheckerEnabled(false);
