@@ -24,5 +24,7 @@ contextBridge.exposeInMainWorld("visiontap", {
   restartAll: () => ipcRenderer.invoke("vt-server-restart"),
   stopAll: () => ipcRenderer.invoke("vt-server-stop"),
   startAll: () => ipcRenderer.invoke("vt-server-start"),
-  onServerAction: (cb) => ipcRenderer.on("vt-server-action", (_e, action) => cb(action))
+  onServerAction: (cb) => ipcRenderer.on("vt-server-action", (_e, action) => cb(action)),
+  setTaskMode: (mode) => ipcRenderer.invoke("vt-set-task-mode", mode),
+  getTaskMode: () => ipcRenderer.invoke("vt-get-task-mode")
 });

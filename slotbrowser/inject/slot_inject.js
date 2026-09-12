@@ -8,16 +8,18 @@
   const host = (window.__vtHost) || null;
   const signal = (msg) => { if (host && host.signal) { try { host.signal(msg); } catch (e) {} } };
 
-  const WORK_URL = "https://ecnlmediamarket.com/solving-colors";
+  const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
+  const MATH_WORK_URL = "https://ecnlmediamarket.com/solving-math";
+  const WORK_RE = /\/solving-(colors|math)/;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-  // ---- EXACT Chrome extension: stayOnColorsPage ----
+  // ---- Stay on work page (colors or math) ----
   try {
     const href = window.location.href;
     const AUTH_HINTS = ['login', 'signin', 'auth', 'account', 'password'];
     const isAuthPage = AUTH_HINTS.some(h => href.toLowerCase().includes(h));
-    if (href.includes("ecnlmediamarket.com") && !isAuthPage && !href.includes("/solving-colors")) {
-      window.location.href = WORK_URL;
+    if (href.includes("ecnlmediamarket.com") && !isAuthPage && !WORK_RE.test(href)) {
+      window.location.href = COLOR_WORK_URL;
     }
   } catch (e) {}
 
@@ -53,15 +55,93 @@
   async function grabTaskImage() {
     if (!isUIFullyLoaded()) return null;
 
+    // 1. Try canvas elements first (many task sites render on canvas)
+    const canvases = Array.from(document.querySelectorAll('canvas'));
+    for (const cvs of canvases) {
+      const rect = cvs.getBoundingClientRect ? cvs.getBoundingClientRect() : null;
+      if (!rect) continue;
+      // Skip tiny canvases (icons, decorations)
+      if (cvs.width < 100 || cvs.height < 100) continue;
+      // Skip canvases inside header/nav
+      let skip = false;
+      let el = cvs.parentElement;
+      for (let i = 0; i < 6 && el; i++) {
+        const tag = (el.tagName || '').toLowerCase();
+        const cls = (el.className || '').toLowerCase();
+        if (tag === 'header' || tag === 'nav' || cls.includes('header') || cls.includes('nav') || cls.includes('topbar')) {
+          skip = true; break;
+        }
+        el = el.parentElement;
+      }
+      if (skip) continue;
+      // Prefer canvases in the middle of the viewport
+      const viewH = window.innerHeight || 800;
+      const centerY = rect.top + rect.height / 2;
+      const relY = centerY / viewH;
+      if (relY > 0.15 && relY < 0.85) {
+        try {
+          return cvs.toDataURL('image/png');
+        } catch (e) {}
+      }
+    }
+
+    // 2. Try img elements
     const imgs = Array.from(document.querySelectorAll('img'));
     let targetImg = imgs.find(img => /magic-colors|magiccount/i.test(img.src));
 
     if (!targetImg) {
-      targetImg = imgs.find(img => {
+      const badKeywords = ['avatar', 'logo', 'profile', 'icon', 'ecnl', 'ec&l', 'brand', 'header', 'banner', 'favicon', 'loading', 'spinner', 'default', 'placeholder', 'watermark'];
+      
+      let bestImg = null;
+      let bestScore = -1;
+      
+      for (const img of imgs) {
         const src = (img.src || '').toLowerCase();
-        const isBadImage = src.includes('avatar') || src.includes('logo') || src.includes('profile') || src.includes('icon');
-        return !isBadImage && (img.naturalWidth >= 300 || img.width >= 300);
-      });
+        const alt = (img.alt || '').toLowerCase();
+        const parent = (img.parentElement && img.parentElement.className || '').toLowerCase();
+        const rect = img.getBoundingClientRect ? img.getBoundingClientRect() : null;
+        
+        if (badKeywords.some(kw => src.includes(kw) || alt.includes(kw) || parent.includes(kw))) continue;
+        if (img.src && img.src.startsWith('data:image') && img.src.length < 5000) continue;
+        
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (w < 100 || h < 100 || w > 1200 || h > 1200) continue;
+        
+        let skipParent = false;
+        let el = img.parentElement;
+        for (let i = 0; i < 6 && el; i++) {
+          const tag = (el.tagName || '').toLowerCase();
+          const cls = (el.className || '').toLowerCase();
+          if (tag === 'header' || tag === 'nav' || cls.includes('header') || cls.includes('nav') || cls.includes('topbar') || cls.includes('toolbar')) {
+            skipParent = true; break;
+          }
+          el = el.parentElement;
+        }
+        if (skipParent) continue;
+        
+        let score = 0;
+        if (rect) {
+          const viewH = window.innerHeight || 800;
+          const centerY = rect.top + rect.height / 2;
+          const relY = centerY / viewH;
+          if (relY > 0.25 && relY < 0.75) score += 30;
+          else if (relY > 0.15 && relY < 0.85) score += 10;
+          else score -= 20;
+        }
+        
+        const aspect = w / Math.max(h, 1);
+        if (aspect > 0.8 && aspect < 1.2) score -= 15;
+        if (aspect >= 1.2 && aspect <= 2.5) score += 10;
+        if (w >= 200 && w <= 700) score += 10;
+        
+        if (score > bestScore) {
+          bestScore = score;
+          bestImg = img;
+        }
+      }
+      
+      targetImg = bestImg;
     }
 
     if (!targetImg || targetImg.naturalWidth < 100) return null;
@@ -221,8 +301,8 @@
             const AUTH_HINTS = ['login', 'signin', 'auth', 'account', 'password'];
             const stillAuth = AUTH_HINTS.some(h2 => window.location.href.toLowerCase().includes(h2));
             if (stillAuth) continue;
-            if (!window.location.href.includes("/solving-colors")) {
-              window.location.href = WORK_URL;
+            if (!WORK_RE.test(window.location.href)) {
+              window.location.href = COLOR_WORK_URL;
             }
             return;
           }
@@ -230,8 +310,8 @@
         await sleep(1500);
       }
 
-      if (!window.location.href.includes("/solving-colors")) {
-        window.location.href = WORK_URL;
+      if (!WORK_RE.test(window.location.href)) {
+        window.location.href = COLOR_WORK_URL;
       }
     } catch (e) {}
   })();
@@ -241,7 +321,7 @@
     const text = document.body ? (document.body.innerText || "") : "";
     if (/Service Unavailable|maintenance downtime|capacity problems|Apache Server at/.test(text)) {
       signal({ type: "stale_refresh", src: "srvErr" });
-      setTimeout(() => { window.location.href = WORK_URL; }, 1500);
+      setTimeout(() => { window.location.href = COLOR_WORK_URL; }, 1500);
     }
   })();
 
@@ -309,6 +389,31 @@
 
   vt.grabImage = async () => ({ imageData: await grabTaskImage() });
 
+  // DEBUG: list all images on page
+  vt.debugListImages = () => {
+    const imgs = Array.from(document.querySelectorAll('img'));
+    return imgs.map(img => ({
+      src: (img.src || '').substring(0, 200),
+      alt: img.alt || '',
+      w: img.naturalWidth || img.width,
+      h: img.naturalHeight || img.height,
+      parentClass: (img.parentElement && img.parentElement.className) || '',
+      visible: img.offsetParent !== null,
+      rect: img.getBoundingClientRect ? { x: Math.round(img.getBoundingClientRect().x), y: Math.round(img.getBoundingClientRect().y), w: Math.round(img.getBoundingClientRect().width), h: Math.round(img.getBoundingClientRect().height) } : null
+    }));
+  };
+
+  // DEBUG: capture entire viewport as image
+  vt.debugCaptureViewport = async () => {
+    try {
+      const canvas = await html2canvas(document.body);
+      return canvas.toDataURL('image/png');
+    } catch (e) {
+      // Fallback: use old approach
+      return null;
+    }
+  };
+
   vt.fill = async (answer) => {
     if (!answer || answer === "undefined" || answer === "null" || answer === "0" || answer === "NaN") {
       return { status: "blocked" };
@@ -348,7 +453,7 @@
   vt.pageReady = () => ({
     url: window.location.href,
     isECNL: window.location.href.includes("ecnlmediamarket.com"),
-    isWork: /\/solving-colors/.test(window.location.href),
+    isWork: WORK_RE.test(window.location.href),
     isAuth: /login|signin|auth|account|password/i.test(window.location.href) || !!(document && document.querySelector('input[type="password"]'))
   });
 
@@ -365,6 +470,20 @@
   resetStaleTimer();
   try { new MutationObserver(resetStaleTimer).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
   setInterval(checkSqlState, 5000);
+
+  function centerTaskArea() {
+    var target = document.querySelector('input[placeholder*="Answer"]') ||
+                 document.querySelector('input[placeholder*="answer"]') ||
+                 document.querySelector('input[placeholder*="Enter"]') ||
+                 document.querySelector('input[type="text"]') ||
+                 document.querySelector('button[type="submit"]') ||
+                 document.querySelector('form');
+    if (target) {
+      target.scrollIntoView({ behavior: 'auto', block: 'center' });
+    }
+  }
+  setInterval(centerTaskArea, 1500);
+  try { new MutationObserver(centerTaskArea).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
 
   window.__vtapi = vt;
 })();

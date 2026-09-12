@@ -62,6 +62,11 @@ body {
 .btn.ctrl.danger { background: #991b1b; border-color: #ef4444; color: #fee2e2; }
 .btn.ctrl.danger:hover { background: #ef4444; color: #fff; }
 
+.mode-toggle { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid #475569; margin-left: 4px; margin-right: 4px; }
+.mode-btn { padding: 4px 12px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; background: #1e293b; color: #94a3b8; transition: all 0.15s; }
+.mode-btn.active { background: #0e7490; color: #ecfeff; }
+.mode-btn:hover:not(.active) { background: #334155; }
+
 #slotChrome {
   position: fixed;
   top: 48px; left: 0; right: 0;

@@ -9,8 +9,9 @@ const { execFile } = require("child_process");
 
 const { Slot, ensureScripts } = require("./slot.js");
 
-const WORK_URL = "https://ecnlmediamarket.com/solving-colors";
-const COLORS_RE = /\/solving-colors/;
+const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
+const MATH_WORK_URL = "https://ecnlmediamarket.com/solving-math";
+const WORK_RE = /\/solving-(colors|math)/;
 
 const STATE_DIR = path.join(app.getPath("userData"), "state");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
@@ -25,7 +26,7 @@ function writeJson(file, data) {
   try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch (e) {}
 }
 
-let settings = readJson(SETTINGS_FILE, { adBlock: true });
+let settings = readJson(SETTINGS_FILE, { adBlock: true, taskMode: "color" });
 
 const INJECT_PATH = path.join(__dirname, "inject", "slot_inject.js");
 
@@ -128,8 +129,8 @@ function broadcastState() {
 
 // ---- Grid layout ----
 const TOOLBAR_H = 82;
-const PHONE_W = 360;
-const PHONE_ASPECT = 0.52;
+const PHONE_W = 480;
+const PHONE_ASPECT = 0.7;
 const GUTTER = 8;
 
 function layout() {
@@ -192,24 +193,24 @@ function createSlot(id, name, stopRequested, opts) {
     }
   });
 
-  // Block popups and non-solving-colors navigation
+  // Block popups and non-solving-colors/math navigation
   view.webContents.setWindowOpenHandler(({ url }) => {
     appendLog(`[${name}]`, `POPUP-DENIED: ${url}`);
-    if (COLORS_RE.test(url) || /(login|signin|auth)/i.test(url)) {
+    if (WORK_RE.test(url) || /(login|signin|auth)/i.test(url)) {
       view.webContents.loadURL(url).catch(() => {});
     } else if (/ecnlmediamarket\.com/i.test(url)) {
-      appendLog(`[${name}]`, `REDIRECT non-colors -> solving-colors: ${url}`);
-      view.webContents.loadURL(WORK_URL).catch(() => {});
+      appendLog(`[${name}]`, `REDIRECT non-work -> work page: ${url}`);
+      view.webContents.loadURL(COLOR_WORK_URL).catch(() => {});
     }
     return { action: "deny" };
   });
 
-  // Block navigation away from solving-colors (allow login pages)
+  // Block navigation away from solving-colors/math (allow login pages)
   view.webContents.on("will-navigate", (_e, url) => {
-    if (url && /ecnlmediamarket\.com/i.test(url) && !COLORS_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+    if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
       _e.preventDefault();
       appendLog(`[${name}]`, `NAV-BLOCKED: ${url}`);
-      view.webContents.loadURL(WORK_URL).catch(() => {});
+      view.webContents.loadURL(COLOR_WORK_URL).catch(() => {});
     }
   });
 
@@ -226,6 +227,7 @@ function createSlot(id, name, stopRequested, opts) {
   slot.setZoom(s.zoom ? Number(s.zoom) : defZoom);
   slot.setHud(s.hud !== false);
   slot.setDelay(s.delayMult ? Number(s.delayMult) : defDelay);
+  slot.taskMode = settings.taskMode || "color";
 
   if (stopRequested) {
     slot.loopStopRequested = true;
@@ -241,8 +243,8 @@ function createSlot(id, name, stopRequested, opts) {
   layout();
   broadcastState();
 
-  // Always load solving-colors
-  slot.view.webContents.loadURL(WORK_URL).catch(() => {});
+  // Always load work page (color or math based on mode)
+  slot.view.webContents.loadURL(slot.getWorkUrl()).catch(() => {});
   return slot;
 }
 
@@ -388,7 +390,7 @@ function initIpc() {
   ipcMain.handle("vt-win-close", () => { if (win) win.close(); });
   ipcMain.handle("vt-server-restart", () => {
     if (win) win.webContents.send("vt-server-action", "restart");
-    for (const [id, slot] of slots) { slot.reload(); }
+    for (const [id, slot] of slots) { slot.refreshPage("manual-restart", true); }
   });
   ipcMain.handle("vt-server-stop", () => {
     if (win) win.webContents.send("vt-server-action", "stop");
@@ -401,6 +403,21 @@ function initIpc() {
     for (const [id, slot] of slots) { slot.setPaused(false); slot.ensureRunning(); }
   });
   ipcMain.handle("vt-win-minimize-to-tray", () => { if (win) win.hide(); });
+  ipcMain.handle("vt-set-task-mode", (_e, mode) => {
+    settings.taskMode = (mode === "math") ? "math" : "color";
+    writeJson(SETTINGS_FILE, settings);
+    for (const [, s] of slots) { s.taskMode = settings.taskMode; }
+    return { taskMode: settings.taskMode };
+  });
+  ipcMain.handle("vt-get-task-mode", () => ({ taskMode: settings.taskMode || "color" }));
+  ipcMain.handle("vt-debug-images", async () => {
+    const firstSlot = slots.values().next().value;
+    if (!firstSlot) return { error: "no slots" };
+    try {
+      const images = await firstSlot.api("debugListImages");
+      return { images, slotUrl: firstSlot.currentUrl };
+    } catch (e) { return { error: e.message }; }
+  });
   ipcMain.handle("vt-settings-set-start-minimized", (_e, enabled) => {
     settings.startMinimized = !!enabled;
     startMinimized = !!enabled;

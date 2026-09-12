@@ -1,6 +1,6 @@
 // VisionTap Slot - per-slot loop controller.
 // Drives one WebContentsView: waits for task, OCRs via local scanner,
-// fills answer, reports result. Locked to solving-colors only.
+// fills answer, reports result. Supports color and math modes.
 
 const fs = require("fs");
 const path = require("path");
@@ -8,8 +8,9 @@ const path = require("path");
 const SCANNER_URL = "http://127.0.0.1:5566";
 const KEEPER_HEARTBEAT_URL = "http://127.0.0.1:8177/heartbeat";
 const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
-const WORK_URL = "https://ecnlmediamarket.com/solving-colors";
-const COLORS_RE = /\/solving-colors/;
+const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
+const MATH_WORK_URL = "https://ecnlmediamarket.com/solving-math";
+const WORK_RE = /\/solving-(colors|math)/;
 
 const STALL_RESET_MS = 120000;
 const HEARTBEAT_MS = 30000;
@@ -43,6 +44,7 @@ class Slot {
     this.log = (msg) => { if (this.logger) this.logger(msg); else console.warn(msg); };
 
     this._creds = null;
+    this.taskMode = "color";
 
     this.isLoopRunning = false;
     this.isProcessing = false;
@@ -75,35 +77,39 @@ class Slot {
     this._scannerPid = null;
   }
 
+  getWorkUrl() {
+    return this.taskMode === "math" ? MATH_WORK_URL : COLOR_WORK_URL;
+  }
+
   attach() {
     const wc = this.wc;
 
-    // Block any navigation away from solving-colors (allow login pages)
+    // Block any navigation away from solving-colors/math (allow login pages)
     wc.on("will-navigate", (_e, url) => {
       this.log(`NAV-WILL -> ${url}`);
-      if (url && /ecnlmediamarket\.com/i.test(url) && !COLORS_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
         _e.preventDefault();
-        this.log(`NAV-BLOCKED: ${url} -> forcing solving-colors`);
-        wc.loadURL(WORK_URL).catch(() => {});
+        this.log(`NAV-BLOCKED: ${url} -> forcing work page`);
+        wc.loadURL(this.getWorkUrl()).catch(() => {});
       }
     });
 
     wc.on("did-navigate", (_e, url) => {
       this.currentUrl = url || "";
       this.log(`NAV-TOP -> ${url || ""}`);
-      // Safety: if landed on non-colors ecnl page, redirect
-      if (url && /ecnlmediamarket\.com/i.test(url) && !COLORS_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
-        this.log(`NAV-FIX: redirecting to solving-colors`);
-        wc.loadURL(WORK_URL).catch(() => {});
+      // Safety: if landed on non-work ecnl page, redirect
+      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+        this.log(`NAV-FIX: redirecting to work page`);
+        wc.loadURL(this.getWorkUrl()).catch(() => {});
       }
     });
 
     wc.on("did-redirect-navigation", (_e, url) => {
       this.log(`NAV-REDIRECT -> ${url}`);
-      if (url && /ecnlmediamarket\.com/i.test(url) && !COLORS_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
         _e.preventDefault();
         this.log(`NAV-REDIRECT-BLOCKED: ${url}`);
-        wc.loadURL(WORK_URL).catch(() => {});
+        wc.loadURL(this.getWorkUrl()).catch(() => {});
       }
     });
 
@@ -365,7 +371,7 @@ class Slot {
     if (this.isProcessing) { this.log(`SUPPRESSED reload during iteration (${reason}).`); return; }
     this.log(`RELOAD reason=${reason}${navigate ? " -> solving-colors" : ""}`);
     if (!this.wcIsAlive()) return;
-    try { if (navigate) await this.wc.loadURL(WORK_URL); else this.wc.reload(); } catch (e) {}
+    try { if (navigate) await this.wc.loadURL(this.getWorkUrl()); else this.wc.reload(); } catch (e) {}
     this.touchAction();
   }
 
@@ -389,7 +395,10 @@ class Slot {
       this.wrongCount = 0;
       this.errorCount = 0;
       this.lastPoints = { done: null, total: null };
-      this.lastSubmittedImageHash = null;
+    this.lastSubmittedImageHash = null;
+    this.lastSubmittedAnswer = null;
+    this.lastTaskCorrect = false;
+    this.lastPointsDoneBeforeSubmit = null;
       this.touchAction();
       this.touchProgress();
       this.startLiveTimer();
@@ -401,7 +410,7 @@ class Slot {
 
   async ensureWorkPage() {
     if (!this.wcIsAlive()) return;
-    try { await this.wc.loadURL(WORK_URL); } catch (e) {}
+    try { await this.wc.loadURL(this.getWorkUrl()); } catch (e) {}
   }
 
   touchAction() { this.lastActionTs = Date.now(); }
@@ -485,7 +494,7 @@ class Slot {
         return true;
       };
 
-      // Page checks - redirect to solving-colors if needed
+      // Page checks - redirect to work page if needed
       if (!page || !page.isECNL) {
         const curUrl = this.currentUrl || "";
         const onECNL = /ecnlmediamarket\.com/i.test(curUrl);
@@ -498,7 +507,7 @@ class Slot {
           return;
         }
         if (throttle("noecnl")) this.log(`PAGE noECNL url=${(page && page.url) || curUrl || "?"}`);
-        this.status("Not on ECNL. Loading solving-colors...");
+        this.status("Not on ECNL. Loading work page...");
         await this.ensureWorkPage();
         this.isProcessing = false;
         this.scheduleNext(4000);
@@ -515,7 +524,7 @@ class Slot {
       }
       if (!page.isWork) {
         if (throttle("other")) this.log(`PAGE other url=${page.url || "?"}`);
-        this.status("Not on solving-colors. Redirecting...");
+        this.status("Not on work page. Redirecting...");
         await this.ensureWorkPage();
         this.isProcessing = false;
         this.scheduleNext(4000);
@@ -541,6 +550,14 @@ class Slot {
         if (meta) {
           if (meta.pointsDone != null) this.lastPoints.done = String(meta.pointsDone);
           if (meta.pointsTotal != null) this.lastPoints.total = String(meta.pointsTotal);
+          // Check if points increased since last submission → last answer was correct
+          if (this.lastPointsDoneBeforeSubmit !== null && meta.pointsDone != null) {
+            const prev = parseInt(this.lastPointsDoneBeforeSubmit, 10);
+            const curr = parseInt(String(meta.pointsDone), 10);
+            if (!isNaN(prev) && !isNaN(curr) && curr > prev) {
+              this.lastTaskCorrect = true;
+            }
+          }
         }
       } catch (e) {}
 
@@ -556,6 +573,20 @@ class Slot {
       this.status(`[${this.taskCount + 1}] Grabbing image...`);
       let imageData = null;
       try { imageData = await this.api("grabImage", true); imageData = imageData && imageData.imageData; } catch (e) {}
+
+      // DEBUG: Save captured image to disk
+      if (imageData) {
+        try {
+          const fs = require("fs");
+          const matches = imageData.match(/^data:image\/\w+;base64,(.+)$/);
+          if (matches) {
+            const buf = Buffer.from(matches[1], "base64");
+            fs.writeFileSync("C:\\VisionTap\\pcapp\\scanner\\debug_captured_task.png", buf);
+            this.log(`[DEBUG] Saved captured task image (${buf.length} bytes)`);
+          }
+        } catch (e) { this.log(`[DEBUG] Save failed: ${e.message}`); }
+      }
+
       if (!imageData) {
         this.consecutiveDetectFails++;
         this.status(`[${this.taskCount + 1}] No image. Retry (${this.consecutiveDetectFails})`);
@@ -575,20 +606,25 @@ class Slot {
 
       const curHash = hashImage(imageData);
       if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
-      this.status("Same image. Waiting for next task...");
-        this.isProcessing = false;
-        this.scheduleNext(800);
-        return;
+        if (this.lastTaskCorrect) {
+          this.status("Same image, already correct. Waiting for next task...");
+          this.isProcessing = false;
+          this.scheduleNext(800);
+          return;
+        }
+        // Same image but last answer was wrong — retry detection
+        this.status(`[${this.taskCount + 1}] Same image, retrying detection...`);
       }
 
       const imgSizeKB = Math.round((imageData.length * 3 / 4) / 1024);
       this.status(`[${this.taskCount + 1}] Image (${imgSizeKB}KB). Detecting...`);
       this.touchAction();
 
-      // Detect — DON'T pass target_num, let scanner OCR it (same as Chrome extension)
+      // Detect — route based on taskMode (color or math)
+      const endpoint = this.taskMode === "math" ? "/detect_math" : "/detect";
       let result;
       try {
-        const scanRes = await fetch(`${SCANNER_URL}/detect`, {
+        const scanRes = await fetch(`${SCANNER_URL}${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image: imageData })
@@ -618,21 +654,53 @@ class Slot {
         return;
       }
 
-      // Build answer: task asks for the COLOR name at position N (same as VisionTapColor Chrome extension)
-      const color = result.color;
+      // Build answer based on taskMode
+      let answer;
+      if (this.taskMode === "math") {
+        answer = result.answer;
+        if (!answer && result.error) {
+          this.consecutiveDetectFails++;
+          this.log(`[${this.taskCount + 1}] Math detect FAIL: ${result.error}`);
+          this.status(`[${this.taskCount + 1}] Math detection failed: ${result.error}`);
+          if (this.consecutiveDetectFails >= 3) {
+            this.log("Math detection failed 3x. Recovery reload.");
+            this.isProcessing = false;
+            await this.refreshPage("detect-fail-x3", true);
+            this.consecutiveDetectFails = 0;
+            this.scheduleNext(4000);
+            return;
+          }
+          this.isProcessing = false;
+          this.scheduleNext(1500);
+          return;
+        }
+        if (result.confidence !== undefined && result.confidence < 0.5) {
+          this.log(`[${this.taskCount + 1}] Low confidence (${result.confidence}). Skipping.`);
+          this.status(`[${this.taskCount + 1}] Low confidence. Skipping...`);
+          this.isProcessing = false;
+          this.scheduleNext(2000);
+          return;
+        }
+      } else {
+        answer = result.color;
+      }
       this.consecutiveDetectFails = 0;
       this.taskCount++;
       this.lastSubmittedImageHash = curHash;
+      this.lastSubmittedAnswer = answer;
 
-      if (!color || color === "unknown") {
-        this.status(`[${this.taskCount}] Unknown color detected. Skipping...`);
+      if (!answer || answer === "unknown") {
+        this.status(`[${this.taskCount}] Unknown result. Skipping...`);
         this.isProcessing = false;
         this.scheduleNext(1500);
         return;
       }
 
-      const answer = color;
       this.status(`[${this.taskCount}] DETECTED: ${answer}. Pasting...`);
+
+      // Save points before submit to detect correctness next iteration
+      this.lastPointsDoneBeforeSubmit = this.lastPoints.done;
+      this.lastTaskCorrect = false;
 
       // Fill and submit
       let pasted = false;

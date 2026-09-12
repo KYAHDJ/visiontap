@@ -284,6 +284,23 @@
     const restartBtn = document.getElementById("restartBtn");
     const stopBtn = document.getElementById("stopBtn");
     const startBtn = document.getElementById("startBtn");
+    const modeToggle = document.getElementById("modeToggle");
+    if (modeToggle) {
+      vt.getTaskMode().then((r) => {
+        const m = (r && r.taskMode) || "color";
+        modeToggle.querySelectorAll(".mode-btn").forEach((b) => {
+          b.classList.toggle("active", b.dataset.mode === m);
+        });
+      });
+      modeToggle.addEventListener("click", (e) => {
+        const btn = e.target.closest(".mode-btn");
+        if (!btn || !btn.dataset.mode) return;
+        vt.setTaskMode(btn.dataset.mode).then(() => {
+          modeToggle.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+        });
+      });
+    }
     if (restartBtn) restartBtn.addEventListener("click", () => { restartBtn.textContent = "…"; vt.restartAll().then(() => { setTimeout(() => { restartBtn.innerHTML = "&#8635;"; }, 1500); }); });
     if (stopBtn) stopBtn.addEventListener("click", () => { stopBtn.textContent = "…"; vt.stopAll().then(() => { setTimeout(() => { stopBtn.innerHTML = "&#9632;"; }, 1500); }); });
     if (startBtn) startBtn.addEventListener("click", () => { startBtn.textContent = "…"; vt.startAll().then(() => { setTimeout(() => { startBtn.innerHTML = "&#9654;"; }, 1500); }); });
