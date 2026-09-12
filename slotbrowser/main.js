@@ -133,21 +133,27 @@ const PHONE_ASPECT = 0.52;
 const GUTTER = 8;
 
 function layout() {
-  if (!win) return;
-  const [w, h] = win.getContentSize();
+  if (!win || win.isDestroyed()) return;
   const list = Array.from(slots.values());
   if (!list.length) return;
-  const ch = h - TOOLBAR_H;
+  const { width: scrW, height: scrH } = screen.getPrimaryDisplay().workAreaSize;
+  const ch = Math.min(1000, Math.max(560, scrH * 0.85)) - TOOLBAR_H;
   const phoneW = Math.round(Math.min(PHONE_W, ch * PHONE_ASPECT));
-  let cols;
-  if (settings.gridColumns > 0) {
-    cols = settings.gridColumns;
-  } else {
-    cols = Math.max(1, Math.min(list.length, Math.floor((w + GUTTER) / (phoneW + GUTTER))));
-  }
-  cols = Math.min(cols, list.length);
+  const cols = Math.min(list.length, Math.max(1, Math.floor((scrW - GUTTER) / (phoneW + GUTTER))));
   const rows = Math.ceil(list.length / cols);
-  const cw = w / cols;
+  const targetW = Math.max(380, cols * (phoneW + GUTTER) + GUTTER);
+  const targetH = ch + TOOLBAR_H;
+  const newX = Math.round(scrW / 2 - targetW / 2);
+  const newY = Math.round(scrH / 2 - targetH / 2);
+  const [curW, curH] = win.getContentSize();
+  if (Math.abs(curW - targetW) > 5 || Math.abs(curH - targetH) > 5) {
+    win.setContentSize(targetW, targetH);
+  }
+  const [curX, curY] = win.getPosition();
+  if (Math.abs(curX - newX) > 10 || Math.abs(curY - newY) > 10) {
+    win.setPosition(newX, newY);
+  }
+  const cw = targetW / cols;
   const cellH = ch / rows;
   const slotW = Math.min(cw, Math.round(cellH * PHONE_ASPECT), phoneW);
   list.forEach((s, i) => {
@@ -162,24 +168,7 @@ function layout() {
   });
 }
 
-function autoFitWindow() {
-  if (!win || win.isDestroyed() || win.isMaximized()) return;
-  if (settings.gridColumns > 0) return;
-  const n = slots.size;
-  if (n === 0) return;
-  const [, h] = win.getContentSize();
-  const phoneW = Math.round(Math.min(PHONE_W, (h - TOOLBAR_H) * PHONE_ASPECT));
-  const want = n * (phoneW + GUTTER) + GUTTER;
-  const { width: scrW, height: scrH } = screen.getPrimaryDisplay().workAreaSize;
-  const newW = Math.max(380, Math.min(want, scrW));
-  const newH = Math.min(1000, Math.max(560, h));
-  const newX = Math.round(scrW / 2 - newW / 2);
-  const newY = Math.round(scrH / 2 - newH / 2);
-  const [curW] = win.getContentSize();
-  if (Math.abs(curW - newW) > 5) win.setContentSize(newW, newH);
-  const [curX, curY] = win.getPosition();
-  if (Math.abs(curX - newX) > 10 || Math.abs(curY - newY) > 10) win.setPosition(newX, newY);
-}
+function autoFitWindow() { layout(); }
 
 function wireSession(ses) {
   ses.setSpellCheckerEnabled(false);
@@ -256,7 +245,7 @@ function createSlot(id, name, stopRequested, opts) {
   ghosts.delete(id);
   slotSeq = Math.max(slotSeq, Number(id) + 1);
   autoFitWindow();
-  setTimeout(() => layout(), 50);
+  layout();
   broadcastState();
 
   // Always load solving-colors
@@ -274,7 +263,7 @@ function removeSlot(id) {
   try { win.contentView.removeChildView(v); } catch (e) {}
   if (!v.webContents.isDestroyed()) v.webContents.close({ waitForBeforeunload: false });
   autoFitWindow();
-  setTimeout(() => layout(), 50);
+  layout();
   broadcastState();
   writeSlotsFile();
 }
