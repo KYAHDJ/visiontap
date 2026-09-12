@@ -256,7 +256,7 @@ function createSlot(id, name, stopRequested, opts) {
   ghosts.delete(id);
   slotSeq = Math.max(slotSeq, Number(id) + 1);
   autoFitWindow();
-  layout();
+  setTimeout(() => layout(), 50);
   broadcastState();
 
   // Always load solving-colors
@@ -274,7 +274,7 @@ function removeSlot(id) {
   try { win.contentView.removeChildView(v); } catch (e) {}
   if (!v.webContents.isDestroyed()) v.webContents.close({ waitForBeforeunload: false });
   autoFitWindow();
-  layout();
+  setTimeout(() => layout(), 50);
   broadcastState();
   writeSlotsFile();
 }
