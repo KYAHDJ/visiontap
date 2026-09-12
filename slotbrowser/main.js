@@ -167,7 +167,7 @@ function autoFitWindow() {
   if (settings.gridColumns > 0) return;
   const n = slots.size;
   if (n === 0) return;
-  const [curW, h] = win.getContentSize();
+  const [, h] = win.getContentSize();
   const phoneW = Math.round(Math.min(PHONE_W, (h - TOOLBAR_H) * PHONE_ASPECT));
   const want = n * (phoneW + GUTTER) + GUTTER;
   const { width: scrW, height: scrH } = screen.getPrimaryDisplay().workAreaSize;
@@ -175,7 +175,8 @@ function autoFitWindow() {
   const newH = Math.min(1000, Math.max(560, h));
   const newX = Math.round(scrW / 2 - newW / 2);
   const newY = Math.round(scrH / 2 - newH / 2);
-  if (Math.abs(curW - newW) > 5) win.setContentSize(newW, h);
+  const [curW] = win.getContentSize();
+  if (Math.abs(curW - newW) > 5) win.setContentSize(newW, newH);
   const [curX, curY] = win.getPosition();
   if (Math.abs(curX - newX) > 10 || Math.abs(curY - newY) > 10) win.setPosition(newX, newY);
 }
