@@ -157,27 +157,10 @@ function layout() {
 }
 
 function autoFitWindow() {
-  if (!win || win.isDestroyed() || win.isMaximized()) return;
+  if (!win || win.isDestroyed()) return;
   const n = slots.size;
   if (n === 0) return;
-  const { width: scrW, height: scrH } = screen.getPrimaryDisplay().workAreaSize;
-  const phoneW = Math.round(Math.min(PHONE_W, (scrH * 0.85 - TOOLBAR_H) * PHONE_ASPECT));
-  const cols = Math.min(n, Math.max(1, Math.floor((scrW - GUTTER) / (phoneW + GUTTER))));
-  const targetW = Math.max(380, cols * (phoneW + GUTTER) + GUTTER);
-  const targetH = Math.min(1000, Math.max(560, Math.round(scrH * 0.85)));
-  const newX = Math.round(scrW / 2 - targetW / 2);
-  const newY = Math.round(scrH / 2 - targetH / 2);
-  const [curW, curH] = win.getContentSize();
-  const [curX, curY] = win.getPosition();
-  const needResize = Math.abs(curW - targetW) > 5 || Math.abs(curH - targetH) > 5;
-  const needMove = Math.abs(curX - newX) > 10 || Math.abs(curY - newY) > 10;
-  if (needResize || needMove) {
-    win.setBounds({ x: newX, y: newY, width: targetW, height: targetH });
-    win.once("resize", () => layout());
-    setTimeout(() => layout(), 100);
-  } else {
-    layout();
-  }
+  layout();
 }
 
 function wireSession(ses) {
@@ -355,11 +338,11 @@ function initIpc() {
     return statePayload();
   });
   ipcMain.handle("vt-slot-set-creds", (_e, id, user, pass) => {
-    const creds = readCreds();
-    creds[id] = { user: String(user || ""), pass: String(pass || "") };
-    writeJson(CREDS_FILE, creds);
     const s = id != null ? slots.get(id) : null;
-    if (s) s.refreshPage("creds-updated", true);
+    if (s) {
+      s._creds = { user: String(user || ""), pass: String(pass || "") };
+      s.refreshPage("creds-updated", true);
+    }
     return statePayload();
   });
   ipcMain.handle("vt-slot-set-flags", (_e, id, flags) => {
@@ -398,8 +381,8 @@ function initIpc() {
   ipcMain.handle("vt-state-get", () => statePayload());
   ipcMain.handle("vt-slot-settings", () => ({}));
   ipcMain.handle("vt-get-creds", (_e, id) => {
-    const creds = readCreds();
-    return creds[id] || null;
+    const s = id != null ? slots.get(id) : null;
+    return s && s._creds ? s._creds : null;
   });
   ipcMain.handle("vt-win-minimize", () => { if (win) win.minimize(); });
   ipcMain.handle("vt-win-close", () => { if (win) win.close(); });
@@ -496,7 +479,7 @@ function createWindow() {
 
   win.on("ready-to-show", () => {
     if (startMinimized) { win.minimize(); win.hide(); }
-    else win.show();
+    else { win.maximize(); win.show(); }
   });
 
   win.on("resize", layout);

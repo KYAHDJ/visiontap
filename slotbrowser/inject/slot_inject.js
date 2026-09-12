@@ -201,7 +201,7 @@
         }) || null;
       };
 
-      const creds = (window.__vtCreds) || ((host && host.getCreds) ? await host.getCreds() : null);
+      const creds = window.__vtCreds || null;
       if (!creds || !creds.user || !creds.pass) {
         return;
       }

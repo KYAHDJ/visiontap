@@ -42,18 +42,7 @@ class Slot {
     this.logger = logger || null;
     this.log = (msg) => { if (this.logger) this.logger(msg); else console.warn(msg); };
 
-    // Load credentials from state/credentials.json
     this._creds = null;
-    try {
-      const fs = require("fs");
-      const path = require("path");
-      const credsFile = path.join(__dirname, "state", "credentials.json");
-      const allCreds = JSON.parse(fs.readFileSync(credsFile, "utf8"));
-      const slotCreds = allCreds[String(id)];
-      if (slotCreds && slotCreds.user && slotCreds.pass) {
-        this._creds = slotCreds;
-      }
-    } catch (e) {}
 
     this.isLoopRunning = false;
     this.isProcessing = false;
