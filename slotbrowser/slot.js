@@ -584,16 +584,23 @@ class Slot {
       let imageData = null;
       try { imageData = await this.api("grabImage", true); imageData = imageData && imageData.imageData; } catch (e) {}
 
-      // DEBUG: Save captured image to disk
+      // DEBUG: Save unique captured images to debug folder (no repeats)
       if (imageData) {
         try {
           const fs = require("fs");
-          const matches = imageData.match(/^data:image\/\w+;base64,(.+)$/);
-          if (matches) {
-            const buf = Buffer.from(matches[1], "base64");
-            const debugPath = require("path").join(require("os").homedir(), "VisionTap", "pcapp", "scanner", "debug_captured_task.png");
-            fs.writeFileSync(debugPath, buf);
-            this.log(`[DEBUG] Saved captured task image (${buf.length} bytes)`);
+          const path = require("path");
+          const debugDir = path.join(__dirname, "..", "debug_images");
+          if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+          const imgHash = hashImage(imageData);
+          const filePath = path.join(debugDir, `${imgHash}.png`);
+          if (!fs.existsSync(filePath)) {
+            const matches = imageData.match(/^data:image\/\w+;base64,(.+)$/);
+            if (matches) {
+              const buf = Buffer.from(matches[1], "base64");
+              fs.writeFileSync(filePath, buf);
+              const count = fs.readdirSync(debugDir).filter(f => f.endsWith(".png")).length;
+              this.log(`[DEBUG] Saved new image #${count}: ${imgHash}.png (${buf.length} bytes)`);
+            }
           }
         } catch (e) { this.log(`[DEBUG] Save failed: ${e.message}`); }
       }
