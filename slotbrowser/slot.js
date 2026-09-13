@@ -581,7 +581,8 @@ class Slot {
           const matches = imageData.match(/^data:image\/\w+;base64,(.+)$/);
           if (matches) {
             const buf = Buffer.from(matches[1], "base64");
-            fs.writeFileSync("C:\\VisionTap\\pcapp\\scanner\\debug_captured_task.png", buf);
+            const debugPath = require("path").join(require("os").homedir(), "VisionTap", "pcapp", "scanner", "debug_captured_task.png");
+            fs.writeFileSync(debugPath, buf);
             this.log(`[DEBUG] Saved captured task image (${buf.length} bytes)`);
           }
         } catch (e) { this.log(`[DEBUG] Save failed: ${e.message}`); }

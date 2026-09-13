@@ -90,18 +90,20 @@
     let targetImg = imgs.find(img => /magic-colors|magiccount/i.test(img.src));
 
     if (!targetImg) {
-      const badKeywords = ['avatar', 'logo', 'profile', 'icon', 'ecnl', 'ec&l', 'brand', 'header', 'banner', 'favicon', 'loading', 'spinner', 'default', 'placeholder', 'watermark'];
+      const badKeywords = ['avatar', 'logo', 'profile', 'icon', 'ecnl', 'ec&l', 'ec and l', 'brand', 'header', 'banner', 'favicon', 'loading', 'spinner', 'default', 'placeholder', 'watermark', 'gold', 'shine', 'gradient', 'social', 'share', 'follow'];
       
       let bestImg = null;
-      let bestScore = -1;
+      let bestScore = -100;
       
       for (const img of imgs) {
         const src = (img.src || '').toLowerCase();
         const alt = (img.alt || '').toLowerCase();
+        const title = (img.title || '').toLowerCase();
         const parent = (img.parentElement && img.parentElement.className || '').toLowerCase();
+        const grandparent = (img.parentElement && img.parentElement.parentElement && img.parentElement.parentElement.className || '').toLowerCase();
         const rect = img.getBoundingClientRect ? img.getBoundingClientRect() : null;
         
-        if (badKeywords.some(kw => src.includes(kw) || alt.includes(kw) || parent.includes(kw))) continue;
+        if (badKeywords.some(kw => src.includes(kw) || alt.includes(kw) || title.includes(kw) || parent.includes(kw) || grandparent.includes(kw))) continue;
         if (img.src && img.src.startsWith('data:image') && img.src.length < 5000) continue;
         
         const w = img.naturalWidth || img.width;
@@ -110,10 +112,10 @@
         
         let skipParent = false;
         let el = img.parentElement;
-        for (let i = 0; i < 6 && el; i++) {
+        for (let i = 0; i < 8 && el; i++) {
           const tag = (el.tagName || '').toLowerCase();
           const cls = (el.className || '').toLowerCase();
-          if (tag === 'header' || tag === 'nav' || cls.includes('header') || cls.includes('nav') || cls.includes('topbar') || cls.includes('toolbar')) {
+          if (tag === 'header' || tag === 'nav' || tag === 'a' || cls.includes('header') || cls.includes('nav') || cls.includes('topbar') || cls.includes('toolbar') || cls.includes('logo') || cls.includes('brand') || cls.includes('sidebar')) {
             skipParent = true; break;
           }
           el = el.parentElement;
@@ -131,9 +133,10 @@
         }
         
         const aspect = w / Math.max(h, 1);
-        if (aspect > 0.8 && aspect < 1.2) score -= 15;
-        if (aspect >= 1.2 && aspect <= 2.5) score += 10;
-        if (w >= 200 && w <= 700) score += 10;
+        if (aspect > 0.7 && aspect < 1.4) score -= 50;
+        if (aspect >= 1.4 && aspect <= 3.0) score += 20;
+        if (aspect > 3.0) score += 10;
+        if (w >= 200 && w <= 800) score += 10;
         
         if (score > bestScore) {
           bestScore = score;
