@@ -30,7 +30,14 @@
     'div[class*="consent"]',
     'iframe[src*="ads"]',
     'div[aria-label*="advertisement" i]',
-    'div[aria-label*="sponsored" i]'
+    'div[aria-label*="sponsored" i]',
+    'div[id*="vignette"]',
+    'div[class*="vignette"]',
+    'iframe[src*="vignette"]',
+    'div[data-type="ad"]',
+    'div[class*="google-auto"]',
+    'amp-ad',
+    'ins[data-ad-client]'
   ];
 
   function removeElement(el) {
@@ -55,6 +62,14 @@
       });
       // Remove video ad players.
       document.querySelectorAll('video[src*="ad"], video[src*="adserve"]').forEach(removeElement);
+      // Clean up google_vignette hash from URL
+      if (window.location.hash && window.location.hash.includes('google_vignette')) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      // Restore body scroll if locked by ad overlay
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.position = '';
     } catch (e) {}
   }
 

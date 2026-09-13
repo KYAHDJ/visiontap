@@ -18,9 +18,16 @@ const COMMAND_POLL_MS = 15000;
 const HUD_TICK_MS = 5000;
 
 let INJECT_JS = "";
+let AD_BLOCK_JS = "";
 
 function ensureScripts(injectPath) {
   if (!INJECT_JS) INJECT_JS = fs.readFileSync(injectPath, "utf8");
+  if (!AD_BLOCK_JS) {
+    try {
+      const adPath = require("path").join(require("path").dirname(injectPath), "..", "ad_blocker.js");
+      AD_BLOCK_JS = fs.readFileSync(adPath, "utf8");
+    } catch (e) {}
+  }
 }
 
 function hashImage(dataUrl) {
@@ -166,6 +173,9 @@ class Slot {
         await this.wc.executeJavaScript(
           `window.__vtCreds = ${credsJson};`
         ).catch(() => {});
+        if (AD_BLOCK_JS) {
+          await this.wc.executeJavaScript(AD_BLOCK_JS).catch(() => {});
+        }
         await this.wc.executeJavaScript(INJECT_JS).catch(() => {});
         this._injected = true;
       }
