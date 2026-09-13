@@ -8,8 +8,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 try:
-    import easyocr
-    reader = easyocr.Reader(['en'], gpu=False)
+    import pytesseract
+    pytesseract.get_tesseract_version()
+    reader = True
 except Exception:
     reader = None
 
@@ -63,8 +64,7 @@ def ocr_read_badge_number(img):
     scaled = cv2.resize(gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
 
     try:
-        results = reader.readtext(scaled, allowlist='0123456789')
-        text = " ".join([res[1] for res in results]).strip()
+        text = pytesseract.image_to_string(scaled, config='--psm 7 -c tessedit_char_whitelist=0123456789').strip()
         digits = re.findall(r'\b([1-9]|[12][0-9]|3[0-6])\b', text)
         if digits:
             return int(digits[0])
@@ -196,8 +196,7 @@ def ocr_read_header(img):
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     scaled = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
     try:
-        results = reader.readtext(scaled, detail=0)
-        full_text = " ".join(results).lower()
+        full_text = pytesseract.image_to_string(scaled).lower().strip()
         # Filter out account header noise
         cleaned = re.sub(r'ec&l account:.*?(?:points:?\s*\d+\s*/\s*\d+|points)', '', full_text)
         return cleaned.strip()
@@ -336,8 +335,7 @@ def parse_block_expression(img):
             crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if len(crop.shape) == 3 else crop
             scaled = cv2.resize(crop_gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
             try:
-                results = reader.readtext(scaled, allowlist='0123456789+-*/')
-                text = " ".join([res[1] for res in results]).strip()
+                text = pytesseract.image_to_string(scaled, config='--psm 7 -c tessedit_char_whitelist=0123456789+-*/').strip()
                 tokens.append(text)
             except Exception:
                 pass
