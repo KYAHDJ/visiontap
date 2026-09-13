@@ -1,4 +1,5 @@
 import base64
+import json
 import re
 import os
 import time
@@ -505,6 +506,66 @@ def debug_detect():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+STATS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner_stats.json")
+
+@app.route('/report', methods=['POST'])
+def report():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data"}), 400
+        existing = {}
+        try:
+            with open(STATS_FILE, 'r') as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+        slot = data.get('slot', 'default')
+        if 'slots' not in existing:
+            existing['slots'] = {}
+        s = existing['slots'].get(slot, {
+            'pointsDone': 0, 'pointsTotal': 0, 'withdrawable': 0,
+            'taskCount': 0, 'correctCount': 0, 'wrongCount': 0, 'errorCount': 0
+        })
+        if data.get('pointsDone') is not None:
+            try: s['pointsDone'] = int(data['pointsDone'])
+            except: pass
+        if data.get('pointsTotal') is not None:
+            try: s['pointsTotal'] = int(data['pointsTotal'])
+            except: pass
+        if data.get('withdrawable') is not None:
+            try: s['withdrawable'] = float(data['withdrawable'])
+            except: pass
+        if data.get('taskCount') is not None:
+            try: s['taskCount'] = int(data['taskCount'])
+            except: pass
+        if data.get('correctCount') is not None:
+            try: s['correctCount'] = int(data['correctCount'])
+            except: pass
+        if data.get('wrongCount') is not None:
+            try: s['wrongCount'] = int(data['wrongCount'])
+            except: pass
+        if data.get('errorCount') is not None:
+            try: s['errorCount'] = int(data['errorCount'])
+            except: pass
+        if data.get('correct') is not None:
+            s['lastCorrect'] = bool(data['correct'])
+        s['lastUpdate'] = time.strftime('%H:%M:%S')
+        existing['slots'][slot] = s
+        with open(STATS_FILE, 'w') as f:
+            json.dump(existing, f, indent=2)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/stats', methods=['GET'])
+def stats():
+    try:
+        with open(STATS_FILE, 'r') as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({"slots": {}})
+
 if __name__ == '__main__':
     print("=== VISIONTAP STRICT COLOR ENGINE ONLINE (PORT 5566) ===")
-    app.run(host='127.0.0.1', port=5566, debug=False)
+    app.run(host='0.0.0.0', port=5566, debug=False)
