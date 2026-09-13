@@ -62,7 +62,11 @@ def ocr_read_badge_number(img):
             break
 
     gray = cv2.cvtColor(target_crop, cv2.COLOR_BGR2GRAY)
-    scaled = cv2.resize(gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+
+    # White text on gray bg -> threshold to isolate white, invert for black-on-white
+    mask = np.where(gray > 180, 255, 0).astype(np.uint8)
+    inv = cv2.bitwise_not(mask)
+    scaled = cv2.resize(inv, None, fx=4.0, fy=4.0, interpolation=cv2.INTER_CUBIC)
 
     try:
         text = pytesseract.image_to_string(scaled, config='--psm 7 -c tessedit_char_whitelist=0123456789').strip()
