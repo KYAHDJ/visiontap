@@ -9,8 +9,7 @@
   const signal = (msg) => { if (host && host.signal) { try { host.signal(msg); } catch (e) {} } };
 
   const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
-  const MATH_WORK_URL = "https://ecnlmediamarket.com/solving-math";
-  const WORK_RE = /\/solving-(colors|math)/;
+  const WORK_RE = /\/solving-colors/;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Stay on work page (colors or math) ----

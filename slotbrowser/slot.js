@@ -1,6 +1,6 @@
 // VisionTap Slot - per-slot loop controller.
 // Drives one WebContentsView: waits for task, OCRs via local scanner,
-// fills answer, reports result. Supports color and math modes.
+// fills answer, reports result. Color mode.
 
 const fs = require("fs");
 const path = require("path");
@@ -9,8 +9,7 @@ const SCANNER_URL = "http://127.0.0.1:5566";
 const KEEPER_HEARTBEAT_URL = "http://127.0.0.1:8177/heartbeat";
 const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
-const MATH_WORK_URL = "https://ecnlmediamarket.com/solving-math";
-const WORK_RE = /\/solving-(colors|math)/;
+const WORK_RE = /\/solving-colors/;
 
 const STALL_RESET_MS = 120000;
 const HEARTBEAT_MS = 30000;
@@ -85,7 +84,7 @@ class Slot {
   }
 
   getWorkUrl() {
-    return this.taskMode === "math" ? MATH_WORK_URL : COLOR_WORK_URL;
+    return COLOR_WORK_URL;
   }
 
   attach() {
@@ -584,27 +583,6 @@ class Slot {
       let imageData = null;
       try { imageData = await this.api("grabImage", true); imageData = imageData && imageData.imageData; } catch (e) {}
 
-      // DEBUG: Save unique captured images to debug folder (no repeats)
-      if (imageData) {
-        try {
-          const fs = require("fs");
-          const path = require("path");
-          const debugDir = path.join(__dirname, "..", "debug_images");
-          if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
-          const imgHash = hashImage(imageData);
-          const filePath = path.join(debugDir, `${imgHash}.png`);
-          if (!fs.existsSync(filePath)) {
-            const matches = imageData.match(/^data:image\/\w+;base64,(.+)$/);
-            if (matches) {
-              const buf = Buffer.from(matches[1], "base64");
-              fs.writeFileSync(filePath, buf);
-              const count = fs.readdirSync(debugDir).filter(f => f.endsWith(".png")).length;
-              this.log(`[DEBUG] Saved new image #${count}: ${imgHash}.png (${buf.length} bytes)`);
-            }
-          }
-        } catch (e) { this.log(`[DEBUG] Save failed: ${e.message}`); }
-      }
-
       if (!imageData) {
         this.consecutiveDetectFails++;
         this.status(`[${this.taskCount + 1}] No image. Retry (${this.consecutiveDetectFails})`);
@@ -638,8 +616,7 @@ class Slot {
       this.status(`[${this.taskCount + 1}] Image (${imgSizeKB}KB). Detecting...`);
       this.touchAction();
 
-      // Detect — route based on taskMode (color or math)
-      const endpoint = this.taskMode === "math" ? "/detect_math" : "/detect";
+      const endpoint = "/detect";
       let result;
       try {
         const scanRes = await fetch(`${SCANNER_URL}${endpoint}`, {
@@ -672,36 +649,8 @@ class Slot {
         return;
       }
 
-      // Build answer based on taskMode
-      let answer;
-      if (this.taskMode === "math") {
-        answer = result.answer;
-        if (!answer && result.error) {
-          this.consecutiveDetectFails++;
-          this.log(`[${this.taskCount + 1}] Math detect FAIL: ${result.error}`);
-          this.status(`[${this.taskCount + 1}] Math detection failed: ${result.error}`);
-          if (this.consecutiveDetectFails >= 3) {
-            this.log("Math detection failed 3x. Recovery reload.");
-            this.isProcessing = false;
-            await this.refreshPage("detect-fail-x3", true);
-            this.consecutiveDetectFails = 0;
-            this.scheduleNext(4000);
-            return;
-          }
-          this.isProcessing = false;
-          this.scheduleNext(1500);
-          return;
-        }
-        if (result.confidence !== undefined && result.confidence < 0.5) {
-          this.log(`[${this.taskCount + 1}] Low confidence (${result.confidence}). Skipping.`);
-          this.status(`[${this.taskCount + 1}] Low confidence. Skipping...`);
-          this.isProcessing = false;
-          this.scheduleNext(2000);
-          return;
-        }
-      } else {
-        answer = result.color;
-      }
+      // Build answer (color mode only)
+      let answer = result.color;
       this.consecutiveDetectFails = 0;
       this.taskCount++;
       this.lastSubmittedImageHash = curHash;
