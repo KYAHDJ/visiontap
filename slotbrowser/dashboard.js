@@ -112,6 +112,32 @@ ${slotsHTML}
 }
 
 const server = http.createServer((req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (url.pathname === "/debug-images" && req.method === "GET") {
+    const debugDir = path.join(__dirname, "..", "debug_images");
+    if (!fs.existsSync(debugDir)) { res.writeHead(404); res.end("No debug_images folder"); return; }
+    const files = fs.readdirSync(debugDir).filter(f => f.endsWith(".png")).sort();
+    res.setHeader("Content-Type", "text/html");
+    let html = `<html><head><title>Debug Images</title><style>body{font-family:system-ui;background:#0b1020;color:#e2e8f0;padding:16px}img{max-width:200px;margin:8px;border:1px solid #334155;border-radius:6px}a{color:#38bdf8}</style></head><body><h2>Debug Images (${files.length})</h2>`;
+    for (const f of files) {
+      html += `<div style="display:inline-block;text-align:center;margin:8px"><a href="/debug-images/${f}"><img src="/debug-images/${f}"></a><br><small>${f}</small></div>`;
+    }
+    html += `</body></html>`;
+    res.end(html);
+    return;
+  }
+
+  if (url.pathname.startsWith("/debug-images/") && req.method === "GET") {
+    const fileName = path.basename(url.pathname);
+    const filePath = path.join(__dirname, "..", "debug_images", fileName);
+    if (!fs.existsSync(filePath)) { res.writeHead(404); res.end("Not found"); return; }
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    fs.createReadStream(filePath).pipe(res);
+    return;
+  }
+
   res.setHeader("Content-Type", "text/html");
   if (req.method === "GET") {
     res.end(buildHTML(getStatus()));
