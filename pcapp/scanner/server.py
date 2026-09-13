@@ -162,11 +162,53 @@ def detect():
         target_index = N - 1
         target_row = target_index // 12
         target_col = target_index % 12
-        target_cx = int(margin_x + (target_col + 0.5) * cell_w)
-        target_cy = int(margin_y + (target_row + 0.5) * cell_h)
-        target_sample = hsv_img[max(0, target_cy - 2):min(height, target_cy + 3),
-                                max(0, target_cx - 2):min(width, target_cx + 3)]
-        detected_color = detect_color_from_sample(target_sample)
+
+        # Cell boundaries (inner 50% to avoid edge blending)
+        cell_x1 = margin_x + target_col * cell_w
+        cell_y1 = margin_y + target_row * cell_h
+        cell_x2 = cell_x1 + cell_w
+        cell_y2 = cell_y1 + cell_h
+
+        inner_pad_x = cell_w * 0.25
+        inner_pad_y = cell_h * 0.25
+        ix1 = int(max(0, cell_x1 + inner_pad_x))
+        iy1 = int(max(0, cell_y1 + inner_pad_y))
+        ix2 = int(min(width, cell_x2 - inner_pad_x))
+        iy2 = int(min(height, cell_y2 - inner_pad_y))
+
+        cell_region = hsv_img[iy1:iy2, ix1:ix2]
+
+        if cell_region.size == 0:
+            print("[SERVER REJECT] Empty cell region.")
+            return jsonify({"error": "Empty cell region"}), 400
+
+        # Sample 9 points in a 3x3 grid across the inner cell, classify each, majority vote
+        rh, rw = cell_region.shape[:2]
+        sample_points = []
+        for sy in [0.2, 0.5, 0.8]:
+            for sx in [0.2, 0.5, 0.8]:
+                py = int(sy * rh)
+                px = int(sx * rw)
+                sample_points.append(cell_region[py:py+1, px:px+1])
+
+        votes = {}
+        vote_details = []
+        for sp in sample_points:
+            c = detect_color_from_sample(sp)
+            votes[c] = votes.get(c, 0) + 1
+            vote_details.append(c)
+
+        sorted_votes = sorted(votes.items(), key=lambda x: -x[1])
+        best_color, best_count = sorted_votes[0]
+        purity = best_count / len(sample_points)
+
+        print(f" -> Cell votes: {votes} | purity={purity:.0%} best={best_color}")
+
+        if purity < 0.5 or best_color == "unknown":
+            print(f"[SERVER REJECT] Low purity ({purity:.0%}) or inconclusive.")
+            return jsonify({"error": f"Low purity ({purity:.0%}) or inconclusive"}), 400
+
+        detected_color = best_color
 
         if detected_color == "unknown":
             print("[SERVER REJECT] Inconclusive color range.")
