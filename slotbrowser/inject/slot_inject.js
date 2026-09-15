@@ -45,9 +45,11 @@
     const input = findAnswerInput();
     const btn = findSubmitButton();
     if (!input || !btn) return false;
-    const inputRect = input.getBoundingClientRect();
-    const btnRect = btn.getBoundingClientRect();
-    return inputRect.width > 0 && inputRect.height > 0 && btnRect.width > 0 && btnRect.height > 0;
+    const inputStyle = window.getComputedStyle(input);
+    const btnStyle = window.getComputedStyle(btn);
+    if (inputStyle.display === 'none' || btnStyle.display === 'none') return false;
+    if (inputStyle.visibility === 'hidden' || btnStyle.visibility === 'hidden') return false;
+    return true;
   }
 
   // ---- EXACT Chrome extension: grabTaskImage ----
@@ -250,11 +252,14 @@
   try {
     _adObserver = new MutationObserver(() => {
       _nukeCount++;
-      if (_nukeCount > 10) {
+      if (_nukeCount > 30) {
         if (_adObserver) _adObserver.disconnect();
         return;
       }
       nukeAds();
+      if (window.location.hash && window.location.hash.includes('google')) {
+        try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+      }
     });
     if (document.body) {
       _adObserver.observe(document.body, { childList: true, subtree: true });
@@ -421,7 +426,8 @@
     const ready = loaded && empty && imgOk;
     const boxRect = box ? box.getBoundingClientRect() : null;
     const btnRect = btn ? btn.getBoundingClientRect() : null;
-    return { ready, url: window.location.href, hasBox: !!box, hasBtn: !!btn, boxW: boxRect ? Math.round(boxRect.width) : 0, boxH: boxRect ? Math.round(boxRect.height) : 0, btnW: btnRect ? Math.round(btnRect.width) : 0, btnH: btnRect ? Math.round(btnRect.height) : 0, empty, loaded };
+    const boxStyle = box ? window.getComputedStyle(box) : null;
+    return { ready, url: window.location.href, hasBox: !!box, hasBtn: !!btn, boxW: boxRect ? Math.round(boxRect.width) : 0, boxH: boxRect ? Math.round(boxRect.height) : 0, btnW: btnRect ? Math.round(btnRect.width) : 0, btnH: btnRect ? Math.round(btnRect.height) : 0, empty, loaded, boxDisplay: boxStyle ? boxStyle.display : 'none' };
   };
 
   vt.grabImage = async () => ({ imageData: await grabTaskImage() });
