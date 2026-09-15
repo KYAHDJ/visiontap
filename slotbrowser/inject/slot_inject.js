@@ -204,12 +204,10 @@
     'div[id*="google_ads"]', 'div[id*="ad_container"]',
     '.adsbygoogle', 'ins.adsbygoogle', 'div[class*="adslot"]',
     'div[class*="ad-banner"]', 'div[class*="advert"]', 'div[class*="adunit"]',
-    '.modal-backdrop', '.modal-backdrop.fade',
-    '.overlay', 'div[class*="backdrop"]', 'div[class*="overlay"]',
-    'div[class*="popup"]', 'div[class*="interstitial"]',
     'div[class*="cookie-banner"]', 'div[id*="cookie"]',
     'div[class*="consent"]', 'iframe[src*="ads"]',
-    'div[aria-label*="advertisement" i]', 'div[aria-label*="sponsored" i]'
+    'div[aria-label*="advertisement" i]', 'div[aria-label*="sponsored" i]',
+    '#google_vignette', '.google-auto-placed', 'div[id*="google_ads_query"]'
   ];
 
   function nukeAds() {
@@ -219,22 +217,34 @@
           try { el.remove(); } catch (e) {}
         });
       });
+      document.querySelectorAll('video[src*="ad"], video[src*="adserve"]').forEach(el => {
+        try { el.remove(); } catch (e) {}
+      });
       document.querySelectorAll('div').forEach(el => {
         if (el.id && el.id.includes('visiontap-hud')) return;
+        if (el.id && el.id.includes('visiontap')) return;
         try {
           const style = window.getComputedStyle(el);
           if (style.position === 'fixed' && parseInt(style.zIndex || '0', 10) > 100) {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              const vw = window.innerWidth || 1;
+              const vh = window.innerHeight || 1;
+              if (rect.width >= vw * 0.8 && rect.height >= vh * 0.8) return;
+              if (el.querySelector && (el.querySelector('input') || el.querySelector('button') || el.querySelector('canvas'))) return;
+              if (el.className && (el.className.includes('modal') || el.className.includes('dialog'))) return;
+            }
             el.remove();
           }
         } catch (e2) {}
-      });
-      document.querySelectorAll('video[src*="ad"], video[src*="adserve"]').forEach(el => {
-        try { el.remove(); } catch (e) {}
       });
     } catch (e) {}
   }
 
   nukeAds();
+  if (window.location.hash && window.location.hash.includes('google')) {
+    try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+  }
   let _adObserver = null;
   let _nukeCount = 0;
   try {
@@ -409,7 +419,9 @@
     const loaded = isUIFullyLoaded();
     const imgOk = !!btn && !!box;
     const ready = loaded && empty && imgOk;
-    return { ready, url: window.location.href };
+    const boxRect = box ? box.getBoundingClientRect() : null;
+    const btnRect = btn ? btn.getBoundingClientRect() : null;
+    return { ready, url: window.location.href, hasBox: !!box, hasBtn: !!btn, boxW: boxRect ? Math.round(boxRect.width) : 0, boxH: boxRect ? Math.round(boxRect.height) : 0, btnW: btnRect ? Math.round(btnRect.width) : 0, btnH: btnRect ? Math.round(btnRect.height) : 0, empty, loaded };
   };
 
   vt.grabImage = async () => ({ imageData: await grabTaskImage() });

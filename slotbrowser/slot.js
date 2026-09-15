@@ -761,7 +761,7 @@ class Slot {
         ready = !!(r && r.ready);
         if (!ready && Date.now() - lastDebugLog > 10000) {
           lastDebugLog = Date.now();
-          this.log(`INPUT-CHECK ready=${r && r.ready} url=${(r && r.url) || "?"}`);
+          this.log(`INPUT-CHECK ready=${r && r.ready} hasBox=${r && r.hasBox} hasBtn=${r && r.hasBtn} boxW=${r && r.boxW} boxH=${r && r.boxH} btnW=${r && r.btnW} btnH=${r && r.btnH} empty=${r && r.empty} loaded=${r && r.loaded} url=${(r && r.url) || "?"}`);
         }
       } catch (e) {
         if (Date.now() - lastDebugLog > 10000) {
