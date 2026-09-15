@@ -85,10 +85,10 @@ function readSlotsFile() {
 function writeSlotsFile() {
   const active = [];
   for (const s of slots.values()) {
-    active.push({ id: s.id, name: s.name, stopRequested: s.loopStopRequested, bootsOnStart: s.bootsOnStart !== false });
+    active.push({ id: s.id, name: s.name, accountName: s.accountName || "", stopRequested: s.loopStopRequested, bootsOnStart: s.bootsOnStart !== false });
   }
   for (const g of ghosts.values()) {
-    active.push({ id: g.id, name: g.name, stopRequested: true, bootsOnStart: false });
+    active.push({ id: g.id, name: g.name, accountName: g.accountName || "", stopRequested: true, bootsOnStart: false });
   }
   const data = { pauseOnHidden, active };
   try { fs.writeFileSync(SLOTS_FILE, JSON.stringify(data, null, 2)); } catch (e) {}
@@ -132,6 +132,7 @@ const TOOLBAR_H = 82;
 const PHONE_W = 480;
 const PHONE_ASPECT = 0.7;
 const GUTTER = 8;
+let scrollOffset = 0;
 
 function layout() {
   if (!win || win.isDestroyed()) return;
@@ -139,22 +140,34 @@ function layout() {
   if (!list.length) return;
   const [w, h] = win.getContentSize();
   const ch = h - TOOLBAR_H;
-  const phoneW = Math.round(Math.min(PHONE_W, ch * PHONE_ASPECT));
-  const cols = Math.min(list.length, Math.max(1, Math.floor((w + GUTTER) / (phoneW + GUTTER))));
-  const rows = Math.ceil(list.length / cols);
-  const cw = w / cols;
-  const cellH = ch / rows;
-  const slotW = Math.min(cw, Math.round(cellH * PHONE_ASPECT), phoneW);
+  const cols = list.length;
+  // Auto-size: fit all slots side by side within window width
+  let slotW = Math.floor((w - GUTTER * (cols + 1)) / cols);
+  let slotH = Math.round(slotW / PHONE_ASPECT);
+  // If height would exceed available space, size down
+  if (slotH > ch) {
+    slotH = ch;
+    slotW = Math.round(slotH * PHONE_ASPECT);
+  }
+  // If total width exceeds window, enable scrolling
+  const totalW = cols * (slotW + GUTTER) + GUTTER;
+  const canScroll = totalW > w;
+  if (!canScroll) scrollOffset = 0;
+  const maxOffset = Math.max(0, totalW - w);
+  scrollOffset = Math.max(0, Math.min(scrollOffset, maxOffset));
   list.forEach((s, i) => {
-    const r = Math.floor(i / cols);
-    const c = i % cols;
-    s.view.setBounds({
-      x: Math.round(c * cw + (cw - slotW) / 2),
-      y: Math.round(TOOLBAR_H + r * cellH),
-      width: slotW,
-      height: Math.round(cellH)
-    });
+    const x = Math.round(i * (slotW + GUTTER) + GUTTER - (canScroll ? scrollOffset : 0));
+    const visible = (x + slotW > 0 && x < w);
+    try {
+      s.view.setBounds({ x, y: TOOLBAR_H, width: slotW, height: slotH });
+      s.view.setVisible(visible);
+    } catch (e) {}
   });
+}
+
+function scrollSlots(delta) {
+  scrollOffset += delta;
+  layout();
 }
 
 function autoFitWindow() {
@@ -216,6 +229,8 @@ function createSlot(id, name, stopRequested, opts) {
 
   const slot = new Slot({ id, name, view, logger: (m) => appendLog(`[${name}]`, m) });
   slot.bootsOnStart = opts.bootsOnStart !== false;
+  slot.accountName = opts.accountName || "";
+  if (slot.accountName) slot.name = slot.accountName;
   slot.setPaused(!(win && win.isVisible()));
   slot.attach();
   view.setVisible(true);
@@ -354,13 +369,19 @@ function initIpc() {
       if (flags.zoom) s.setZoom(Number(flags.zoom));
       if (flags.hud !== undefined) s.setHud(!!flags.hud);
       if (flags.delayMult) s.setDelay(Number(flags.delayMult));
+      if (flags.accountName !== undefined) {
+        s.accountName = String(flags.accountName || "");
+        s.name = s.accountName || `Slot ${slots.size + ghosts.size + 1}`;
+      }
       const sp = (settings.slots = settings.slots || {});
       sp[id] = Object.assign({}, sp[id], {
         zoom: flags.zoom || 1,
         hud: flags.hud !== false,
-        delayMult: flags.delayMult || 1
+        delayMult: flags.delayMult || 1,
+        accountName: flags.accountName || ""
       });
       writeJson(SETTINGS_FILE, settings);
+      writeSlotsFile();
     }
     return statePayload();
   });
@@ -382,6 +403,7 @@ function initIpc() {
   });
   ipcMain.handle("vt-state-get", () => statePayload());
   ipcMain.handle("vt-slot-settings", () => ({}));
+  ipcMain.handle("vt-scroll-slots", (_e, delta) => { scrollSlots(delta); });
   ipcMain.handle("vt-get-creds", (_e, id) => {
     const s = id != null ? slots.get(id) : null;
     return s && s._creds ? s._creds : null;
@@ -451,7 +473,7 @@ function initIpc() {
 
 // ---- Window ----
 function createWindow() {
-  const def = { width: 380, height: 700 };
+  const def = { width: 1440, height: 800 };
   let w = def.width;
   let h = def.height;
   const ws = settings.windowSize || {};
@@ -474,7 +496,7 @@ function createWindow() {
     width: w,
     height: h,
     center: true,
-    minWidth: 340,
+    minWidth: 700,
     minHeight: 560,
     frame: false,
     show: false,
@@ -502,8 +524,12 @@ function createWindow() {
   win.on("resize", layout);
   win.on("maximize", layout);
   win.on("unmaximize", layout);
-  win.on("show", () => { for (const s of slots.values()) s.setPaused(false); });
-  win.on("minimize", () => { if (pauseOnHidden) for (const s of slots.values()) s.setPaused(true); });
+  // Mouse wheel scrolls all slots together
+  win.on("wheel", (_e, details) => {
+    if (details.deltaY !== 0) scrollSlots(details.deltaY * 2);
+  });
+  win.on("show", () => { for (const s of slots.values()) { if (s.pausedByWindow && !s.dashboardPaused) s.setPaused(false); } });
+  win.on("minimize", () => { if (pauseOnHidden) for (const s of slots.values()) { s.pausedByWindow = true; s.setPaused(true); } });
   win.on("closed", () => { win = null; });
   const saveBounds = () => {
     if (!win || win.isDestroyed()) return;
@@ -512,6 +538,83 @@ function createWindow() {
   win.on("resize", () => { clearTimeout(win._bsT); win._bsT = setTimeout(saveBounds, 800); });
   win.on("move", () => { clearTimeout(win._bsT); win._bsT = setTimeout(saveBounds, 800); });
   win.on("close", saveBounds);
+  // Poll credentials.json for dashboard edits — hot-reload into running slots
+  let lastCredMtime = 0;
+  setInterval(() => {
+    try {
+      const stat = fs.statSync(CREDS_FILE);
+      const mt = stat.mtimeMs;
+      if (mt !== lastCredMtime) {
+        lastCredMtime = mt;
+        const allCreds = readCreds();
+        console.log(`[CREDS] Reloaded: ${JSON.stringify(allCreds).substring(0, 200)}`);
+        for (const [id, slot] of slots) {
+          const c = allCreds[id] || allCreds[slot.accountName] || null;
+          if (c && (c.user !== (slot._creds && slot._creds.user) || c.pass !== (slot._creds && slot._creds.pass))) {
+            slot._creds = { user: String(c.user || ""), pass: String(c.pass || "") };
+            console.log(`[CREDS] Updated slot ${id} user=${c.user}, refreshing...`);
+            slot.refreshPage("creds-updated", true);
+          }
+        }
+      }
+    } catch (e) { console.error(`[CREDS] Error:`, e.message); }
+  }, 2000);
+  // Poll loop_command.json for dashboard pause/resume
+  const LOOP_CMD_FILE = path.join(STATE_DIR, "loop_command.json");
+  let lastLoopMtime = 0;
+  setInterval(() => {
+    try {
+      const stat = fs.statSync(LOOP_CMD_FILE);
+      const mt = stat.mtimeMs;
+      if (mt !== lastLoopMtime) {
+        lastLoopMtime = mt;
+        const cmd = JSON.parse(fs.readFileSync(LOOP_CMD_FILE, "utf8"));
+        console.log(`[LOOP] Command: ${cmd.action}`);
+        if (cmd.action === "pause") {
+          for (const s of slots.values()) { s.dashboardPaused = true; s.setPaused(true); }
+        } else if (cmd.action === "resume") {
+          stopRequested = false;
+          for (const s of slots.values()) { s.dashboardPaused = false; s.pausedByWindow = false; s.setPaused(false); s.ensureRunning(); }
+        }
+      }
+    } catch (e) { console.error(`[LOOP] Error:`, e.message); }
+  }, 2000);
+  // Poll slot_commands.json for dashboard per-slot commands
+  const SLOT_CMD_FILE = path.join(STATE_DIR, "slot_commands.json");
+  let lastSlotMtime = 0;
+  setInterval(() => {
+    try {
+      const stat = fs.statSync(SLOT_CMD_FILE);
+      const mt = stat.mtimeMs;
+      if (mt !== lastSlotMtime) {
+        lastSlotMtime = mt;
+        const cmds = JSON.parse(fs.readFileSync(SLOT_CMD_FILE, "utf8"));
+        if (!Array.isArray(cmds) || cmds.length === 0) return;
+        console.log(`[CMD] Received ${cmds.length} commands, slot keys: [${[...slots.keys()].join(",")}]`);
+        for (const cmd of cmds) {
+          const slotId = cmd.slot;
+          console.log(`[CMD] action=${cmd.action} slot=${slotId} type=${typeof slotId}`);
+          if (cmd.action === "pause") {
+            if (slotId === "all") { for (const s of slots.values()) { s.dashboardPaused = true; s.setPaused(true); } console.log(`[CMD] Paused all`); }
+            else { const s = slots.get(String(slotId)); console.log(`[CMD] slots.get("${slotId}") = ${s ? "found" : "NOT FOUND"}`); if (s) { s.dashboardPaused = true; s.setPaused(true); } }
+          } else if (cmd.action === "resume") {
+            if (slotId === "all") { stopRequested = false; for (const s of slots.values()) { s.dashboardPaused = false; s.pausedByWindow = false; s.setPaused(false); s.ensureRunning(); } console.log(`[CMD] Resumed all`); }
+            else { const s = slots.get(String(slotId)); if (s) { s.dashboardPaused = false; s.pausedByWindow = false; s.setPaused(false); s.ensureRunning(); } }
+          } else if (cmd.action === "restart") {
+            if (slotId === "all") { for (const s of slots.values()) s.refreshPage("dashboard-restart", true); }
+            else { const s = slots.get(String(slotId)); if (s) s.refreshPage("dashboard-restart", true); }
+          } else if (cmd.action === "refresh") {
+            if (slotId === "all") { for (const s of slots.values()) s.refreshPage("dashboard-refresh", true); }
+            else { const s = slots.get(String(slotId)); if (s) s.refreshPage("dashboard-refresh", true); }
+          } else if (cmd.action === "remove") {
+            if (slotId === "all") { for (const id of [...slots.keys()]) removeSlot(id); }
+            else { removeSlot(String(slotId)); }
+          }
+        }
+        fs.writeFileSync(SLOT_CMD_FILE, "[]");
+      }
+    } catch (e) { console.error(`[CMD] Error:`, e.message); }
+  }, 2000);
 }
 
 function openSettings() {
@@ -574,10 +677,11 @@ app.whenReady().then(() => {
   if (saved.active) {
     for (const s of saved.active) {
       const boots = s.bootsOnStart !== false;
+      const displayName = s.accountName || s.name || `Slot ${slotSeq + 1}`;
       if (boots) {
-        createSlot(s.id, s.name || `Slot ${slotSeq + 1}`, !!s.stopRequested, { bootsOnStart: true });
+        createSlot(s.id, displayName, !!s.stopRequested, { bootsOnStart: true, accountName: s.accountName || "" });
       } else {
-        ghosts.set(s.id, { id: s.id, name: s.name || `Slot ${slotSeq + 1}` });
+        ghosts.set(s.id, { id: s.id, name: displayName, accountName: s.accountName || "" });
       }
     }
   }

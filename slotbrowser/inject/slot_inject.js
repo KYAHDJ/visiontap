@@ -371,6 +371,29 @@
         s.innerText = state.isRunning ? "SCANNING" : "READY";
         s.style.color = state.isRunning ? "#4ade80" : "#f87171";
       }
+      // Show last result badge
+      if (state.lastTaskCorrect !== undefined) {
+        let badge = document.getElementById('vt-hud-badge');
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.id = 'vt-hud-badge';
+          badge.style.cssText = 'margin-left:8px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:bold;';
+          const titleEl = document.getElementById('vt-hud-title');
+          if (titleEl) titleEl.appendChild(badge);
+        }
+        if (state.lastTaskCorrect === true) {
+          badge.textContent = 'CORRECT';
+          badge.style.background = '#166534';
+          badge.style.color = '#4ade80';
+        } else if (state.lastTaskCorrect === false) {
+          badge.textContent = 'WRONG';
+          badge.style.background = '#7f1d1d';
+          badge.style.color = '#f87171';
+        } else {
+          badge.textContent = '';
+          badge.style.background = 'transparent';
+        }
+      }
     } catch (e) {}
   };
 
@@ -425,16 +448,71 @@
 
   vt.getVerdict = () => {
     try {
+      // Method 1: Check for specific result/alert elements on the page
+      const resultSelectors = [
+        '.alert', '.result', '.feedback', '.message', '.notification',
+        '[class*="result"]', '[class*="feedback"]', '[class*="alert"]',
+        '[class*="success"]', '[class*="error"]', '[class*="correct"]',
+        '[class*="wrong"]', '[class*="incorrect"]', '.toast',
+        '.swal2-popup', '.swal2-html-container', '#swal2-title',
+        '.noty_layout', '.noty_body', '.noty_message'
+      ];
+      for (const sel of resultSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const t = el.innerText.toLowerCase().trim();
+          if (t.includes('correct') || t.includes('success') || t.includes('well done')) return { correct: true };
+          if (t.includes('wrong') || t.includes('incorrect') || t.includes('try again') || t.includes('error')) return { correct: false };
+        }
+      }
+
+      // Method 2: Check for green/red colored text (common success/error pattern)
+      const allEls = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span, div, strong, b');
+      for (const el of allEls) {
+        const style = window.getComputedStyle(el);
+        const color = style.color;
+        const bg = style.backgroundColor;
+        const t = el.innerText.toLowerCase().trim();
+        if (!t || t.length > 200) continue;
+        // Green text often = success
+        if ((color.includes('0, 128') || color.includes('34, 197') || color.includes('22, 163') || color.includes('21, 128')) && t.length < 50) {
+          if (t.includes('correct') || t.includes('success') || t.includes('well done')) return { correct: true };
+        }
+        // Red text often = error
+        if ((color.includes('220, 38') || color.includes('239, 68') || color.includes('234, 57') || color.includes('185, 28')) && t.length < 50) {
+          if (t.includes('wrong') || t.includes('incorrect') || t.includes('try again') || t.includes('error')) return { correct: false };
+        }
+      }
+
+      // Method 3: Check if the answer input cleared (new task loaded = previous was correct)
+      const input = document.querySelector('input[placeholder*="Answer"], input[placeholder*="answer"], input[placeholder*="Enter"], input[type="text"]');
+      if (input && input.value === '') {
+        // Empty input could mean new task loaded
+        // Check if there's a task image (fruit/emoji) present
+        const hasTask = document.querySelector('img[src*="emoji"], img[src*="fruit"], img[src*="apple"], img[src*="grape"], img[src*="orange"], img[src*="cherry"]');
+        if (hasTask) return { correct: true };
+      }
+
+      // Method 4: Fallback - check body text with stricter matching
       const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
-      if (bodyText.includes('correct') && !bodyText.includes('incorrect') && !bodyText.includes('wrong')) {
-        return { correct: true };
+      // Look for explicit correct/incorrect messages near submission
+      const correctMatch = bodyText.match(/(?:answer|result|status)\s*(?:is|:)?\s*(correct|wrong|incorrect)/i);
+      if (correctMatch) {
+        const w = correctMatch[1].toLowerCase();
+        return { correct: w === 'correct' };
       }
-      if (bodyText.includes('success') && !bodyText.includes('error') && !bodyText.includes('failed')) {
-        return { correct: true };
+
+      // Method 5: Check for withdrawal amount increase (most reliable)
+      const wm = bodyText.match(/withdrawable\s*[:=]?\s*[₱$]?\s*([0-9]+(?:\.[0-9]+)?)/);
+      if (wm && wm[1]) {
+        const current = parseFloat(wm[1]);
+        if (this._lastWithdrawable && current > this._lastWithdrawable) {
+          this._lastWithdrawable = current;
+          return { correct: true };
+        }
+        this._lastWithdrawable = current;
       }
-      if (bodyText.includes('wrong') || bodyText.includes('incorrect') || bodyText.includes('try again')) {
-        return { correct: false };
-      }
+
       return { correct: null };
     } catch (e) { return { correct: null }; }
   };

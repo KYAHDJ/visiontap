@@ -44,6 +44,7 @@ class Slot {
   constructor({ id, name, view, logger }) {
     this.id = id;
     this.name = name;
+    this.accountName = "";
     this.view = view;
     this.wc = view.webContents;
     this.logger = logger || null;
@@ -238,8 +239,9 @@ class Slot {
 
   setPaused(p) {
     if (this.paused === p) return;
+    console.log(`[Slot ${this.id}] setPaused(${p})`);
     this.paused = p;
-    if (p) this.status("Paused (window hidden)");
+    if (p) this.status("Paused (dashboard)");
     else if (this.isLoopRunning) { this.status("Resuming..."); this.startStaggered(1500); }
   }
 
@@ -271,7 +273,8 @@ class Slot {
       correctCount: this.correctCount,
       wrongCount: this.wrongCount,
       errorCount: this.errorCount,
-      isRunning: this.isLoopRunning
+      isRunning: this.isLoopRunning,
+      lastTaskCorrect: this.lastTaskCorrect
     };
     this.api("hud", state).catch(() => {});
   }
@@ -342,10 +345,20 @@ class Slot {
     if (this.reportTimer) clearTimeout(this.reportTimer);
     this.reportTimer = setTimeout(async () => {
       let correct = null, theirs = null, withdrawable = null, pointsDone = null, pointsTotal = null;
-      try {
-        const v = await this.api("getVerdict");
-        if (v) { correct = v.correct == null ? null : !!v.correct; theirs = v.theirs || null; }
-      } catch (e) {}
+
+      // Check verdict multiple times for accuracy
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const v = await this.api("getVerdict");
+          if (v && v.correct !== null) {
+            correct = !!v.correct;
+            theirs = v.theirs || null;
+            break;
+          }
+        } catch (e) {}
+        if (attempt < 2) await sleep(500);
+      }
+
       try {
         const m = await this.api("getTaskMeta");
         if (m) {
@@ -369,10 +382,11 @@ class Slot {
 
       if (correct === true) this.correctCount++;
       else if (correct === false) this.wrongCount++;
+      this.lastTaskCorrect = correct;
       this.pushHud({});
 
       this.sendTaskReport(Object.assign({}, report, { correct, theirs, withdrawable, pointsDone, pointsTotal }));
-    }, 1500);
+    }, 2000);
   }
 
   // ---- refresh ----
@@ -734,6 +748,7 @@ class Slot {
     return {
       id: this.id,
       name: this.name,
+      accountName: this.accountName || "",
       running: this.isLoopRunning,
       paused: this.paused,
       url: this.currentUrl || "",

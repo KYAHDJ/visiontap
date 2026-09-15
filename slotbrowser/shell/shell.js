@@ -20,6 +20,34 @@
 
   let state = { slots: [], ghosts: [], settings: {} };
   let lastFormIds = "";
+  let savedHistory = { users: [], accountNames: [] };
+
+  function loadSavedHistory() {
+    try {
+      const data = localStorage.getItem('vt_saved_history');
+      if (data) savedHistory = JSON.parse(data);
+    } catch (e) {}
+  }
+
+  function saveToHistory(user, accountName) {
+    if (user && !savedHistory.users.includes(user)) {
+      savedHistory.users.push(user);
+      if (savedHistory.users.length > 20) savedHistory.users.shift();
+    }
+    if (accountName && !savedHistory.accountNames.includes(accountName)) {
+      savedHistory.accountNames.push(accountName);
+      if (savedHistory.accountNames.length > 20) savedHistory.accountNames.shift();
+    }
+    try { localStorage.setItem('vt_saved_history', JSON.stringify(savedHistory)); } catch (e) {}
+    updateDatalists();
+  }
+
+  function updateDatalists() {
+    const usersList = document.getElementById('savedUsers');
+    const namesList = document.getElementById('savedAccountNames');
+    if (usersList) usersList.innerHTML = savedHistory.users.map(u => `<option value="${escapeHtml(u)}">`).join('');
+    if (namesList) namesList.innerHTML = savedHistory.accountNames.map(n => `<option value="${escapeHtml(n)}">`).join('');
+  }
 
   function escapeHtml(v) {
     return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -71,6 +99,7 @@
     const mem = {};
     slotForms.querySelectorAll(".slot-card").forEach((c) => {
       mem[c.dataset.id] = {
+        accountName: c.querySelector(".sf-account-name").value,
         user: c.querySelector(".cred-user").value,
         pass: c.querySelector(".cred-pass").value,
         zoom: c.querySelector(".sf-zoom").value,
@@ -84,6 +113,7 @@
     for (const [id, m] of Object.entries(mem || {})) {
       const card = slotForms.querySelector(`.slot-card[data-id="${id}"]`);
       if (!card) continue;
+      const an = card.querySelector(".sf-account-name"); if (an) an.value = m.accountName || "";
       card.querySelector(".cred-user").value = m.user;
       card.querySelector(".cred-pass").value = m.pass;
       const z = card.querySelector(".sf-zoom"); if (z) z.value = m.zoom;
@@ -97,8 +127,8 @@
 
   function renderSlotForms() {
     const mem = rememberSlotValues();
-    const all = state.slots.map((s) => ({ kind: "slot", id: s.id, name: s.name, zoom: s.zoom, hud: s.hudEnabled }))
-      .concat(state.ghosts.map((g) => ({ kind: "ghost", id: g.id, name: g.name, zoom: 1, hud: true })));
+    const all = state.slots.map((s) => ({ kind: "slot", id: s.id, name: s.name, accountName: s.accountName || "", zoom: s.zoom, hud: s.hudEnabled }))
+      .concat(state.ghosts.map((g) => ({ kind: "ghost", id: g.id, name: g.name, accountName: g.accountName || "", zoom: 1, hud: true })));
     lastFormIds = all.map((s) => s.id).join(",");
     if (!all.length) {
       slotForms.innerHTML = '<div class="grp" style="font-size:12px;color:#8ea3c0">No slots yet. Click "+ Add account".</div>';
@@ -107,11 +137,14 @@
     slotForms.innerHTML = all.map((s) => `
       <div class="slot-card" data-id="${dataId(s.id)}">
         <div class="sc-head">
-          <span>${escapeHtml(s.name)}${s.kind === "ghost" ? ' <span class="ghost-tag">(off)</span>' : ""}</span>
+          <span>${escapeHtml(s.accountName || s.name)}${s.kind === "ghost" ? ' <span class="ghost-tag">(off)</span>' : ""}</span>
         </div>
         <div class="fields">
+          <label class="full">Account name
+            <input type="text" class="sf-account-name" placeholder="e.g. Adaiahbi" list="savedAccountNames" />
+          </label>
           <label class="full">Username / email
-            <input type="text" class="cred-user" placeholder="ecnl username or email" />
+            <input type="text" class="cred-user" placeholder="ecnl username or email" list="savedUsers" />
           </label>
           <label class="full">Password
             <input type="password" class="cred-pass" placeholder="ecnl password" />
@@ -138,13 +171,14 @@
           <button class="small-link d remove-slot" data-id="${dataId(s.id)}">Remove</button>
         </div>
       </div>`).join("");
-    // Prefill zoom/hud from current slot states when the card is new.
+    // Prefill zoom/hud/accountName from current slot states when the card is new.
     all.forEach((s) => {
       if (mem[s.id]) return;
       const card = slotForms.querySelector(`.slot-card[data-id="${s.id}"]`);
       if (card && s.kind === "slot") {
         const z = card.querySelector(".sf-zoom"); if (z) z.value = s.zoom || "1";
         const h = card.querySelector(".sf-hud"); if (h) h.value = String(s.hud !== false);
+        const an = card.querySelector(".sf-account-name"); if (an && s.accountName) an.value = s.accountName;
       }
     });
     restoreSlotValues(mem);
@@ -160,12 +194,13 @@
     const payloads = [];
     slotForms.querySelectorAll(".slot-card").forEach((card) => {
       const id = card.dataset.id;
+      const accountName = card.querySelector(".sf-account-name").value.trim();
       const user = card.querySelector(".cred-user").value.trim();
       const pass = card.querySelector(".cred-pass").value;
       const zoom = Number(card.querySelector(".sf-zoom").value);
       const hud = card.querySelector(".sf-hud").value === "true";
       if (user || pass) payloads.push({ op: "creds", id, user, pass });
-      payloads.push({ op: "flags", id, zoom, hud });
+      payloads.push({ op: "flags", id, zoom, hud, accountName });
     });
     return payloads;
   }
@@ -184,8 +219,12 @@
     return vt.setSettings(patch).then(async () => {
       const payloads = gatherSlotPayloads();
       for (const p of payloads) {
-        if (p.op === "creds") await vt.setSlotCreds(p.id, p.user, p.pass);
-        else await vt.setSlotFlags(p.id, { zoom: p.zoom, hud: p.hud });
+        if (p.op === "creds") {
+          await vt.setSlotCreds(p.id, p.user, p.pass);
+          saveToHistory(p.user, p.accountName);
+        } else {
+          await vt.setSlotFlags(p.id, { zoom: p.zoom, hud: p.hud, accountName: p.accountName });
+        }
       }
     });
   }
@@ -205,6 +244,8 @@
   }
 
   // ---- mode init ----
+  loadSavedHistory();
+  updateDatalists();
   if (isSettings) {
     document.body.classList.add("settings-page");
     drawer.classList.remove("hidden");
@@ -263,13 +304,16 @@
       } else if (t.classList.contains("save-slot") && id) {
         const card = slotForms.querySelector(`.slot-card[data-id="${id}"]`);
         if (card) {
+          const accountName = card.querySelector(".sf-account-name").value.trim();
           const user = card.querySelector(".cred-user").value.trim();
           const pass = card.querySelector(".cred-pass").value;
           await vt.setSlotFlags(id, {
             zoom: Number(card.querySelector(".sf-zoom").value),
-            hud: card.querySelector(".sf-hud").value === "true"
+            hud: card.querySelector(".sf-hud").value === "true",
+            accountName
           });
           if (user || pass) await vt.setSlotCreds(id, user, pass);
+          saveToHistory(user, accountName);
           t.textContent = "Saved ✓";
           setTimeout(() => { t.textContent = "Save slot"; }, 1200);
         }
