@@ -65,6 +65,10 @@ class Slot {
     this.lastActionTs = 0;
     this.lastProgressTs = 0;
     this.lastSubmittedImageHash = null;
+    this.lastSubmittedAnswer = null;
+    this.lastTaskCorrect = false;
+    this.lastPointsDoneBeforeSubmit = null;
+    this.taskStartTime = null;
     this.paused = false;
     this.lastHudText = "";
     this.currentUrl = "";
@@ -76,7 +80,6 @@ class Slot {
     this.heartbeatTimer = null;
     this.commandTimer = null;
     this.nextTimer = null;
-    this.reportTimer = null;
     this.consecutiveDetectFails = 0;
     this._pageLogs = {};
     this._lastBlockerLog = 0;
@@ -331,7 +334,13 @@ class Slot {
         const j = await b.json();
         battery = j && j.battery != null ? j.battery : null;
       } catch (e) {}
-      payload = Object.assign({}, payload, { battery, slot: this.name });
+      payload = Object.assign({}, payload, {
+        battery, slot: this.name,
+        taskCount: this.taskCount,
+        correctCount: this.correctCount,
+        wrongCount: this.wrongCount,
+        errorCount: this.errorCount
+      });
       await fetch(`${SCANNER_URL}/report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -342,9 +351,13 @@ class Slot {
   }
 
   captureAndSendReport(report) {
-    if (this.reportTimer) clearTimeout(this.reportTimer);
-    this.reportTimer = setTimeout(async () => {
+    // Don't use timer — check verdict inline after short delay so submissions don't cancel each other
+    const reportData = report;
+    (async () => {
       let correct = null, theirs = null, withdrawable = null, pointsDone = null, pointsTotal = null;
+
+      // Wait a moment for the page to show verdict feedback
+      await sleep(1500);
 
       // Check verdict multiple times for accuracy
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -372,27 +385,36 @@ class Slot {
 
       // Fallback: points rose = correct answer
       if (correct == null) {
-        const oldV = parseInt(String(this.lastPoints.done || ""), 10);
+        const oldV = parseInt(String(reportData.pointsBeforeSubmit || ""), 10);
         const newV = parseInt(String(pointsDone || ""), 10);
         if (isFinite(oldV) && isFinite(newV) && newV > oldV) {
           correct = true;
           this.log(`Verdict: points rose ${oldV}->${newV}; counted CORRECT.`);
+        } else if (isFinite(oldV) && isFinite(newV) && newV === oldV && oldV > 0) {
+          // Points didn't change after submit — likely wrong answer
+          correct = false;
+          this.log(`Verdict: points unchanged ${newV}; counted WRONG.`);
         }
       }
 
       if (correct === true) this.correctCount++;
       else if (correct === false) this.wrongCount++;
+      else { this.errorCount++; this.log(`Verdict: unknown; counted ERROR.`); }
       this.lastTaskCorrect = correct;
+      this.lastPoints.done = pointsDone;
+      this.lastPoints.total = pointsTotal;
       this.pushHud({});
 
-      this.sendTaskReport(Object.assign({}, report, { correct, theirs, withdrawable, pointsDone, pointsTotal }));
-    }, 2000);
+      this.sendTaskReport(Object.assign({}, reportData, { correct, theirs, withdrawable, pointsDone, pointsTotal }));
+    })().catch(() => {});
   }
 
   // ---- refresh ----
   async refreshPage(reason, navigate) {
     if (this.isProcessing) { this.log(`SUPPRESSED reload during iteration (${reason}).`); return; }
-    this.log(`RELOAD reason=${reason}${navigate ? " -> solving-colors" : ""}`);
+    this.errorCount++;
+    this.log(`RELOAD reason=${reason}${navigate ? " -> solving-colors" : ""} (counted ERROR)`);
+    this.pushHud({});
     if (!this.wcIsAlive()) return;
     try { if (navigate) await this.wc.loadURL(this.getWorkUrl()); else this.wc.reload(); } catch (e) {}
     this.touchAction();
@@ -422,6 +444,7 @@ class Slot {
     this.lastSubmittedAnswer = null;
     this.lastTaskCorrect = false;
     this.lastPointsDoneBeforeSubmit = null;
+    this.taskStartTime = null;
       this.touchAction();
       this.touchProgress();
       this.startLiveTimer();
@@ -506,6 +529,17 @@ class Slot {
     this.isProcessing = true;
 
     try {
+      // Check if previous task timed out (>30 seconds)
+      if (this.taskStartTime && this.lastTaskCorrect === false) {
+        const elapsed = Date.now() - this.taskStartTime;
+        if (elapsed > 30000) {
+          this.errorCount++;
+          this.log(`Task timeout: ${Math.round(elapsed / 1000)}s (counted ERROR)`);
+          this.pushHud({});
+        }
+      }
+      this.taskStartTime = Date.now();
+
       await this.inject();
 
       let page = null;
@@ -680,6 +714,7 @@ class Slot {
       this.status(`[${this.taskCount}] DETECTED: ${answer}. Pasting...`);
 
       // Save points before submit to detect correctness next iteration
+      const pointsBeforeSubmit = this.lastPoints.done;
       this.lastPointsDoneBeforeSubmit = this.lastPoints.done;
       this.lastTaskCorrect = false;
 
@@ -696,6 +731,7 @@ class Slot {
         color: answer,
         image: imageData,
         pasted,
+        pointsBeforeSubmit,
         ts: Date.now()
       });
 

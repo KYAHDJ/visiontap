@@ -448,7 +448,27 @@
 
   vt.getVerdict = () => {
     try {
-      // Method 1: Check for specific result/alert elements on the page
+      const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
+
+      // Method 1: Check for explicit correct/incorrect messages in body text
+      const wrongPatterns = [
+        /(?:answer|result|status|response)\s*(?:is|:)?\s*(?:wrong|incorrect|not correct|invalid|try again)/i,
+        /(?:wrong|incorrect|not correct|invalid)\s*(?:answer|response)/i,
+        /(?:try|please try)\s*again/i,
+        /(?:sorry|oops|unfortunately)[,.]?\s*(?:that(?:'s| is)|you(?:'re| are))?\s*(?:wrong|incorrect|not right)/i
+      ];
+      for (const pat of wrongPatterns) {
+        if (pat.test(bodyText)) return { correct: false };
+      }
+      const correctPatterns = [
+        /(?:answer|result|status|response)\s*(?:is|:)?\s*(?:correct|right|well done|accurate)/i,
+        /(?:congratulations|nice|great|good)\s*(?:!|\.|,|\s*(?:job|work|answer|response))/i
+      ];
+      for (const pat of correctPatterns) {
+        if (pat.test(bodyText)) return { correct: true };
+      }
+
+      // Method 2: Check result/alert/feedback elements
       const resultSelectors = [
         '.alert', '.result', '.feedback', '.message', '.notification',
         '[class*="result"]', '[class*="feedback"]', '[class*="alert"]',
@@ -461,48 +481,27 @@
         const el = document.querySelector(sel);
         if (el) {
           const t = el.innerText.toLowerCase().trim();
+          if (t.includes('wrong') || t.includes('incorrect') || t.includes('try again') || t.includes('error') || t.includes('invalid')) return { correct: false };
           if (t.includes('correct') || t.includes('success') || t.includes('well done')) return { correct: true };
-          if (t.includes('wrong') || t.includes('incorrect') || t.includes('try again') || t.includes('error')) return { correct: false };
         }
       }
 
-      // Method 2: Check for green/red colored text (common success/error pattern)
+      // Method 3: Check for red/green colored text
       const allEls = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span, div, strong, b');
       for (const el of allEls) {
-        const style = window.getComputedStyle(el);
-        const color = style.color;
-        const bg = style.backgroundColor;
         const t = el.innerText.toLowerCase().trim();
         if (!t || t.length > 200) continue;
-        // Green text often = success
+        const style = window.getComputedStyle(el);
+        const color = style.color;
+        if ((color.includes('220, 38') || color.includes('239, 68') || color.includes('234, 57') || color.includes('185, 28')) && t.length < 50) {
+          if (t.includes('wrong') || t.includes('incorrect') || t.includes('try again') || t.includes('error') || t.includes('invalid')) return { correct: false };
+        }
         if ((color.includes('0, 128') || color.includes('34, 197') || color.includes('22, 163') || color.includes('21, 128')) && t.length < 50) {
           if (t.includes('correct') || t.includes('success') || t.includes('well done')) return { correct: true };
         }
-        // Red text often = error
-        if ((color.includes('220, 38') || color.includes('239, 68') || color.includes('234, 57') || color.includes('185, 28')) && t.length < 50) {
-          if (t.includes('wrong') || t.includes('incorrect') || t.includes('try again') || t.includes('error')) return { correct: false };
-        }
       }
 
-      // Method 3: Check if the answer input cleared (new task loaded = previous was correct)
-      const input = document.querySelector('input[placeholder*="Answer"], input[placeholder*="answer"], input[placeholder*="Enter"], input[type="text"]');
-      if (input && input.value === '') {
-        // Empty input could mean new task loaded
-        // Check if there's a task image (fruit/emoji) present
-        const hasTask = document.querySelector('img[src*="emoji"], img[src*="fruit"], img[src*="apple"], img[src*="grape"], img[src*="orange"], img[src*="cherry"]');
-        if (hasTask) return { correct: true };
-      }
-
-      // Method 4: Fallback - check body text with stricter matching
-      const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
-      // Look for explicit correct/incorrect messages near submission
-      const correctMatch = bodyText.match(/(?:answer|result|status)\s*(?:is|:)?\s*(correct|wrong|incorrect)/i);
-      if (correctMatch) {
-        const w = correctMatch[1].toLowerCase();
-        return { correct: w === 'correct' };
-      }
-
-      // Method 5: Check for withdrawal amount increase (most reliable)
+      // Method 4: Check withdrawal amount increase (most reliable for correct)
       const wm = bodyText.match(/withdrawable\s*[:=]?\s*[₱$]?\s*([0-9]+(?:\.[0-9]+)?)/);
       if (wm && wm[1]) {
         const current = parseFloat(wm[1]);
