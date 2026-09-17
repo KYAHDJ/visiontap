@@ -379,6 +379,49 @@
     } catch (e) {}
   })();
 
+  // Exposed for slot.js to retry login when stuck on auth page (immediate, not just once at load)
+  vt.tryLogin = async () => {
+    try {
+      const h = window.location.href.toLowerCase();
+      const hasPass = !!(document && document.querySelector('input[type="password"]'));
+      const isLogin = /login|signin|sign-in|log-in|auth/i.test(h) || hasPass;
+      if (!isLogin) return { status: "not-login" };
+      const pickUser = () => document.querySelector('input[type="email"], input[type="text"], input[type="tel"], input[name*="user" i], input[name*="email" i], input[name*="phone" i], input[name*="username" i]');
+      const pickPass = () => document.querySelector('input[type="password"]');
+      const setVal = (el, val) => {
+        const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+        el.focus(); el.click();
+        setter.call(el, val);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      const pickLoginBtn = () => {
+        const text = /log\s?in|sign\s?in|signin|login|submit|enter/i;
+        const els = Array.from(document.querySelectorAll('input[type="submit"], button[type="submit"], button, input[type="button"]'));
+        return els.find(el => {
+          const t = (el.value || el.innerText || el.textContent || "").trim();
+          return el.type === "submit" || text.test(t);
+        }) || null;
+      };
+      const creds = window.__vtCreds || null;
+      if (!creds || !creds.user || !creds.pass) return { status: "no-creds" };
+      const user = pickUser();
+      const pass = pickPass();
+      if (!user || !pass) return { status: "no-fields" };
+      setVal(user, creds.user);
+      setVal(pass, creds.pass);
+      await sleep(300);
+      const btn = pickLoginBtn();
+      if (btn) {
+        btn.click();
+        await sleep(1500);
+        return { status: "clicked" };
+      }
+      return { status: "no-btn" };
+    } catch (e) { return { status: "error", error: e.message }; }
+  };
+
   // ---- Server error watcher ----
   (function () {
     const text = document.body ? (document.body.innerText || "") : "";

@@ -578,11 +578,15 @@ class Slot {
       }
       if (page.isAuth) {
         if (throttle("auth")) this.log(`PAGE auth url=${page.url || "?"}`);
+        // Immediate retry login via injected tryLogin (fixes stuck login loop)
+        try {
+          const r = await this.api("tryLogin");
+          if (r) this.log(`TRY-LOGIN result: ${JSON.stringify(r).substring(0,120)}`);
+        } catch(e) {}
         this.status("Login page. Auto-login running, waiting...");
         this.touchProgress();
         this.isProcessing = false;
-        // After 8 seconds, if still on auth page, force redirect to solving-colors
-        this.scheduleNext(8000);
+        this.scheduleNext(3000);
         return;
       }
       if (!page.isWork) {
