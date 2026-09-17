@@ -11,7 +11,7 @@ const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const WORK_RE = /\/solving-colors/;
 
-const STALL_RESET_MS = 120000;
+const STALL_RESET_MS = 30000;
 const HEARTBEAT_MS = 30000;
 const COMMAND_POLL_MS = 15000;
 const HUD_TICK_MS = 5000;
@@ -231,7 +231,7 @@ class Slot {
     this.tickTimer = setInterval(() => {
       if (!this.isLoopRunning) return;
       this.log(`TICK url=${this.currentUrl || "?"}`);
-    }, 120000);
+    }, 30000);
   }
 
   stopLoop(reason) {
@@ -766,7 +766,7 @@ class Slot {
   }
 
   async waitForInputBox() {
-    const deadline = Date.now() + 120000;
+    const deadline = Date.now() + 15000;
     let lastInputHud = 0;
     let lastDebugLog = 0;
     while (this.isLoopRunning && !this.paused && Date.now() < deadline) {

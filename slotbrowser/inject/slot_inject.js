@@ -552,7 +552,7 @@
       vt._blankNoTaskLogged = false;
     }
 
-    const ready = loaded && imgOk && !checking && !boxHidden && !btnHidden && !isBlank2026 && !isBlankNoTask;
+    const ready = loaded && imgOk && !boxHidden && !btnHidden && !isBlank2026 && !isBlankNoTask;
     const boxRect = box ? box.getBoundingClientRect() : null;
     const btnRect = btn ? btn.getBoundingClientRect() : null;
     const newVal = box ? ('' + (box.value || box.textContent || '')).trim() : '';
@@ -824,7 +824,7 @@
     if (staleTimer) clearTimeout(staleTimer);
     staleTimer = setTimeout(() => {
       signal({ type: "stale_refresh", src: "staleTimer" });
-    }, 120000);
+    }, 30000);
   };
   resetStaleTimer();
   try { new MutationObserver(resetStaleTimer).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
