@@ -551,14 +551,9 @@ function createWindow() {
         for (const [id, slot] of slots) {
           const c = allCreds[id] || allCreds[slot.accountName] || null;
           if (c && (c.user !== (slot._creds && slot._creds.user) || c.pass !== (slot._creds && slot._creds.pass))) {
-            const wasEmpty = !(slot._creds && slot._creds.user);
             slot._creds = { user: String(c.user || ""), pass: String(c.pass || "") };
-            if (!wasEmpty) {
-              console.log(`[CREDS] Updated slot ${id} user=${c.user}, refreshing...`);
-              setTimeout(() => slot.refreshPage("creds-updated", true), 0);
-            } else {
-              console.log(`[CREDS] Initial load slot ${id} user=${c.user}`);
-            }
+            console.log(`[CREDS] Updated slot ${id} user=${c.user}, refreshing...`);
+            slot.refreshPage("creds-updated", true);
           }
         }
       }

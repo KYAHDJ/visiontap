@@ -266,7 +266,6 @@ def debug_detect():
         return jsonify({"error": str(e)}), 500
 
 STATS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner_stats.json")
-EARNINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "earnings_history.json")
 
 @app.route('/report', methods=['POST'])
 def report():
@@ -287,8 +286,6 @@ def report():
             'pointsDone': 0, 'pointsTotal': 0, 'withdrawable': 0,
             'taskCount': 0, 'correctCount': 0, 'wrongCount': 0, 'errorCount': 0
         })
-        old_withdrawable = s.get('withdrawable', 0) or 0
-
         if data.get('pointsDone') is not None:
             try: s['pointsDone'] = int(data['pointsDone'])
             except: pass
@@ -314,50 +311,11 @@ def report():
             s['lastCorrect'] = bool(data['correct'])
         s['lastUpdate'] = time.strftime('%H:%M:%S')
         existing['slots'][slot] = s
-
         with open(STATS_FILE, 'w') as f:
             json.dump(existing, f, indent=2)
-
-        # Track earnings history
-        new_withdrawable = s.get('withdrawable', 0) or 0
-        correct = data.get('correct')
-        if correct is True and new_withdrawable > old_withdrawable and old_withdrawable > 0:
-            earning = round(new_withdrawable - old_withdrawable, 4)
-            earnings = {}
-            try:
-                with open(EARNINGS_FILE, 'r') as f:
-                    earnings = json.load(f)
-            except Exception:
-                pass
-            if slot not in earnings:
-                earnings[slot] = []
-            earnings[slot].append({
-                'ts': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'epoch': int(time.time()),
-                'earning': earning,
-                'total': round(new_withdrawable, 4),
-                'taskNum': data.get('taskNum', 0),
-                'correct': True,
-                'color': data.get('color', '')
-            })
-            # Keep last 500 entries per slot
-            if len(earnings[slot]) > 500:
-                earnings[slot] = earnings[slot][-500:]
-            with open(EARNINGS_FILE, 'w') as f:
-                json.dump(earnings, f, indent=2)
-            print(f"[EARNINGS] +{earning} PHP for {slot} (total: {new_withdrawable})")
-
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-@app.route('/earnings', methods=['GET'])
-def earnings():
-    try:
-        with open(EARNINGS_FILE, 'r') as f:
-            return jsonify(json.load(f))
-    except Exception:
-        return jsonify({})
 
 @app.route('/stats', methods=['GET'])
 def stats():
