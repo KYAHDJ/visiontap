@@ -6,16 +6,11 @@ const { execSync } = require("child_process");
 
 const PORT = 8080;
 const ELECTRON_STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
-const SLOW_STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots-Slow", "state");
 const CREDS_FILE = path.join(ELECTRON_STATE_DIR, "credentials.json");
-const CREDS_FILE_SLOW = path.join(SLOW_STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(ELECTRON_STATE_DIR, "cred_history.json");
 const LOOP_CMD_FILE = path.join(ELECTRON_STATE_DIR, "loop_command.json");
-const LOOP_CMD_FILE_SLOW = path.join(SLOW_STATE_DIR, "loop_command.json");
 const SLOTS_FILE = path.join(ELECTRON_STATE_DIR, "slots.json");
-const SLOTS_FILE_SLOW = path.join(SLOW_STATE_DIR, "slots.json");
 const SLOT_CMD_FILE = path.join(ELECTRON_STATE_DIR, "slot_commands.json");
-const SLOT_CMD_FILE_SLOW = path.join(SLOW_STATE_DIR, "slot_commands.json");
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
@@ -35,25 +30,12 @@ function writeJson(file, data) {
   } catch (e) { log(`writeJson ERROR ${file}: ${e.message}`); }
 }
 
-function getCreds() {
-  const a = readJson(CREDS_FILE, {});
-  const b = readJson(CREDS_FILE_SLOW, {});
-  return Object.assign({}, a, b);
-}
+function getCreds() { return readJson(CREDS_FILE, {}); }
 function getHistory() { return readJson(HISTORY_FILE, { users: [] }); }
-function getElectronSlots() {
-  const a = readJson(SLOTS_FILE, { active: [] });
-  const b = readJson(SLOTS_FILE_SLOW, { active: [] });
-  // Merge, keep source tag for dashboard grouping
-  const merged = [];
-  for (const s of (a.active || [])) merged.push(Object.assign({}, s, { _src: "main" }));
-  for (const s of (b.active || [])) merged.push(Object.assign({}, s, { _src: "slow" }));
-  return { active: merged };
-}
+function getElectronSlots() { return readJson(SLOTS_FILE, { active: [] }); }
 function isLoopPaused() {
-  try { if (JSON.parse(fs.readFileSync(LOOP_CMD_FILE, "utf8")).action === "pause") return true; } catch(e){}
-  try { if (JSON.parse(fs.readFileSync(LOOP_CMD_FILE_SLOW, "utf8")).action === "pause") return true; } catch(e){}
-  return false;
+  try { return JSON.parse(fs.readFileSync(LOOP_CMD_FILE, "utf8")).action === "pause"; }
+  catch (e) { return false; }
 }
 function getStats() {
   try { return JSON.parse(run("curl -s http://127.0.0.1:5566/stats")); }
@@ -103,8 +85,6 @@ function getMergedSlots(status) {
         sc = {};
       }
     }
-    const isSlowInstance = slot._src === "slow";
-    const displayName = isSlowInstance ? `[Slow] ${name}` : name;
     const cred = creds[id] || creds[slot.id] || {};
     // Earnings are stored by slot id in server.py; also check by name for legacy + fallback
     let hist = slotEarnings[id] || slotEarnings[name] || slotEarnings[`Slot ${id}`] || slotEarnings[`Slot ${Number(id) + 1}`] || null;
@@ -133,7 +113,7 @@ function getMergedSlots(status) {
       displayHist = [];
     }
     const mergedSlot = {
-      id, name: displayName, accountName: slot.accountName || "",
+      id, name, accountName: slot.accountName || "",
       user: cred.user || "", pass: cred.pass || "",
       correctCount: sc.correctCount || 0,
       wrongCount: sc.wrongCount || 0,
@@ -144,8 +124,7 @@ function getMergedSlots(status) {
       pointsTotal: pointsTotal,
       totalEarned: Math.round(totalEarned * 10000) / 10000,
       lastUpdate: sc.lastUpdate || "",
-      earningsHistory: displayHist.filter(e => e && e.earning < 10).slice(-20).reverse(),
-      instance: isSlowInstance ? "slow" : "main"
+      earningsHistory: displayHist.filter(e => e && e.earning < 10).slice(-20).reverse()
     };
     merged.push(mergedSlot);
   }
@@ -153,8 +132,7 @@ function getMergedSlots(status) {
 }
 function sendCommands(cmds) {
   writeJson(SLOT_CMD_FILE, cmds);
-  writeJson(SLOT_CMD_FILE_SLOW, cmds);
-  log(`Commands sent: ${JSON.stringify(cmds)} to both instances`);
+  log(`Commands sent: ${JSON.stringify(cmds)}`);
 }
 
 function buildPage() {
@@ -363,8 +341,7 @@ const server = http.createServer((req, res) => {
     const cmd = url.searchParams.get("cmd");
     if (cmd === "pause" || cmd === "resume") {
       writeJson(LOOP_CMD_FILE, { action: cmd });
-      writeJson(LOOP_CMD_FILE_SLOW, { action: cmd });
-      log(`Loop ${cmd} (both instances)`);
+      log(`Loop ${cmd}`);
     }
     res.writeHead(302, { "Location": "/" });
     res.end();
@@ -377,16 +354,13 @@ const server = http.createServer((req, res) => {
     const pass = url.searchParams.get("pass") || "";
     log(`SAVE-CREDS: slot=${slot} user=${user}`);
     if (slot != null) {
-      // Write to both cred files so slow/main pick up whichever slot id matches
-      const credsMain = readJson(CREDS_FILE, {});
-      const credsSlow = readJson(CREDS_FILE_SLOW, {});
-      const update = (creds) => {
-        if (user || pass) creds[slot] = { user, pass };
-        else delete creds[slot];
-      };
-      update(credsMain); update(credsSlow);
-      writeJson(CREDS_FILE, credsMain);
-      writeJson(CREDS_FILE_SLOW, credsSlow);
+      const creds = getCreds();
+      if (user || pass) {
+        creds[slot] = { user, pass };
+      } else {
+        delete creds[slot];
+      }
+      writeJson(CREDS_FILE, creds);
       const history = getHistory();
       if (user && !history.users.includes(user)) {
         history.users.push(user);

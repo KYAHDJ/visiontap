@@ -7,17 +7,13 @@ const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
 
-const os = require("os");
 const { Slot, ensureScripts } = require("./slot.js");
 
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const MATH_WORK_URL = "https://ecnlmediamarket.com/solving-math";
 const WORK_RE = /\/solving-(colors|math)/;
 
-const IS_SLOW = process.argv.includes("--slow") || process.env.VISIONTAP_SLOW === "1";
-const STATE_DIR = IS_SLOW
-  ? path.join(os.homedir(), ".config", "VisionTap Slots-Slow", "state")
-  : path.join(app.getPath("userData"), "state");
+const STATE_DIR = path.join(app.getPath("userData"), "state");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const SETTINGS_FILE = path.join(STATE_DIR, "settings.json");
@@ -31,14 +27,6 @@ function writeJson(file, data) {
 }
 
 let settings = readJson(SETTINGS_FILE, { adBlock: true, taskMode: "color" });
-if (IS_SLOW) {
-  if (!settings.delayMult || settings.delayMult < 5) settings.delayMult = 5;
-  if (!settings.slowMode) settings.slowMode = true;
-  settings.taskMode = settings.taskMode || "color";
-  // Ensure slow state dir exists
-  try { fs.mkdirSync(STATE_DIR, { recursive: true }); } catch(e){}
-  try { if (!fs.existsSync(SETTINGS_FILE)) writeJson(SETTINGS_FILE, settings); } catch(e){}
-}
 
 const INJECT_PATH = path.join(__dirname, "inject", "slot_inject.js");
 
@@ -485,47 +473,31 @@ function initIpc() {
 
 // ---- Window ----
 function createWindow() {
-  let def = { width: 1440, height: 800 };
-  // Slow instance: small on right, doesn't take big portion
-  if (IS_SLOW) def = { width: 520, height: 720 };
+  const def = { width: 1440, height: 800 };
   let w = def.width;
   let h = def.height;
-  let pos = null;
-  if (IS_SLOW) {
-    // Place on right side of primary display
-    try {
-      const disp = screen.getPrimaryDisplay().workArea;
-      w = 520; h = Math.min(720, disp.height - 40);
-      const x = Math.max(10, disp.x + disp.width - w - 12);
-      const y = disp.y + 12;
-      pos = { x, y };
-    } catch(e){}
+  const ws = settings.windowSize || {};
+  if (ws.width >= 340 && ws.height >= 560) {
+    w = Math.round(ws.width);
+    h = Math.round(ws.height);
   } else {
-    const ws = settings.windowSize || {};
-    if (ws.width >= 340 && ws.height >= 560) {
-      w = Math.round(ws.width);
-      h = Math.round(ws.height);
-    } else {
-      const bounds = readJson(WIN_BOUNDS_FILE, {});
-      if (bounds.width >= 340 && bounds.width <= 700 && bounds.height >= 560 && bounds.height <= 1200) {
-        w = Math.round(bounds.width);
-        h = Math.round(bounds.height);
-      }
+    const bounds = readJson(WIN_BOUNDS_FILE, {});
+    if (bounds.width >= 340 && bounds.width <= 700 && bounds.height >= 560 && bounds.height <= 1200) {
+      w = Math.round(bounds.width);
+      h = Math.round(bounds.height);
     }
-    try {
-      const area = screen.getDisplayMatching({ x: 0, y: 0, width: w, height: h }).workArea;
-      w = Math.min(w, area.width);
-      h = Math.min(h, area.height);
-    } catch (e) {}
   }
+  try {
+    const area = screen.getDisplayMatching({ x: 0, y: 0, width: w, height: h }).workArea;
+    w = Math.min(w, area.width);
+    h = Math.min(h, area.height);
+  } catch (e) {}
   win = new BrowserWindow({
     width: w,
     height: h,
-    x: pos ? pos.x : undefined,
-    y: pos ? pos.y : undefined,
-    center: pos ? false : true,
-    minWidth: IS_SLOW ? 360 : 700,
-    minHeight: IS_SLOW ? 520 : 560,
+    center: true,
+    minWidth: 700,
+    minHeight: 560,
     frame: false,
     show: false,
     backgroundColor: "#0b1020",
@@ -546,7 +518,6 @@ function createWindow() {
 
   win.on("ready-to-show", () => {
     if (startMinimized) { win.minimize(); win.hide(); }
-    else if (IS_SLOW) { win.show(); /* keep small on right, don't maximize */ }
     else { win.maximize(); win.show(); }
   });
 

@@ -15,7 +15,6 @@ const STALL_RESET_MS = 120000;
 const HEARTBEAT_MS = 30000;
 const COMMAND_POLL_MS = 15000;
 const HUD_TICK_MS = 5000;
-const IS_SLOW_SLOT = process.argv.includes("--slow") || process.env.VISIONTAP_SLOW === "1";
 
 let INJECT_JS = "";
 let AD_BLOCK_JS = "";
@@ -179,7 +178,7 @@ class Slot {
       if (this.currentUrl.includes("ecnlmediamarket.com")) {
         const credsJson = JSON.stringify(this._creds || null);
         await this.wc.executeJavaScript(
-          `window.__vtCreds = ${credsJson}; window.__vtSlow = ${IS_SLOW_SLOT ? "true" : "false"};`
+          `window.__vtCreds = ${credsJson};`
         ).catch(() => {});
         if (AD_BLOCK_JS) {
           await this.wc.executeJavaScript(AD_BLOCK_JS).catch(() => {});
@@ -759,6 +758,13 @@ class Slot {
       let ready = false;
       try {
         const r = await this.api("checkInputReady");
+        // 2026 blank page — immediate auto refresh (user requested)
+        if (r && r.isBlank2026) {
+          this.log("2026 BLANK detected — immediate reload");
+          try { this.wc.reload(); } catch(e) {}
+          this.errorCount++;
+          return false;
+        }
         ready = !!(r && r.ready);
         if (!ready && Date.now() - lastDebugLog > 10000) {
           lastDebugLog = Date.now();
