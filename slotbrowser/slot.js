@@ -85,6 +85,10 @@ class Slot {
     this._lastBlockerLog = 0;
     this._injected = false;
     this._scannerPid = null;
+    this.dashboardPaused = false;
+    this.pointsSyncTimer = null;
+    this.withdrawableCache = null;
+    this._lastPointsPush = 0;
   }
 
   getWorkUrl() {
@@ -221,6 +225,7 @@ class Slot {
     this.touchProgress();
     this.startLiveTimer();
     this.startKeeperClients();
+    this.startPointsSync();
     this.status("Loop started. Scanning...");
     this.startStaggered();
     this.tickTimer = setInterval(() => {
@@ -235,6 +240,7 @@ class Slot {
     this.loopStopRequested = true;
     this.stopLiveTimer();
     this.stopKeeperClients();
+    this.stopPointsSync();
     if (this.nextTimer) { clearTimeout(this.nextTimer); this.nextTimer = null; }
     if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
     this.status(`Stopped: ${reason}`);
@@ -649,15 +655,9 @@ class Slot {
       }
 
       const curHash = hashImage(imageData);
+      // Oracle: allow same image to be answered again — no deduplication limit (user requested)
       if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
-        if (this.lastTaskCorrect) {
-          this.status("Same image, already correct. Waiting for next task...");
-          this.isProcessing = false;
-          this.scheduleNext(800);
-          return;
-        }
-        // Same image but last answer was wrong — retry detection
-        this.status(`[${this.taskCount + 1}] Same image, retrying detection...`);
+        this.log(`SAME-IMAGE retry allowed (hash=${curHash}) — submitting again as requested`);
       }
 
       const imgSizeKB = Math.round((imageData.length * 3 / 4) / 1024);
@@ -758,6 +758,13 @@ class Slot {
       let ready = false;
       try {
         const r = await this.api("checkInputReady");
+        // 2026 immediate auto-refresh (user: 2026 coming back)
+        if (r && r.isBlank2026) {
+          this.log("2026 BLANK immediate reload");
+          try { this.wc.reload(); } catch(e) {}
+          this.errorCount++;
+          return false;
+        }
         ready = !!(r && r.ready);
         if (!ready && Date.now() - lastDebugLog > 10000) {
           lastDebugLog = Date.now();
@@ -800,6 +807,49 @@ class Slot {
       delayMult: this.delayMult,
       stopRequested: this.loopStopRequested
     };
+  }
+
+  // ---- points sync: keep dashboard 100% live even between tasks ----
+  startPointsSync() {
+    this.stopPointsSync();
+    this.pointsSyncTimer = setInterval(async () => {
+      if (!this.isLoopRunning || this.paused || !this.wcIsAlive()) return;
+      try {
+        const meta = await this.api("getTaskMeta");
+        if (!meta) return;
+        const pd = meta.pointsDone != null ? parseInt(String(meta.pointsDone), 10) : null;
+        const pt = meta.pointsTotal != null ? parseInt(String(meta.pointsTotal), 10) : null;
+        const wd = meta.withdrawable != null ? String(meta.withdrawable) : null;
+        if ((pd != null && !isNaN(pd) && pd >= 0 && pd <= 500) || wd != null) {
+          let changed = false;
+          if (pd != null && String(pd) !== String(this.lastPoints.done)) changed = true;
+          if (wd != null && String(wd) !== String(this.withdrawableCache)) changed = true;
+          if (!changed && Date.now() - (this._lastPointsPush || 0) < 30000) return;
+          this._lastPointsPush = Date.now();
+          this.withdrawableCache = wd;
+          if (pd != null) this.lastPoints.done = String(pd);
+          if (pt != null) this.lastPoints.total = String(pt);
+          this.pushHud({});
+          fetch(`${SCANNER_URL}/report`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              slot: this.id,
+              slotName: this.name,
+              pointsDone: pd,
+              pointsTotal: pt,
+              withdrawable: wd != null ? parseFloat(wd) : undefined,
+              lastUpdate: new Date().toLocaleTimeString()
+            })
+          }).catch(() => {});
+          this.log(`POINTS-SYNC points=${pd != null ? pd + '/' + (pt || 250) : '?'} bal=${wd || '?'} -> scanner`);
+        }
+      } catch (e) {}
+    }, 8000);
+  }
+
+  stopPointsSync() {
+    if (this.pointsSyncTimer) { clearInterval(this.pointsSyncTimer); this.pointsSyncTimer = null; }
   }
 }
 
