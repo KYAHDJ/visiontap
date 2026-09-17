@@ -389,6 +389,17 @@ class Slot {
       if (pointsDone == null) pointsDone = this.lastPoints.done;
       if (pointsTotal == null) pointsTotal = this.lastPoints.total;
 
+      // New cycle: 100+ -> 0-10 (e.g., 195->4) → reset to show current 4/250 not old 195+compiled (user wants current)
+      const oldPdForReset = reportData.pointsBeforeSubmit != null ? parseInt(String(reportData.pointsBeforeSubmit), 10) : (this.lastPoints.done != null ? parseInt(String(this.lastPoints.done), 10) : null);
+      const newPdForReset = pointsDone != null ? parseInt(String(pointsDone), 10) : null;
+      if (oldPdForReset != null && !isNaN(oldPdForReset) && newPdForReset != null && !isNaN(newPdForReset) && oldPdForReset >= 100 && newPdForReset >= 0 && newPdForReset <= 10) {
+        this.log(`NEW CYCLE ${oldPdForReset}->${newPdForReset}, reset current counts for dashboard`);
+        this.taskCount = 0;
+        this.correctCount = 0;
+        this.wrongCount = 0;
+        this.errorCount = 0;
+      }
+
       // Fallback: points rose = correct answer
       if (correct == null) {
         const oldV = parseInt(String(reportData.pointsBeforeSubmit || ""), 10);
@@ -829,6 +840,15 @@ class Slot {
           if (pd != null && String(pd) !== String(this.lastPoints.done)) changed = true;
           if (wd != null && String(wd) !== String(this.withdrawableCache)) changed = true;
           if (!changed && Date.now() - (this._lastPointsPush || 0) < 30000) return;
+          // New cycle detection for dashboard current (user wants 4/250 not 195+old, delete old cache)
+          const oldPdNum = this.lastPoints.done != null ? parseInt(String(this.lastPoints.done), 10) : null;
+          if (oldPdNum != null && !isNaN(oldPdNum) && pd != null && !isNaN(pd) && oldPdNum >= 100 && pd >= 0 && pd <= 10) {
+            this.log(`NEW CYCLE ${oldPdNum}->${pd}, reset current counts for dashboard`);
+            this.taskCount = 0;
+            this.correctCount = 0;
+            this.wrongCount = 0;
+            this.errorCount = 0;
+          }
           this._lastPointsPush = Date.now();
           this.withdrawableCache = wd;
           if (pd != null) this.lastPoints.done = String(pd);
@@ -843,6 +863,10 @@ class Slot {
               pointsDone: pd,
               pointsTotal: pt,
               withdrawable: wd != null ? parseFloat(wd) : undefined,
+              taskCount: this.taskCount,
+              correctCount: this.correctCount,
+              wrongCount: this.wrongCount,
+              errorCount: this.errorCount,
               lastUpdate: new Date().toLocaleTimeString()
             })
           }).catch(() => {});
