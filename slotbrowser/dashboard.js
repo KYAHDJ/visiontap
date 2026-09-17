@@ -103,11 +103,15 @@ function getMergedSlots(status) {
     if (!Array.isArray(hist)) hist = [];
     const totalEarned = hist.reduce((sum, e) => sum + (e.earning || 0), 0);
     let pointsDone = sc.pointsDone != null ? Number(sc.pointsDone) : 0;
-    let pointsTotal = sc.pointsTotal != null ? Number(sc.pointsTotal) : 250;
-    // Live reset when points hit 250 — display reset but don't hide data
+    let pointsTotal = sc.pointsTotal != null && Number(sc.pointsTotal) !== 0 ? Number(sc.pointsTotal) : 250;
+    // Live: when new cycle 0-10 (e.g., 4/250), show current not old compiled — clear old cache
     let displayHist = hist;
     if (pointsDone >= 250) {
       pointsDone = 0;
+      displayHist = [];
+    }
+    if (pointsDone >= 0 && pointsDone <= 10) {
+      // New cycle start — don't show old 195+ history, show fresh
       displayHist = [];
     }
     const mergedSlot = {

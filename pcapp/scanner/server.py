@@ -290,27 +290,6 @@ def report():
         old_withdrawable = s.get('withdrawable', 0) or 0
         old_pointsDone = s.get('pointsDone', 0) or 0
 
-        # New cycle detection: points went 240+ -> 0-10 (new 250), reset current session counts to show current (user wants 4/250 not 195+old)
-        if data.get('pointsDone') is not None:
-            try:
-                new_pd = int(data['pointsDone'])
-                if old_pointsDone >= 200 and 0 <= new_pd <= 10:
-                    s['taskCount'] = 0
-                    s['correctCount'] = 0
-                    s['wrongCount'] = 0
-                    s['errorCount'] = 0
-                    # Clear earnings for new cycle display (keep file but dashboard will show fresh)
-                    print(f"[RESET] Slot {slot} new cycle {old_pointsDone}->{new_pd}, reset current counts")
-                elif old_pointsDone >= 240 and 0 <= new_pd <= 20:
-                    # Also handle 240->20 case
-                    s['taskCount'] = 0
-                    s['correctCount'] = 0
-                    s['wrongCount'] = 0
-                    s['errorCount'] = 0
-                    print(f"[RESET] Slot {slot} new cycle {old_pointsDone}->{new_pd}, reset current counts")
-            except:
-                pass
-
         if data.get('pointsDone') is not None:
             try: s['pointsDone'] = int(data['pointsDone'])
             except: pass
@@ -334,6 +313,27 @@ def report():
             except: pass
         if data.get('correct') is not None:
             s['lastCorrect'] = bool(data['correct'])
+        # New cycle: points 200+ -> 0-10 means new 250 cycle, show current not old compiled (user wants 4/250 not 195)
+        if data.get('pointsDone') is not None:
+            try:
+                new_pd = int(data['pointsDone'])
+                if (old_pointsDone >= 100 and 0 <= new_pd <= 10) or (old_pointsDone >= 150 and 0 <= new_pd <= 20) or (old_pointsDone >= 50 and new_pd == 0):
+                    # Reset to current cycle counts (data's counts should be small, but if data still has old large, reset to 0)
+                    s['taskCount'] = 0
+                    s['correctCount'] = 0
+                    s['wrongCount'] = 0
+                    s['errorCount'] = 0
+                    if s.get('pointsTotal', 0) == 0:
+                        s['pointsTotal'] = 250
+                    print(f"[RESET] Slot {slot} new cycle {old_pointsDone}->{new_pd}, reset current counts")
+            except:
+                pass
+        # Ensure pointsTotal is 250 if we have pointsDone but total is 0 (new cycle 0/0 case)
+        if s.get('pointsTotal', 0) == 0 and s.get('pointsDone', 0) != 0:
+            s['pointsTotal'] = 250
+        if s.get('pointsDone', 0) == 0 and s.get('pointsTotal', 0) == 0:
+            # New cycle start, show 0/250 not 0/0
+            s['pointsTotal'] = 250
         s['lastUpdate'] = time.strftime('%H:%M:%S')
         existing['slots'][slot] = s
 
