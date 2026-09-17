@@ -11,7 +11,7 @@ const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const WORK_RE = /\/solving-colors/;
 
-const STALL_RESET_MS = 30000;
+const STALL_RESET_MS = 120000;
 const HEARTBEAT_MS = 30000;
 const COMMAND_POLL_MS = 15000;
 const HUD_TICK_MS = 5000;
@@ -68,9 +68,7 @@ class Slot {
     this.lastSubmittedAnswer = null;
     this.lastTaskCorrect = false;
     this.lastPointsDoneBeforeSubmit = null;
-    this.reportGeneration = 0;
     this.taskStartTime = null;
-    this.lastTaskSubmitTs = 0;
     this.paused = false;
     this.lastHudText = "";
     this.currentUrl = "";
@@ -88,119 +86,108 @@ class Slot {
     this._injected = false;
     this._scannerPid = null;
     this.dashboardPaused = false;
-    this.loginCycleCount = 0;
-    this.lastLoginCycleTs = 0;
-  }
-
-  attach() {
-    this.startLiveTimer();
-    this.pushHud({});
-
-    if (this.wcIsAlive()) {
-      this.wc.on("did-navigate", (_e, url) => {
-        this.currentUrl = url || "";
-        this.resetInjected();
-      });
-      this.wc.on("did-navigate-in-page", (_e, url) => {
-        this.currentUrl = url || this.currentUrl;
-        this.resetInjected();
-      });
-      this.wc.on("did-navigate", (_e, url) => {
-        this.currentUrl = url || "";
-      });
-    }
+    this.pointsSyncTimer = null;
+    this.withdrawableCache = null;
+    this._lastPointsPush = 0;
   }
 
   getWorkUrl() {
     return COLOR_WORK_URL;
   }
 
-  setZoom(z) {
-    this.zoom = z || 1;
-    try { this.wc.setZoomFactor(this.zoom); } catch (e) {}
-  }
+  attach() {
+    const wc = this.wc;
 
-  setHud(on) {
-    this.hudEnabled = on !== false;
-    this.pushHud({});
-  }
+    // Block any navigation away from solving-colors/math (allow login pages)
+    wc.on("will-navigate", (_e, url) => {
+      this.log(`NAV-WILL -> ${url}`);
+      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+        _e.preventDefault();
+        this.log(`NAV-BLOCKED: ${url} -> forcing work page`);
+        wc.loadURL(this.getWorkUrl()).catch(() => {});
+      }
+    });
 
-  setDelay(d) {
-    this.delayMult = d || 1;
-  }
+    wc.on("did-navigate", (_e, url) => {
+      this.currentUrl = url || "";
+      this.log(`NAV-TOP -> ${url || ""}`);
+      // Safety: if landed on non-work ecnl page, redirect
+      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+        this.log(`NAV-FIX: redirecting to work page`);
+        wc.loadURL(this.getWorkUrl()).catch(() => {});
+      }
+    });
 
-  setPaused(p) {
-    if (this.paused === p) return;
-    console.log(`[Slot ${this.id}] setPaused(${p})`);
-    this.paused = p;
-    if (!p && this.isLoopRunning) {
-      this.touchAction();
-      if (!this.nextTimer) this.scheduleNext(2000);
-    }
-    this.pushHud({});
-  }
+    wc.on("did-redirect-navigation", (_e, url) => {
+      this.log(`NAV-REDIRECT -> ${url}`);
+      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+        _e.preventDefault();
+        this.log(`NAV-REDIRECT-BLOCKED: ${url}`);
+        wc.loadURL(this.getWorkUrl()).catch(() => {});
+      }
+    });
 
-  status(text) {
-    this.lastHudText = text || "";
-    this.pushHud({});
-  }
+    wc.on("did-navigate-in-page", (_e, url) => {
+      this.currentUrl = url || "";
+      this._injected = false;
+      this.inject().catch(() => {});
+    });
 
-  pushHud(extra) {
-    if (!this.hudEnabled) return;
-    const now = new Date();
-    const ts = now.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const pointsText = this.lastPoints.done != null && this.lastPoints.total != null ? `${this.lastPoints.done}/${this.lastPoints.total}` : "--/--";
-    const lines = [
-      `VisionTap Slot ${this.id}${this.paused ? " PAUSED" : ""}`,
-      `${this.paused ? "PAUSED" : "SCANNING"}`,
-      `Time: ${this.getTimeRunning()} | Correct: ${this.correctCount} | Wrong: ${this.wrongCount} | Error: ${this.errorCount}`,
-    ];
-    if (extra && extra.line4) lines.push(extra.line4);
-    if (this.lastHudText && !this.lastHudText.startsWith("[")) lines.push(this.lastHudText);
-    else if (this.lastHudText) lines.push(this.lastHudText);
-    try {
-      this.wc.executeJavaScript(`
-        const el = document.getElementById('visiontap-hud');
-        if (el) {
-          const pre = el.querySelector('pre');
-          if (pre) pre.textContent = ${JSON.stringify(lines.join("\n"))};
-        }
-      `).catch(() => {});
-    } catch (e) {}
-  }
+    wc.on("did-finish-load", () => {
+      this.currentUrl = wc.getURL() || "";
+      this._injected = false;
+      this.inject().catch(() => {});
+    });
 
-  getTimeRunning() {
-    if (!this.loopStartTime) return "00:00";
-    const sec = Math.floor((Date.now() - this.loopStartTime) / 1000);
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }
+    wc.on("ipc-message", (_e, channel, _id, msg) => {
+      if (channel !== "vt-slot-msg") return;
+      if (msg && msg.type === "stale_refresh") {
+        this.log(`Page reported stale (src=${msg.src || "?"}). Recovery reload.`);
+        this.refreshPage(`page-stale:${msg.src || "?"}`, true);
+      } else if (msg && msg.type === "ensure_running") {
+        this.ensureRunning();
+      } else if (msg && msg.type === "vt_log") {
+        this.log(msg.msg || "");
+      }
+    });
 
-  touchAction() { this.lastActionTs = Date.now(); }
-  touchProgress() { this.lastProgressTs = Date.now(); }
+    wc.on("render-process-gone", (_e, details) => {
+      console.warn(`[${this.name}] renderer gone: reason=${details.reason} exit=${details.exitCode}`);
+      this.lastGoneTs = Date.now();
+      const now = Date.now();
+      if (this.reloadCooldownUntil && now < this.reloadCooldownUntil) return;
+      if (this.isLoopRunning && this.lastGoneTs - (this._lastReloadTs || 0) > 10000) {
+        this._lastReloadTs = this.lastGoneTs;
+        setTimeout(() => { try { this.wc.reload(); } catch (e) {} }, 1500);
+      }
+    });
+  }
 
   wcIsAlive() {
     try { return this.wc && !this.wc.isDestroyed(); } catch (e) { return false; }
   }
 
-  async inject() {
-    if (this._injected || !this.wcIsAlive()) return;
-    try {
-      // Ensure __vtapi exists before running inject
-      await this.wc.executeJavaScript('window.__vtapi = window.__vtapi || {};');
-      if (this._creds && this._creds.user) {
-        await this.wc.executeJavaScript(`window.__vtCreds = ${JSON.stringify(this._creds)};`);
-      }
-      await this.wc.executeJavaScript(INJECT_JS);
-      if (AD_BLOCK_JS) await this.wc.executeJavaScript(AD_BLOCK_JS);
-      this._injected = true;
-    } catch (e) {
-      this.log(`INJECT-ERROR: ${e.message}`);
-    }
-  }
+  setZoom(z) { this.zoom = z; try { this.wc.setZoomFactor(z); } catch (e) {} }
+  setHud(on) { this.hudEnabled = !!on; }
+  setDelay(mult) { this.delayMult = mult > 0 ? mult : 1; }
 
-  resetInjected() { this._injected = false; }
+  async inject() {
+    if (!this.wcIsAlive()) return;
+    if (this._injected) return;
+    try {
+      if (this.currentUrl.includes("ecnlmediamarket.com")) {
+        const credsJson = JSON.stringify(this._creds || null);
+        await this.wc.executeJavaScript(
+          `window.__vtCreds = ${credsJson};`
+        ).catch(() => {});
+        if (AD_BLOCK_JS) {
+          await this.wc.executeJavaScript(AD_BLOCK_JS).catch(() => {});
+        }
+        await this.wc.executeJavaScript(INJECT_JS).catch(() => {});
+        this._injected = true;
+      }
+    } catch (e) {}
+  }
 
   async api(method, arg) {
     if (!this.wcIsAlive()) return null;
@@ -212,20 +199,39 @@ class Slot {
     try { return await this.wc.executeJavaScript(js); } catch (e) { return null; }
   }
 
+  ensureRunning() {
+    if (!this.isLoopRunning && !this.loopStopRequested) this.startLoop();
+  }
+
+  toggleLoop() {
+    if (this.isLoopRunning) this.stopLoop("Stopped by user.");
+    else this.startLoop();
+  }
+
   startLoop() {
     if (this.isLoopRunning) return;
     if (!this.wcIsAlive()) return;
     this.isLoopRunning = true;
-    this.loopStartTime = Date.now();
+    this.isProcessing = false;
     this.loopStopRequested = false;
-    this.log("Loop started.");
-    this.status("Starting...");
-    this.pushHud({});
+    this.loopStartTime = Date.now();
+    this.taskCount = 0;
+    this.correctCount = 0;
+    this.wrongCount = 0;
+    this.errorCount = 0;
+    this.lastPoints = { done: null, total: null };
+    this.lastSubmittedImageHash = null;
     this.touchAction();
-    this.scheduleNext(1000);
-    this.startHeartbeat();
-    this.startCommandPoll();
+    this.touchProgress();
+    this.startLiveTimer();
+    this.startKeeperClients();
     this.startPointsSync();
+    this.status("Loop started. Scanning...");
+    this.startStaggered();
+    this.tickTimer = setInterval(() => {
+      if (!this.isLoopRunning) return;
+      this.log(`TICK url=${this.currentUrl || "?"}`);
+    }, 120000);
   }
 
   stopLoop(reason) {
@@ -240,17 +246,272 @@ class Slot {
     this.status(`Stopped: ${reason}`);
   }
 
-  toggleLoop() {
-    if (this.isLoopRunning) this.stopLoop("Stopped by user.");
-    else this.startLoop();
+  setPaused(p) {
+    if (this.paused === p) return;
+    console.log(`[Slot ${this.id}] setPaused(${p})`);
+    this.paused = p;
+    if (p) this.status("Paused (dashboard)");
+    else if (this.isLoopRunning) { this.status("Resuming..."); this.startStaggered(1500); }
   }
 
-  ensureRunning() {
-    if (!this.isLoopRunning && !this.loopStopRequested) this.startLoop();
+  // ---- HUD ----
+  startLiveTimer() {
+    this.stopLiveTimer();
+    this.hudTimer = setInterval(() => {
+      if (!this.isLoopRunning || this.paused) return;
+      const elapsed = this.loopStartTime ? Math.floor((Date.now() - this.loopStartTime) / 1000) : 0;
+      const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+      const ss = String(elapsed % 60).padStart(2, "0");
+      this.pushHud({ timerText: `${mm}:${ss}`, isRunning: true });
+    }, HUD_TICK_MS);
   }
 
-  scheduleNext(d) {
+  stopLiveTimer() { if (this.hudTimer) clearInterval(this.hudTimer); this.hudTimer = null; }
+
+  status(text) { this.lastHudText = text; this.pushHud({}); }
+
+  pushHud(partial) {
+    if (!this.hudEnabled || !this.wcIsAlive()) return;
+    const elapsed = this.loopStartTime ? Math.floor((Date.now() - this.loopStartTime) / 1000) : 0;
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+    const ss = String(elapsed % 60).padStart(2, "0");
+    const state = {
+      slotName: this.name,
+      statusText: partial.statusText !== undefined ? partial.statusText : this.lastHudText,
+      timerText: partial.timerText || `${mm}:${ss}`,
+      correctCount: this.correctCount,
+      wrongCount: this.wrongCount,
+      errorCount: this.errorCount,
+      isRunning: this.isLoopRunning,
+      lastTaskCorrect: this.lastTaskCorrect
+    };
+    this.api("hud", state).catch(() => {});
+  }
+
+  // ---- keeper ----
+  startKeeperClients() {
+    this.stopKeeperClients();
+    this.heartbeatTimer = setInterval(() => this.sendKeeperHeartbeat(), HEARTBEAT_MS);
+    this.commandTimer = setInterval(() => this.pollKeeperCommand(), COMMAND_POLL_MS);
+    this.sendKeeperHeartbeat();
+  }
+
+  stopKeeperClients() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+    if (this.commandTimer) clearInterval(this.commandTimer);
+    this.commandTimer = null;
+  }
+
+  async sendKeeperHeartbeat() {
+    try {
+      await fetch(KEEPER_HEARTBEAT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ progress: this.lastProgressTs || 0 }),
+        cache: "no-store"
+      });
+    } catch (e) {}
+  }
+
+  async pollKeeperCommand() {
+    try {
+      const res = await fetch(KEEPER_COMMAND_URL, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.command === "reset" && this.isLoopRunning && !this.isProcessing) {
+        const now = Date.now();
+        const stallProgress = now - (this.lastProgressTs || 0);
+        const stallAction = now - (this.lastActionTs || 0);
+        if (stallProgress > STALL_RESET_MS && stallAction > STALL_RESET_MS) {
+          this.log(`HARD-RESET: no progress for ${Math.round(stallProgress / 1000)}s`);
+          this.hardRestart();
+        }
+      }
+    } catch (e) {}
+  }
+
+  // ---- report ----
+  async sendTaskReport(payload) {
+    try {
+      let battery = null;
+      try {
+        const b = await fetch("http://127.0.0.1:8177/battery", { cache: "no-store" });
+        const j = await b.json();
+        battery = j && j.battery != null ? j.battery : null;
+      } catch (e) {}
+      payload = Object.assign({}, payload, {
+        battery, slot: this.name,
+        taskCount: this.taskCount,
+        correctCount: this.correctCount,
+        wrongCount: this.wrongCount,
+        errorCount: this.errorCount
+      });
+      await fetch(`${SCANNER_URL}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store"
+      });
+    } catch (e) {}
+  }
+
+  captureAndSendReport(report) {
+    // Don't use timer — check verdict inline after short delay so submissions don't cancel each other
+    const reportData = report;
+    (async () => {
+      let correct = null, theirs = null, withdrawable = null, pointsDone = null, pointsTotal = null;
+
+      // Wait a moment for the page to show verdict feedback
+      await sleep(1500);
+
+      // Check verdict multiple times for accuracy
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const v = await this.api("getVerdict");
+          if (v && v.correct !== null) {
+            correct = !!v.correct;
+            theirs = v.theirs || null;
+            break;
+          }
+        } catch (e) {}
+        if (attempt < 2) await sleep(500);
+      }
+
+      try {
+        const m = await this.api("getTaskMeta");
+        if (m) {
+          withdrawable = m.withdrawable != null ? String(m.withdrawable) : null;
+          pointsDone = m.pointsDone != null ? String(m.pointsDone) : null;
+          pointsTotal = m.pointsTotal != null ? String(m.pointsTotal) : null;
+        }
+      } catch (e) {}
+      if (pointsDone == null) pointsDone = this.lastPoints.done;
+      if (pointsTotal == null) pointsTotal = this.lastPoints.total;
+
+      // Fallback: points rose = correct answer
+      if (correct == null) {
+        const oldV = parseInt(String(reportData.pointsBeforeSubmit || ""), 10);
+        const newV = parseInt(String(pointsDone || ""), 10);
+        if (isFinite(oldV) && isFinite(newV) && newV > oldV) {
+          correct = true;
+          this.log(`Verdict: points rose ${oldV}->${newV}; counted CORRECT.`);
+        } else if (isFinite(oldV) && isFinite(newV) && newV === oldV && oldV > 0) {
+          // Points didn't change after submit — likely wrong answer
+          correct = false;
+          this.log(`Verdict: points unchanged ${newV}; counted WRONG.`);
+        }
+      }
+
+      if (correct === true) this.correctCount++;
+      else if (correct === false) this.wrongCount++;
+      else { this.errorCount++; this.log(`Verdict: unknown; counted ERROR.`); }
+      this.lastTaskCorrect = correct;
+      this.lastPoints.done = pointsDone;
+      this.lastPoints.total = pointsTotal;
+      this.pushHud({});
+
+      this.sendTaskReport(Object.assign({}, reportData, { correct, theirs, withdrawable, pointsDone, pointsTotal }));
+    })().catch(() => {});
+  }
+
+  // ---- refresh ----
+  async refreshPage(reason, navigate) {
+    if (this.isProcessing) { this.log(`SUPPRESSED reload during iteration (${reason}).`); return; }
+    this.errorCount++;
+    this.log(`RELOAD reason=${reason}${navigate ? " -> solving-colors" : ""} (counted ERROR)`);
+    this.pushHud({});
+    if (!this.wcIsAlive()) return;
+    try { if (navigate) await this.wc.loadURL(this.getWorkUrl()); else this.wc.reload(); } catch (e) {}
+    this.touchAction();
+  }
+
+  async hardRestart() {
+    const wasRunning = this.isLoopRunning;
+    this.log(`HARD-RESTART wasRunning=${wasRunning}`);
+    this.isLoopRunning = false;
+    this.isProcessing = false;
+    this.stopLiveTimer();
+    this.stopKeeperClients();
+    if (!this.wcIsAlive()) return;
+    try { this.wc.reload(); } catch (e) {}
+    if (!wasRunning) return;
+    setTimeout(() => {
+      if (this.loopStopRequested || !wasRunning) return;
+      this.isLoopRunning = true;
+      this.isProcessing = false;
+      this.loopStartTime = Date.now();
+      this.taskCount = 0;
+      this.correctCount = 0;
+      this.wrongCount = 0;
+      this.errorCount = 0;
+      this.lastPoints = { done: null, total: null };
+    this.lastSubmittedImageHash = null;
+    this.lastSubmittedAnswer = null;
+    this.lastTaskCorrect = false;
+    this.lastPointsDoneBeforeSubmit = null;
+    this.taskStartTime = null;
+      this.touchAction();
+      this.touchProgress();
+      this.startLiveTimer();
+      this.startKeeperClients();
+      this.status("[Failsafe] Restarting loop...");
+      this.runIteration();
+    }, 5000);
+  }
+
+  async ensureWorkPage() {
+    if (!this.wcIsAlive()) return;
+    try { await this.wc.loadURL(this.getWorkUrl()); } catch (e) {}
+  }
+
+  touchAction() { this.lastActionTs = Date.now(); }
+  touchProgress() { this.lastProgressTs = Date.now(); }
+
+  async scanHealth() {
+    try { const res = await fetch(`${SCANNER_URL}/health`, { cache: "no-store" }); return res.ok; }
+    catch (e) { return false; }
+  }
+
+  async scannerEnsure() {
+    const online = await this.scanHealth();
+    if (online) return true;
+    try {
+      const { spawn } = require("child_process");
+      const scannerDir = path.join(__dirname, "..", "pcapp", "scanner");
+      const py = spawn("pythonw", ["server.py"], {
+        cwd: scannerDir,
+        stdio: "ignore",
+        detached: true,
+        windowsHide: true
+      });
+      this._scannerPid = py.pid;
+      py.unref();
+      for (let i = 0; i < 10; i++) {
+        await sleep(1000);
+        if (await this.scanHealth()) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  async scannerKill() {
+    if (!this._scannerPid) return;
+    try {
+      process.kill(this._scannerPid, "SIGKILL");
+    } catch (e) {}
+    this._scannerPid = null;
+  }
+
+  startStaggered(delay) {
     if (this.nextTimer) clearTimeout(this.nextTimer);
+    const d = delay != null ? delay : (this.id % 4) * 500 + 200;
+    this.nextTimer = setTimeout(() => this.runIteration(), d);
+  }
+
+  scheduleNext(delay) {
+    if (!this.isLoopRunning) return;
+    let d = Math.round((delay || 0) * this.delayMult);
     if (this.paused) {
       if (!this.nextTimer) {
         this.nextTimer = setTimeout(() => {
@@ -261,7 +522,6 @@ class Slot {
       }
       return;
     }
-    this.log(`SCHEDULE-NEXT in ${d}ms`);
     this.nextTimer = setTimeout(() => {
       this.nextTimer = null;
       if (this.isLoopRunning) this.runIteration();
@@ -273,17 +533,23 @@ class Slot {
     if (!this.isLoopRunning || this.isProcessing || this.paused) return;
     if (!this.wcIsAlive()) return;
     this.isProcessing = true;
-    this.log(`ITERATION-START loop=${this.isLoopRunning} processing=${this.isProcessing} paused=${this.paused}`);
 
     try {
+      // Check if previous task timed out (>30 seconds)
+      if (this.taskStartTime && this.lastTaskCorrect === false) {
+        const elapsed = Date.now() - this.taskStartTime;
+        if (elapsed > 30000) {
+          this.errorCount++;
+          this.log(`Task timeout: ${Math.round(elapsed / 1000)}s (counted ERROR)`);
+          this.pushHud({});
+        }
+      }
       this.taskStartTime = Date.now();
 
       await this.inject();
 
       let page = null;
-      try { page = await this.api("pageReady"); 
-        this.log(`PAGE-CHECK page=${page ? 'found' : 'null'} isECNL=${page ? page.isECNL : 'N/A'} curUrl=${this.currentUrl || ''}`); 
-      } catch (e) { this.log(`API-ERROR pageReady: ${e.message}`); }
+      try { page = await this.api("pageReady"); } catch (e) {}
       const throttle = (tag) => {
         const now = Date.now();
         if (this._pageLogs[tag] && now - this._pageLogs[tag] < 30000) return;
@@ -291,11 +557,12 @@ class Slot {
         return true;
       };
 
+      // Page checks - redirect to work page if needed
       if (!page || !page.isECNL) {
         const curUrl = this.currentUrl || "";
         const onECNL = /ecnlmediamarket\.com/i.test(curUrl);
-        this.log(`PAGE-CHECK page=${JSON.stringify(page)} curUrl=${curUrl}`);
         if (onECNL) {
+          // On ECNL but __vtapi not ready yet — retry shortly
           if (throttle("noecnl")) this.log(`PAGE __vtapi not ready on ECNL, retrying url=${curUrl}`);
           this.status("Waiting for page script...");
           this.isProcessing = false;
@@ -310,11 +577,11 @@ class Slot {
         return;
       }
       if (page.isAuth) {
-        const now = Date.now();
         if (throttle("auth")) this.log(`PAGE auth url=${page.url || "?"}`);
         this.status("Login page. Auto-login running, waiting...");
         this.touchProgress();
         this.isProcessing = false;
+        // After 8 seconds, if still on auth page, force redirect to solving-colors
         this.scheduleNext(8000);
         return;
       }
@@ -330,15 +597,32 @@ class Slot {
       // Wait for input box
       const inputReady = await this.waitForInputBox();
       if (!inputReady) {
-        this.status("Input box not found. Reloading page...");
+        this.status("Input box not found. Refreshing...");
         this.isProcessing = false;
         this.touchAction();
-        try { this.wc.reload(); } catch (e) {}
-        this.scheduleNext(5000);
+        await this.refreshPage("input-not-found", true);
+        this.scheduleNext(4000);
         return;
       }
 
       this.status(`[${this.taskCount + 1}] Task ready. Checking scanner...`);
+
+      // Snapshot points
+      try {
+        const meta = await this.api("getTaskMeta");
+        if (meta) {
+          if (meta.pointsDone != null) this.lastPoints.done = String(meta.pointsDone);
+          if (meta.pointsTotal != null) this.lastPoints.total = String(meta.pointsTotal);
+          // Check if points increased since last submission → last answer was correct
+          if (this.lastPointsDoneBeforeSubmit !== null && meta.pointsDone != null) {
+            const prev = parseInt(this.lastPointsDoneBeforeSubmit, 10);
+            const curr = parseInt(String(meta.pointsDone), 10);
+            if (!isNaN(prev) && !isNaN(curr) && curr > prev) {
+              this.lastTaskCorrect = true;
+            }
+          }
+        }
+      } catch (e) {}
 
       const scannerOnline = await this.scannerEnsure();
       if (!scannerOnline) {
@@ -348,23 +632,19 @@ class Slot {
         return;
       }
 
+      // Grab image
       this.status(`[${this.taskCount + 1}] Grabbing image...`);
       let imageData = null;
       try { imageData = await this.api("grabImage", true); imageData = imageData && imageData.imageData; } catch (e) {}
 
       if (!imageData) {
         this.consecutiveDetectFails++;
-        this.log(`[${this.taskCount + 1}] No image. Retry (${this.consecutiveDetectFails})`);
-        if (this.consecutiveDetectFails <= 1) {
-          try {
-            const pg = await this.api("pageReady");
-            if (pg && pg.grabDebug) this.log(`[${this.taskCount + 1}] GRAB-DEBUG: ${pg.grabDebug}`);
-          } catch (e) {}
-        }
+        this.status(`[${this.taskCount + 1}] No image. Retry (${this.consecutiveDetectFails})`);
         this.touchAction();
         if (this.consecutiveDetectFails >= 3) {
+          this.log("No image 3x. Recovery reload.");
           this.isProcessing = false;
-          await this.refreshPage("detect-fail-x3", true);
+          await this.refreshPage("no-image-x3", true);
           this.consecutiveDetectFails = 0;
           this.scheduleNext(4000);
           return;
@@ -375,31 +655,43 @@ class Slot {
       }
 
       const curHash = hashImage(imageData);
-
-      if (this.lastSubmittedImageHash === curHash) {
-        this.status(`[${this.taskCount + 1}] Same image. Waiting...`);
-        this.isProcessing = false;
-        this.scheduleNext(2000);
-        return;
+      if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
+        if (this.lastTaskCorrect) {
+          this.status("Same image, already correct. Waiting for next task...");
+          this.isProcessing = false;
+          this.scheduleNext(800);
+          return;
+        }
+        // Same image but last answer was wrong — retry detection
+        this.status(`[${this.taskCount + 1}] Same image, retrying detection...`);
       }
 
-      this.status(`[${this.taskCount + 1}] Detecting...`);
-      let result = null;
+      const imgSizeKB = Math.round((imageData.length * 3 / 4) / 1024);
+      this.status(`[${this.taskCount + 1}] Image (${imgSizeKB}KB). Detecting...`);
+      this.touchAction();
+
+      const endpoint = "/detect";
+      let result;
       try {
-        result = await fetch(`${SCANNER_URL}/detect`, {
+        const scanRes = await fetch(`${SCANNER_URL}${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image: imageData })
-        }).then(r => r.json());
+        });
+        result = await scanRes.json();
       } catch (e) {
-        this.log(`Scanner detect error: ${e.message}`);
+        this.status(`[${this.taskCount + 1}] Scanner connection failed.`);
+        this.isProcessing = false;
+        this.scheduleNext(3000);
+        return;
       }
 
-      if (!result || result.error) {
+      if (result.error) {
         this.consecutiveDetectFails++;
-        this.log(`[${this.taskCount + 1}] Detect FAIL: ${result && result.error} ${result && result.message || ""}`);
-        this.status(`[${this.taskCount + 1}] Detection failed: ${result && (result.message || result.error)}`);
+        this.log(`[${this.taskCount + 1}] Detect FAIL: ${result.error} ${result.message || ""}`);
+        this.status(`[${this.taskCount + 1}] Detection failed: ${result.message || result.error}`);
         if (this.consecutiveDetectFails >= 3) {
+          this.log("Detection failed 3x. Recovery reload.");
           this.isProcessing = false;
           await this.refreshPage("detect-fail-x3", true);
           this.consecutiveDetectFails = 0;
@@ -411,6 +703,7 @@ class Slot {
         return;
       }
 
+      // Build answer (color mode only)
       let answer = result.color;
       this.consecutiveDetectFails = 0;
       this.taskCount++;
@@ -424,24 +717,20 @@ class Slot {
         return;
       }
 
-      this.status(`[${this.taskCount}] DETECTED: ${answer}. Waiting 2s...`);
+      this.status(`[${this.taskCount}] DETECTED: ${answer}. Pasting...`);
 
-      // Wait 2 seconds before submitting (human-like)
-      await sleep(2000);
-
-      this.status(`[${this.taskCount}] Pasting answer: ${answer}...`);
-
+      // Save points before submit to detect correctness next iteration
       const pointsBeforeSubmit = this.lastPoints.done;
       this.lastPointsDoneBeforeSubmit = this.lastPoints.done;
       this.lastTaskCorrect = false;
 
+      // Fill and submit
       let pasted = false;
       try {
         const r = await this.api("fill", answer);
         pasted = !!(r && (r.status === "filled"));
       } catch (e) {}
 
-      this.reportGeneration++;
       this.captureAndSendReport({
         questionId: curHash != null ? String(curHash) : String(this.taskCount),
         taskNum: this.taskCount,
@@ -455,9 +744,8 @@ class Slot {
       this.status(`[${this.taskCount}] Submitted: ${answer}. Next task...`);
       this.touchAction();
       this.touchProgress();
-      this.lastTaskSubmitTs = Date.now();
       this.isProcessing = false;
-      this.scheduleNext(3000);
+      this.scheduleNext(800);
       return;
     } catch (err) {
       console.error(`[${this.name}] Iteration error:`, err);
@@ -469,42 +757,17 @@ class Slot {
   }
 
   async waitForInputBox() {
-    const deadline = Date.now() + 25000;
+    const deadline = Date.now() + 120000;
     let lastInputHud = 0;
     let lastDebugLog = 0;
-    let checkingCount = 0;
     while (this.isLoopRunning && !this.paused && Date.now() < deadline) {
       let ready = false;
       try {
         const r = await this.api("checkInputReady");
         ready = !!(r && r.ready);
-        if (r && (r.isBlank2026 || r.isBlankNoTask)) {
-          if (!this._blankWaitStart) this._blankWaitStart = Date.now();
-          const blankWaitMs = Date.now() - this._blankWaitStart;
-          if (blankWaitMs > 8000) {
-            this.log("BLANK-PAGE: Waited 8s. Reloading...");
-            this._blankWaitStart = null;
-            this.isProcessing = false;
-            try { this.wc.reload(); } catch (e) {}
-            return false;
-          }
-        } else {
-          this._blankWaitStart = null;
-        }
-        if (r && r.checking) {
-          checkingCount++;
-          if (checkingCount >= 20) {
-            this.log("CHECKING-STUCK: Reloading...");
-            this.isProcessing = false;
-            try { this.wc.reload(); } catch (e) {}
-            return false;
-          }
-        } else {
-          checkingCount = 0;
-        }
         if (!ready && Date.now() - lastDebugLog > 10000) {
           lastDebugLog = Date.now();
-          this.log(`INPUT-CHECK ready=${r && r.ready} hasBox=${r && r.hasBox} hasBtn=${r && r.hasBtn} checking=${r && r.checking} boxVal="${(r && r.boxVal) || ''}" url=${(r && r.url) || "?"}`);
+          this.log(`INPUT-CHECK ready=${r && r.ready} hasBox=${r && r.hasBox} hasBtn=${r && r.hasBtn} boxW=${r && r.boxW} boxH=${r && r.boxH} btnW=${r && r.btnW} btnH=${r && r.btnH} empty=${r && r.empty} loaded=${r && r.loaded} url=${(r && r.url) || "?"}`);
         }
       } catch (e) {
         if (Date.now() - lastDebugLog > 10000) {
@@ -527,214 +790,22 @@ class Slot {
     return {
       id: this.id,
       name: this.name,
-      accountName: this.accountName,
-      isLoopRunning: this.isLoopRunning,
-      isProcessing: this.isProcessing,
+      accountName: this.accountName || "",
+      running: this.isLoopRunning,
       paused: this.paused,
+      url: this.currentUrl || "",
       taskCount: this.taskCount,
       correctCount: this.correctCount,
       wrongCount: this.wrongCount,
       errorCount: this.errorCount,
-      lastPoints: this.lastPoints,
-      lastHudText: this.lastHudText,
-      currentUrl: this.currentUrl,
-      zoom: this.zoom,
-      delayMult: this.delayMult,
-      hudEnabled: this.hudEnabled,
-      timeRunning: this.getTimeRunning(),
-      // Backward compat for shell UI + dashboard legacy keys
-      running: this.isLoopRunning,
-      url: this.currentUrl || "",
       status: this.lastHudText || "",
       pointsDone: this.lastPoints.done,
       pointsTotal: this.lastPoints.total,
+      hudEnabled: this.hudEnabled,
+      zoom: this.zoom,
+      delayMult: this.delayMult,
       stopRequested: this.loopStopRequested
     };
-  }
-
-  // ---- refresh ----
-  async refreshPage(reason, navigate) {
-    if (this.isProcessing) { this.log(`SUPPRESSED reload during iteration (${reason}).`); return; }
-    this.errorCount++;
-    this.log(`RELOAD reason=${reason} (counted ERROR)`);
-    this.pushHud({});
-    if (!this.wcIsAlive()) return;
-    try { this.wc.reload(); } catch (e) {}
-    this.touchAction();
-  }
-
-  async ensureWorkPage() {
-    if (!this.wcIsAlive()) return;
-    try { await this.wc.loadURL(this.getWorkUrl()); } catch (e) {}
-  }
-
-  async checkPage() {
-    if (!this.wcIsAlive()) return null;
-    try {
-      return await this.wc.executeJavaScript(`
-        (function() {
-          const u = window.location.href;
-          return {
-            url: u,
-            isECNL: /ecnlmediamarket\\.com/i.test(u),
-            isWork: /\\/solving-colors/i.test(u),
-            isAuth: /login\\.php/i.test(u) || (document.querySelector('input[type="password"]') !== null && /ecnlmediamarket\\.com/i.test(u))
-          };
-        })()
-      `);
-    } catch (e) { return null; }
-  }
-
-  // ---- scanner ----
-  async scannerEnsure() {
-    try {
-      const r = await fetch(`${SCANNER_URL}/health`, { cache: "no-store" });
-      if (r.ok) return true;
-    } catch (e) {}
-    try {
-      const r2 = await fetch(`${SCANNER_URL}/stats`).then(r => r.json());
-      return !!(r2 && r2.slots != null);
-    } catch (e) { return false; }
-  }
-
-  async captureAndSendReport(data) {
-    this.lastSubmittedImageHash = hashImage(data.image);
-    this.lastSubmittedAnswer = data.color;
-    const reportData = { ...data, slot: this.id, slotName: this.name };
-
-    (async () => {
-      // Initial report: mark task submitted (for live taskCount)
-      try {
-        await fetch(`${SCANNER_URL}/report`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(Object.assign({}, reportData, {
-            taskCount: this.taskCount,
-            correctCount: this.correctCount,
-            wrongCount: this.wrongCount,
-            errorCount: this.errorCount
-          }))
-        });
-      } catch (e) {}
-
-      await new Promise(r => setTimeout(r, 3000));
-
-      let correct = null;
-      let theirs = null;
-      let withdrawable = null;
-      let pointsDone = null;
-      let pointsTotal = null;
-
-      try {
-        const meta = await this.api("getTaskMeta");
-        if (meta) {
-          if (meta.pointsDone != null) pointsDone = parseInt(String(meta.pointsDone), 10);
-          if (meta.pointsTotal != null) pointsTotal = parseInt(String(meta.pointsTotal), 10);
-          if (meta.withdrawable != null) withdrawable = String(meta.withdrawable);
-        }
-      } catch (e) {}
-
-      // Fallback: try to read withdrawable/points from scanner stats if meta missed
-      if (withdrawable == null) {
-        try {
-          const stats = await fetch(`${SCANNER_URL}/stats`).then(r => r.json());
-          if (stats && stats.slots) {
-            const s = stats.slots[this.id] || stats.slots[`Slot ${this.id}`] || stats.slots[this.name] || null;
-            if (s) {
-              if (s.withdrawable != null) withdrawable = String(s.withdrawable);
-              theirs = s.lastUpdate || null;
-            }
-          }
-        } catch (e) {}
-      }
-
-      const oldV = parseInt(String(reportData.pointsBeforeSubmit || ""), 10);
-      if (pointsDone != null) {
-        const newV = parseInt(String(pointsDone || ""), 10);
-        if (isFinite(oldV) && isFinite(newV) && newV > oldV) {
-          correct = true;
-          this.log(`Verdict: points rose ${oldV}->${newV}; counted CORRECT.`);
-        } else if (isFinite(oldV) && isFinite(newV) && newV === oldV && oldV > 0) {
-          correct = false;
-          this.log(`Verdict: points unchanged ${newV}; counted WRONG.`);
-        }
-      }
-
-      if (correct === true) this.correctCount++;
-      else if (correct === false) this.wrongCount++;
-      else { this.errorCount++; this.log(`Verdict: unknown; counted ERROR.`); }
-      this.lastTaskCorrect = correct;
-      if (pointsDone != null) this.lastPoints.done = String(pointsDone);
-      if (pointsTotal != null) this.lastPoints.total = String(pointsTotal);
-      this.pushHud({});
-
-      const finalPayload = Object.assign({}, reportData, {
-        correct, theirs, withdrawable, pointsDone, pointsTotal,
-        taskCount: this.taskCount,
-        correctCount: this.correctCount,
-        wrongCount: this.wrongCount,
-        errorCount: this.errorCount
-      });
-      this.sendTaskReport(finalPayload);
-    })().catch(() => {});
-  }
-
-  async sendTaskReport(data) {
-    // 100% live: push final verdict to scanner stats AND local file for dashboard polling
-    try {
-      await fetch(`${SCANNER_URL}/report`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      });
-    } catch (e) {}
-    try {
-      const reportFile = path.join(require("os").homedir(), ".config", "VisionTap Slots", "state", `task_report_${this.id}.json`);
-      fs.writeFileSync(reportFile, JSON.stringify(data, null, 2));
-    } catch (e) {}
-  }
-
-  // ---- heartbeat ----
-  startHeartbeat() {
-    this.stopKeeperClients();
-    this.heartbeatTimer = setInterval(() => {
-      try {
-        fetch(KEEPER_HEARTBEAT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slot: this.id, ts: Date.now() })
-        }).catch(() => {});
-      } catch (e) {}
-    }, HEARTBEAT_MS);
-  }
-
-  stopKeeperClients() {
-    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
-    if (this.commandTimer) { clearInterval(this.commandTimer); this.commandTimer = null; }
-  }
-
-  startCommandPoll() {
-    this.commandTimer = setInterval(async () => {
-      try {
-        const r = await fetch(KEEPER_COMMAND_URL).then(r => r.json());
-        if (r && r.command) {
-          if (r.command === "stop") this.stopLoop("Stopped by keeper.");
-          else if (r.command === "reload") this.refreshPage("keeper-reload", true);
-          else if (r.command === "pause") this.setPaused(true);
-          else if (r.command === "resume") this.setPaused(false);
-        }
-      } catch (e) {}
-    }, COMMAND_POLL_MS);
-  }
-
-  // ---- live timer ----
-  startLiveTimer() {
-    this.stopLiveTimer();
-    this.tickTimer = setInterval(() => this.pushHud({}), HUD_TICK_MS);
-  }
-
-  stopLiveTimer() {
-    if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
   }
 
   // ---- points sync: keep dashboard 100% live even between tasks ----
@@ -748,21 +819,16 @@ class Slot {
         const pd = meta.pointsDone != null ? parseInt(String(meta.pointsDone), 10) : null;
         const pt = meta.pointsTotal != null ? parseInt(String(meta.pointsTotal), 10) : null;
         const wd = meta.withdrawable != null ? String(meta.withdrawable) : null;
-        // Only push if we got a plausible points value (0-250) or withdrawable
         if ((pd != null && !isNaN(pd) && pd >= 0 && pd <= 500) || wd != null) {
           let changed = false;
           if (pd != null && String(pd) !== String(this.lastPoints.done)) changed = true;
           if (wd != null && String(wd) !== String(this.withdrawableCache)) changed = true;
-          if (!changed) {
-            // Still push every 30s to keep dashboard live even if unchanged
-            if (Date.now() - (this._lastPointsPush || 0) < 30000) return;
-          }
+          if (!changed && Date.now() - (this._lastPointsPush || 0) < 30000) return;
           this._lastPointsPush = Date.now();
           this.withdrawableCache = wd;
           if (pd != null) this.lastPoints.done = String(pd);
           if (pt != null) this.lastPoints.total = String(pt);
           this.pushHud({});
-          // Fire-and-forget report to scanner for dashboard merge
           fetch(`${SCANNER_URL}/report`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -780,13 +846,6 @@ class Slot {
             })
           }).catch(() => {});
           this.log(`POINTS-SYNC points=${pd != null ? pd + '/' + (pt || 250) : '?'} bal=${wd || '?'} -> scanner`);
-        }
-        // Debug raw if points null
-        if (pd == null && meta) {
-          try {
-            const raw = await this.wc.executeJavaScript('window.__vtapi && window.__vtapi._lastMetaRaw ? JSON.stringify(window.__vtapi._lastMetaRaw) : null');
-            if (raw) this.log(`META-RAW ${raw.substring(0, 300)}`);
-          } catch (e) {}
         }
       } catch (e) {}
     }, 8000);
