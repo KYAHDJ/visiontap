@@ -280,12 +280,13 @@ function render(d){
 }
 
 function poll(){
-  fetch('/api/stats').then(function(r){return r.json()}).then(function(d){
-    var j=JSON.stringify(d);
-    if(j!==LD){LD=j;render(d)}
-    document.getElementById('ltxt').textContent='Live \u2014 '+new Date().toLocaleTimeString();
+  fetch('/api/stats?t='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(function(r){return r.json()}).then(function(d){
+    render(d);
+    LD=JSON.stringify(d);
+    var now=new Date();
+    document.getElementById('ltxt').textContent='Live \u2014 '+now.toLocaleTimeString()+' ('+now.toLocaleDateString()+')';
   }).catch(function(){
-    document.getElementById('ltxt').textContent='Connection error';
+    document.getElementById('ltxt').textContent='Connection error — retrying';
   });
   setTimeout(poll,POLL);
 }
