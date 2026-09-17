@@ -288,6 +288,28 @@ def report():
             'taskCount': 0, 'correctCount': 0, 'wrongCount': 0, 'errorCount': 0
         })
         old_withdrawable = s.get('withdrawable', 0) or 0
+        old_pointsDone = s.get('pointsDone', 0) or 0
+
+        # New cycle detection: points went 240+ -> 0-10 (new 250), reset current session counts to show current (user wants 4/250 not 195+old)
+        if data.get('pointsDone') is not None:
+            try:
+                new_pd = int(data['pointsDone'])
+                if old_pointsDone >= 200 and 0 <= new_pd <= 10:
+                    s['taskCount'] = 0
+                    s['correctCount'] = 0
+                    s['wrongCount'] = 0
+                    s['errorCount'] = 0
+                    # Clear earnings for new cycle display (keep file but dashboard will show fresh)
+                    print(f"[RESET] Slot {slot} new cycle {old_pointsDone}->{new_pd}, reset current counts")
+                elif old_pointsDone >= 240 and 0 <= new_pd <= 20:
+                    # Also handle 240->20 case
+                    s['taskCount'] = 0
+                    s['correctCount'] = 0
+                    s['wrongCount'] = 0
+                    s['errorCount'] = 0
+                    print(f"[RESET] Slot {slot} new cycle {old_pointsDone}->{new_pd}, reset current counts")
+            except:
+                pass
 
         if data.get('pointsDone') is not None:
             try: s['pointsDone'] = int(data['pointsDone'])

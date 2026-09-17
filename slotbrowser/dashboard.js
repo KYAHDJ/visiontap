@@ -63,31 +63,9 @@ function getMergedSlots(status) {
     const id = String(slot.id);
     const name = slot.accountName || slot.name || `Slot ${Number(id) + 1}`;
     // Resolve scanner slot by id/name/legacy — pick freshest (max taskCount/withdrawable) among candidates (always live)
-    const candidates = [
-      scannerSlots[id],
-      scannerSlots[name],
-      scannerSlots[`Slot ${id}`],
-      scannerSlots[`Slot ${Number(id) + 1}`],
-      scannerSlots[String(Number(id)+1)]
-    ].filter(v => v && typeof v === 'object' && Object.keys(v).length > 0);
-    let sc = null;
-    if (candidates.length > 0) {
-      // Pick freshest for points/withdrawable, but keep max taskCount for history
-      let latest = candidates[0];
-      let maxTask = candidates[0];
-      for (const c of candidates) {
-        if ((c.lastUpdate || "") > (latest.lastUpdate || "")) latest = c;
-        if (Number(c.taskCount || 0) > Number(maxTask.taskCount || 0)) maxTask = c;
-      }
-      sc = { ...latest };
-      // Merge history counts from maxTask if latest is heartbeat-only (0 task)
-      if (Number(maxTask.taskCount || 0) > Number(sc.taskCount || 0)) {
-        sc.taskCount = maxTask.taskCount;
-        sc.correctCount = maxTask.correctCount;
-        sc.wrongCount = maxTask.wrongCount;
-        sc.errorCount = maxTask.errorCount;
-      }
-    } else {
+    // Always show exact web numbers: prefer direct id (live), fallback to name/legacy only if id missing
+    let sc = scannerSlots[id] || scannerSlots[name] || scannerSlots[`Slot ${id}`] || scannerSlots[`Slot ${Number(id) + 1}`] || scannerSlots[String(Number(id)+1)] || null;
+    if (!sc || Object.keys(sc).length === 0) {
       // No candidate, fallback to best among all
       const all = Object.entries(scannerSlots);
       if (all.length === 1) sc = all[0][1];
