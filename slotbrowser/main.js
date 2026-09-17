@@ -7,6 +7,7 @@ const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
 
+const os = require("os");
 const { Slot, ensureScripts } = require("./slot.js");
 
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
