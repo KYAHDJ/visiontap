@@ -72,25 +72,12 @@ function getMergedSlots(status) {
     ].filter(v => v && typeof v === 'object' && Object.keys(v).length > 0);
     let sc = null;
     if (candidates.length > 0) {
-      // Pick candidate with highest taskCount, then withdrawable, then lastUpdate
+      // Pick candidate with highest taskCount, then withdrawable
       sc = candidates[0];
       for (const c of candidates) {
         const aT = Number(c.taskCount || 0), bT = Number(sc.taskCount || 0);
         const aW = Number(c.withdrawable || 0), bW = Number(sc.withdrawable || 0);
         if (aT > bT || (aT === bT && aW > bW)) sc = c;
-      }
-      // Also consider all scanner slots if best still stale (e.g., "6" has 0 task but Slot 1 has 3093)
-      const allVals = Object.values(scannerSlots);
-      for (const v of allVals) {
-        if (!v || typeof v !== 'object') continue;
-        // Only consider entries that look like real slot data (has withdrawable/points)
-        if (v.withdrawable == null && v.taskCount == null) continue;
-        const aT = Number(v.taskCount || 0), bT = Number(sc.taskCount || 0);
-        const aW = Number(v.withdrawable || 0), bW = Number(sc.withdrawable || 0);
-        // If all candidates were stale (0 task) but another entry has high task, prefer it if points match
-        if (aT > bT && aW >= bW * 0.9) sc = v;
-        // Also if points same but withdrawable higher, prefer higher
-        if (v.pointsDone === sc.pointsDone && aW > bW) sc = v;
       }
     } else {
       // No candidate, fallback to best among all
