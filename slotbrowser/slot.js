@@ -11,7 +11,7 @@ const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const WORK_RE = /\/solving-colors/;
 
-const STALL_RESET_MS = 30000;
+const STALL_RESET_MS = 15000;
 const HEARTBEAT_MS = 30000;
 const COMMAND_POLL_MS = 15000;
 const HUD_TICK_MS = 5000;
@@ -766,11 +766,12 @@ class Slot {
   }
 
   async waitForInputBox() {
-    const deadline = Date.now() + 15000;
+    const deadline = Date.now() + 5000;
     let lastInputHud = 0;
     let lastDebugLog = 0;
     while (this.isLoopRunning && !this.paused && Date.now() < deadline) {
       let ready = false;
+      let checking = false;
       try {
         const r = await this.api("checkInputReady");
         // 2026 immediate auto-refresh (user: 2026 coming back)
@@ -780,19 +781,28 @@ class Slot {
           this.errorCount++;
           return false;
         }
+        // REMOVED: waiting for server to clear checking state 120s — instant reload, no wait
+        if (r && r.checking) {
+          checking = true;
+          this.log("CHECKING state detected — instant reload, no 120s wait");
+          try { this.wc.reload(); } catch(e) {}
+          this.errorCount++;
+          return false;
+        }
         ready = !!(r && r.ready);
-        if (!ready && Date.now() - lastDebugLog > 10000) {
+        if (!ready && Date.now() - lastDebugLog > 5000) {
           lastDebugLog = Date.now();
           this.log(`INPUT-CHECK ready=${r && r.ready} hasBox=${r && r.hasBox} hasBtn=${r && r.hasBtn} boxW=${r && r.boxW} boxH=${r && r.boxH} btnW=${r && r.btnW} btnH=${r && r.btnH} empty=${r && r.empty} loaded=${r && r.loaded} url=${(r && r.url) || "?"}`);
         }
       } catch (e) {
-        if (Date.now() - lastDebugLog > 10000) {
+        if (Date.now() - lastDebugLog > 5000) {
           lastDebugLog = Date.now();
           this.log(`INPUT-CHECK error: ${e.message}`);
         }
       }
       if (ready) return true;
-      if (Date.now() - lastInputHud > 3000) {
+      if (checking) return false;
+      if (Date.now() - lastInputHud > 2000) {
         lastInputHud = Date.now();
         this.status("Waiting for task input box...");
       }

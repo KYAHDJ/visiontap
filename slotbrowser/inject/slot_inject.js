@@ -42,6 +42,7 @@
   }
 
   function isCheckingState() {
+    // DETECT checking state but DO NOT WAIT 120s — caller handles instant reload
     const btns = Array.from(document.querySelectorAll('button'));
     return btns.some(b => {
       const txt = (b.textContent || '').toLowerCase().trim();
@@ -824,7 +825,7 @@
     if (staleTimer) clearTimeout(staleTimer);
     staleTimer = setTimeout(() => {
       signal({ type: "stale_refresh", src: "staleTimer" });
-    }, 30000);
+    }, 10000);
   };
   resetStaleTimer();
   try { new MutationObserver(resetStaleTimer).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
