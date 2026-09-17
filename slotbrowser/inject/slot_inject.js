@@ -228,13 +228,15 @@
     inputBox.dispatchEvent(new Event('input', { bubbles: true }));
     inputBox.dispatchEvent(new Event('change', { bubbles: true }));
 
-    // Random 1-3s delay after input before submit (weighted: 3s rare ~5%)
+    // Random 1-3s delay after input before submit (weighted: 3s rare ~5%); slow mode adds +5s base
+    const isSlow = !!window.__vtSlow;
+    const base = isSlow ? 5000 : 0;
     let delayMs;
     const r = Math.random();
-    if (r < 0.50) delayMs = 1000 + Math.random() * 500;        // 50% -> 1.0-1.5s
-    else if (r < 0.80) delayMs = 1500 + Math.random() * 700;   // 30% -> 1.5-2.2s
-    else if (r < 0.95) delayMs = 2200 + Math.random() * 500;   // 15% -> 2.2-2.7s
-    else delayMs = 2700 + Math.random() * 300;                 // 5%  -> 2.7-3.0s (rare)
+    if (r < 0.50) delayMs = base + 1000 + Math.random() * 500;        // 50% -> 1.0-1.5s (slow: 6.0-6.5s)
+    else if (r < 0.80) delayMs = base + 1500 + Math.random() * 700;   // 30% -> 1.5-2.2s (slow: 6.5-7.2s)
+    else if (r < 0.95) delayMs = base + 2200 + Math.random() * 500;   // 15% -> 2.2-2.7s (slow: 7.2-7.7s)
+    else delayMs = base + 2700 + Math.random() * 300;                 // 5%  -> 2.7-3.0s (slow: 7.7-8.0s rare)
     // console.log(`[VisionTap] submit delay ${Math.round(delayMs)}ms`);
     setTimeout(() => {
       const btn = findSubmitButton();

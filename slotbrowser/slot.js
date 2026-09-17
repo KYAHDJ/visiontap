@@ -15,6 +15,7 @@ const STALL_RESET_MS = 120000;
 const HEARTBEAT_MS = 30000;
 const COMMAND_POLL_MS = 15000;
 const HUD_TICK_MS = 5000;
+const IS_SLOW_SLOT = process.argv.includes("--slow") || process.env.VISIONTAP_SLOW === "1";
 
 let INJECT_JS = "";
 let AD_BLOCK_JS = "";
@@ -178,7 +179,7 @@ class Slot {
       if (this.currentUrl.includes("ecnlmediamarket.com")) {
         const credsJson = JSON.stringify(this._creds || null);
         await this.wc.executeJavaScript(
-          `window.__vtCreds = ${credsJson};`
+          `window.__vtCreds = ${credsJson}; window.__vtSlow = ${IS_SLOW_SLOT ? "true" : "false"};`
         ).catch(() => {});
         if (AD_BLOCK_JS) {
           await this.wc.executeJavaScript(AD_BLOCK_JS).catch(() => {});
