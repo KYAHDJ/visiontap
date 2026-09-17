@@ -838,10 +838,6 @@ class Slot {
               pointsDone: pd,
               pointsTotal: pt,
               withdrawable: wd != null ? parseFloat(wd) : undefined,
-              taskCount: this.taskCount,
-              correctCount: this.correctCount,
-              wrongCount: this.wrongCount,
-              errorCount: this.errorCount,
               lastUpdate: new Date().toLocaleTimeString()
             })
           }).catch(() => {});
