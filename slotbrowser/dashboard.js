@@ -62,15 +62,41 @@ function getMergedSlots(status) {
   for (const slot of (electronSlots.active || [])) {
     const id = String(slot.id);
     const name = slot.accountName || slot.name || `Slot ${Number(id) + 1}`;
-    // Resolve scanner slot by id, name, or legacy Slot N keys (100% live)
-    let sc = scannerSlots[id] || scannerSlots[name] || scannerSlots[`Slot ${id}`] || scannerSlots[`Slot ${Number(id) + 1}`] || scannerSlots[String(Number(id)+1)] || null;
-    // Fallback: if no direct key, pick the scanner slot with most tasks / newest update (handles stale id mapping)
-    if (!sc || Object.keys(sc).length === 0) {
+    // Resolve scanner slot by id/name/legacy — pick freshest (max taskCount/withdrawable) among candidates (always live)
+    const candidates = [
+      scannerSlots[id],
+      scannerSlots[name],
+      scannerSlots[`Slot ${id}`],
+      scannerSlots[`Slot ${Number(id) + 1}`],
+      scannerSlots[String(Number(id)+1)]
+    ].filter(v => v && typeof v === 'object' && Object.keys(v).length > 0);
+    let sc = null;
+    if (candidates.length > 0) {
+      // Pick candidate with highest taskCount, then withdrawable, then lastUpdate
+      sc = candidates[0];
+      for (const c of candidates) {
+        const aT = Number(c.taskCount || 0), bT = Number(sc.taskCount || 0);
+        const aW = Number(c.withdrawable || 0), bW = Number(sc.withdrawable || 0);
+        if (aT > bT || (aT === bT && aW > bW)) sc = c;
+      }
+      // Also consider all scanner slots if best still stale (e.g., "6" has 0 task but Slot 1 has 3093)
+      const allVals = Object.values(scannerSlots);
+      for (const v of allVals) {
+        if (!v || typeof v !== 'object') continue;
+        // Only consider entries that look like real slot data (has withdrawable/points)
+        if (v.withdrawable == null && v.taskCount == null) continue;
+        const aT = Number(v.taskCount || 0), bT = Number(sc.taskCount || 0);
+        const aW = Number(v.withdrawable || 0), bW = Number(sc.withdrawable || 0);
+        // If all candidates were stale (0 task) but another entry has high task, prefer it if points match
+        if (aT > bT && aW >= bW * 0.9) sc = v;
+        // Also if points same but withdrawable higher, prefer higher
+        if (v.pointsDone === sc.pointsDone && aW > bW) sc = v;
+      }
+    } else {
+      // No candidate, fallback to best among all
       const all = Object.entries(scannerSlots);
-      if (all.length === 1) {
-        sc = all[0][1];
-      } else if (all.length > 1) {
-        // Prefer entry whose key contains id or name, else newest lastUpdate / max taskCount
+      if (all.length === 1) sc = all[0][1];
+      else if (all.length > 1) {
         let best = null;
         for (const [k, v] of all) {
           if (!best) best = v;
@@ -81,10 +107,9 @@ function getMergedSlots(status) {
           }
         }
         sc = best || {};
-      } else {
-        sc = {};
-      }
+      } else sc = {};
     }
+    if (!sc) sc = {};
     const cred = creds[id] || creds[slot.id] || {};
     // Earnings are stored by slot id in server.py; also check by name for legacy + fallback
     let hist = slotEarnings[id] || slotEarnings[name] || slotEarnings[`Slot ${id}`] || slotEarnings[`Slot ${Number(id) + 1}`] || null;
