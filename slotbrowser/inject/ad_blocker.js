@@ -1,42 +1,29 @@
-// VisionTap - Lightweight Ad Blocker
-// Removes common ad/overlay elements. Debounced, minimal DOM queries.
+// VisionTap - Minimal Ad Blocker
+// Only removes third-party ad iframes. Does NOT touch site UI.
 
 (function () {
   if (window.__vtAdBlockInstalled) return;
   window.__vtAdBlockInstalled = true;
 
-  const SELECTORS = [
-    'iframe[src*="googleads"]',
-    'iframe[id*="aswift"]',
-    'div[id*="google_ads"]',
-    '.adsbygoogle',
-    'ins.adsbygoogle',
-    'div[class*="adslot"]',
-    'div[class*="ad-banner"]',
-    'div[class*="advert"]',
-    '.modal-backdrop',
-    'div[class*="cookie-banner"]',
-    'div[id*="cookie"]',
-    'div[class*="consent"]'
-  ];
-
   function nuke() {
     try {
-      SELECTORS.forEach(sel => {
-        document.querySelectorAll(sel).forEach(el => {
-          try { el.remove(); } catch (e) {}
-        });
+      document.querySelectorAll('iframe').forEach(el => {
+        try {
+          const src = (el.src || '').toLowerCase();
+          if (src.includes('googleads') || src.includes('doubleclick') || src.includes('adservice')) {
+            el.remove();
+          }
+        } catch (e) {}
       });
     } catch (e) {}
   }
 
   nuke();
 
-  // Debounced observer
   let tid = null;
   function debouncedNuke() {
     if (tid) return;
-    tid = setTimeout(() => { tid = null; nuke(); }, 800);
+    tid = setTimeout(() => { tid = null; nuke(); }, 2000);
   }
 
   try {

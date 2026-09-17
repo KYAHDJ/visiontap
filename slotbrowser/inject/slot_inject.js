@@ -4,6 +4,7 @@
 (function () {
   if (window.__vtapi) return;
   const vt = {};
+  window.__vtapi = vt;
 
   const host = (window.__vtHost) || null;
   const signal = (msg) => { if (host && host.signal) { try { host.signal(msg); } catch (e) {} } };
@@ -37,8 +38,38 @@
     return btns.find(b => {
       const txt = (b.textContent || b.value || '').toLowerCase();
       return txt.includes('submit') || txt.includes('solve') || txt.includes('answer');
+    }) || null;
+  }
+
+  function isCheckingState() {
+    const btns = Array.from(document.querySelectorAll('button'));
+    return btns.some(b => {
+      const txt = (b.textContent || '').toLowerCase().trim();
+      return txt.includes('checking') || txt.includes('encoded solutions');
     });
   }
+
+  vt.clearSiteData = async () => {
+    try {
+      document.cookie.split(';').forEach(c => {
+        const name = c.split('=')[0].trim();
+        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=' + window.location.hostname;
+        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=.' + window.location.hostname;
+      });
+      try { localStorage.clear(); } catch (e) {}
+      try { sessionStorage.clear(); } catch (e) {}
+      try {
+        if (window.indexedDB && window.indexedDB.databases) {
+          const dbs = await window.indexedDB.databases();
+          for (const db of dbs) {
+            if (db.name) window.indexedDB.deleteDatabase(db.name);
+          }
+        }
+      } catch (e) {}
+      return { cleared: true };
+    } catch (e) { return { cleared: false, error: e.message }; }
+  };
 
   // ---- EXACT Chrome extension: isUIFullyLoaded ----
   function isUIFullyLoaded() {
@@ -54,9 +85,20 @@
 
   // ---- EXACT Chrome extension: grabTaskImage ----
   async function grabTaskImage() {
-    if (!isUIFullyLoaded()) return null;
+    if (!findAnswerInput()) return null;
 
-    // 1. Try canvas elements first (many task sites render on canvas)
+    const dbgCanvases = document.querySelectorAll('canvas');
+    const dbgImgs = document.querySelectorAll('img');
+    const dbgSvgs = document.querySelectorAll('svg');
+    const allEls = document.querySelectorAll('*');
+    let bgCount = 0;
+    for (const el of allEls) {
+      const bg = window.getComputedStyle(el).backgroundImage;
+      if (bg && bg !== 'none') bgCount++;
+    }
+    vt._grabDebug = `canvases=${dbgCanvases.length} imgs=${dbgImgs.length} svgs=${dbgSvgs.length} bgEls=${bgCount} bodyLen=${(document.body.innerHTML||'').length}`;
+
+    // 1. Try canvas elements first
     const canvases = Array.from(document.querySelectorAll('canvas'));
     for (const cvs of canvases) {
       const rect = cvs.getBoundingClientRect ? cvs.getBoundingClientRect() : null;
@@ -91,7 +133,7 @@
     let targetImg = imgs.find(img => /magic-colors|magiccount/i.test(img.src));
 
     if (!targetImg) {
-      const badKeywords = ['avatar', 'logo', 'profile', 'icon', 'ecnl', 'ec&l', 'ec and l', 'brand', 'header', 'banner', 'favicon', 'loading', 'spinner', 'default', 'placeholder', 'watermark', 'gold', 'shine', 'gradient', 'social', 'share', 'follow'];
+      const badKeywords = ['avatar', 'logo', 'profile', 'icon', 'brand', 'header', 'banner', 'favicon', 'loading', 'spinner', 'default', 'placeholder', 'watermark', 'gold', 'shine', 'gradient', 'social', 'share', 'follow'];
       
       let bestImg = null;
       let bestScore = -100;
@@ -223,7 +265,6 @@
         try { el.remove(); } catch (e) {}
       });
       document.querySelectorAll('div').forEach(el => {
-        if (el.id && el.id.includes('visiontap-hud')) return;
         if (el.id && el.id.includes('visiontap')) return;
         try {
           const style = window.getComputedStyle(el);
@@ -234,7 +275,8 @@
               const vh = window.innerHeight || 1;
               if (rect.width >= vw * 0.8 && rect.height >= vh * 0.8) return;
               if (el.querySelector && (el.querySelector('input') || el.querySelector('button') || el.querySelector('canvas'))) return;
-              if (el.className && (el.className.includes('modal') || el.className.includes('dialog'))) return;
+              if (el.className && (el.className.toString().includes('modal') || el.className.toString().includes('dialog'))) return;
+              if (el.querySelector && el.querySelector('form')) return;
             }
             el.remove();
           }
@@ -252,10 +294,6 @@
   try {
     _adObserver = new MutationObserver(() => {
       _nukeCount++;
-      if (_nukeCount > 30) {
-        if (_adObserver) _adObserver.disconnect();
-        return;
-      }
       nukeAds();
       if (window.location.hash && window.location.hash.includes('google')) {
         try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
@@ -418,19 +456,113 @@
 
   // ---- Public API (Electron host calls these) ----
   vt.checkInputReady = () => {
+    const bodyText = document.body ? (document.body.innerText || '').trim() : '';
+    const bodyLen = document.body ? (document.body.innerHTML || '').length : 0;
+    const isBlank2026 = bodyText === '2026' || (bodyText.length < 10 && /^\d{4}$/.test(bodyText) && !findAnswerInput());
+    const isBlankNoTask = !isBlank2026 && bodyLen < 2000 && !findAnswerInput() && !findSubmitButton();
+
     const box = findAnswerInput();
-    const empty = box ? ('' + (box.value || box.textContent || '')).trim() === '' : false;
+    const rawVal = box ? ('' + (box.value || box.textContent || '')).trim() : '';
+    const empty = rawVal === '';
     const btn = findSubmitButton();
     const loaded = isUIFullyLoaded();
     const imgOk = !!btn && !!box;
-    const ready = loaded && empty && imgOk;
+    const checking = isCheckingState();
+
+    if (!empty && box) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      nativeSetter.call(box, '');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    const boxStyle = box ? window.getComputedStyle(box) : null;
+    const btnStyle = btn ? window.getComputedStyle(btn) : null;
+    const boxHidden = boxStyle && (boxStyle.display === 'none' || boxStyle.visibility === 'hidden');
+    const btnHidden = btnStyle && (btnStyle.display === 'none' || btnStyle.visibility === 'hidden');
+
+    if (boxHidden || btnHidden) {
+      if (!vt._pageHiddenLogged) {
+        vt._pageHiddenLogged = true;
+        signal({ type: "vt_log", msg: `Page elements hidden (boxHidden=${boxHidden} btnHidden=${btnHidden}). Refresh needed.` });
+        signal({ type: "stale_refresh", src: "elements-hidden" });
+      }
+    } else {
+      vt._pageHiddenLogged = false;
+    }
+
+    if (isBlank2026 && !vt._blank2026Logged) {
+      vt._blank2026Logged = true;
+      signal({ type: "vt_log", msg: "2026 blank page detected. Waiting..." });
+    } else if (isBlankNoTask && !vt._blankNoTaskLogged) {
+      vt._blankNoTaskLogged = true;
+      signal({ type: "vt_log", msg: `Blank page (bodyLen=${bodyLen}). Waiting for task content...` });
+    } else if (!isBlank2026 && !isBlankNoTask) {
+      vt._blank2026Logged = false;
+      vt._blankNoTaskLogged = false;
+    }
+
+    const ready = loaded && imgOk && !checking && !boxHidden && !btnHidden && !isBlank2026 && !isBlankNoTask;
     const boxRect = box ? box.getBoundingClientRect() : null;
     const btnRect = btn ? btn.getBoundingClientRect() : null;
-    const boxStyle = box ? window.getComputedStyle(box) : null;
-    return { ready, url: window.location.href, hasBox: !!box, hasBtn: !!btn, boxW: boxRect ? Math.round(boxRect.width) : 0, boxH: boxRect ? Math.round(boxRect.height) : 0, btnW: btnRect ? Math.round(btnRect.width) : 0, btnH: btnRect ? Math.round(btnRect.height) : 0, empty, loaded, boxDisplay: boxStyle ? boxStyle.display : 'none' };
+    const newVal = box ? ('' + (box.value || box.textContent || '')).trim() : '';
+    const result = { ready, url: window.location.href, hasBox: !!box, hasBtn: !!btn, checking, boxW: boxRect ? Math.round(boxRect.width) : 0, boxH: boxRect ? Math.round(boxRect.height) : 0, btnW: btnRect ? Math.round(btnRect.width) : 0, btnH: btnRect ? Math.round(btnRect.height) : 0, empty: newVal === '', loaded, boxDisplay: boxStyle ? boxStyle.display : 'none', boxVal: rawVal.substring(0, 60), boxPlaceholder: box ? (box.placeholder || '') : '', isBlank2026, isBlankNoTask };
+    if (!box || !btn) {
+      if (!vt._domDumpDone || (vt._lastDomDumpUrl !== window.location.href)) {
+        vt._domDumpDone = true;
+        vt._lastDomDumpUrl = window.location.href;
+        try { result.domDump = vt.debugDumpDOM(); } catch (e) { result.domDumpError = e.message; }
+      }
+    } else {
+      vt._domDumpDone = false;
+    }
+    return result;
   };
 
   vt.grabImage = async () => ({ imageData: await grabTaskImage() });
+
+  // DEBUG: dump full DOM structure to diagnose why no input/button found
+  vt.debugDumpDOM = () => {
+    const body = document.body;
+    if (!body) return { error: "no body" };
+    const allInputs = Array.from(document.querySelectorAll('input, textarea, select'));
+    const allButtons = Array.from(document.querySelectorAll('button, input[type="submit"], a.btn'));
+    const allCanvases = Array.from(document.querySelectorAll('canvas'));
+    const allForms = Array.from(document.querySelectorAll('form'));
+    const allLinks = Array.from(document.querySelectorAll('a[href]')).slice(0, 20);
+    const bodyChildren = Array.from(body.children).map(ch => ({
+      tag: ch.tagName,
+      id: ch.id || '',
+      cls: (ch.className || '').toString().substring(0, 100),
+      display: window.getComputedStyle(ch).display,
+      children: ch.children.length,
+      innerHTML_len: ch.innerHTML ? ch.innerHTML.length : 0,
+      text: (ch.innerText || '').substring(0, 200)
+    }));
+    const fixedDivs = Array.from(document.querySelectorAll('div')).filter(el => {
+      const s = window.getComputedStyle(el);
+      return s.position === 'fixed' || s.position === 'absolute';
+    }).slice(0, 20).map(el => ({
+      tag: el.tagName, id: el.id || '', cls: (el.className || '').toString().substring(0, 80),
+      pos: window.getComputedStyle(el).position,
+      z: window.getComputedStyle(el).zIndex,
+      rect: el.getBoundingClientRect ? { x: Math.round(el.getBoundingClientRect().x), y: Math.round(el.getBoundingClientRect().y), w: Math.round(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) } : null,
+      hasInput: !!el.querySelector('input'), hasButton: !!el.querySelector('button')
+    }));
+    return {
+      url: window.location.href,
+      title: document.title,
+      bodyLen: body.innerHTML ? body.innerHTML.length : 0,
+      bodyText: (body.innerText || '').substring(0, 500),
+      inputs: allInputs.map(i => ({ tag: i.tagName, type: i.type, placeholder: i.placeholder, cls: (i.className||'').substring(0,60), display: window.getComputedStyle(i).display, vis: window.getComputedStyle(i).visibility })),
+      buttons: allButtons.map(b => ({ tag: b.tagName, text: (b.textContent||'').substring(0,40), cls: (b.className||'').substring(0,60) })),
+      canvases: allCanvases.map(c => ({ w: c.width, h: c.height, display: window.getComputedStyle(c).display })),
+      forms: allForms.map(f => ({ id: f.id, action: f.action, method: f.method })),
+      links: allLinks.map(a => ({ href: (a.href||'').substring(0,100), text: (a.textContent||'').substring(0,40) })),
+      bodyChildren,
+      fixedDivs,
+      scripts: Array.from(document.querySelectorAll('script[src]')).map(s => s.src.substring(0, 100)).slice(0, 10)
+    };
+  };
 
   // DEBUG: list all images on page
   vt.debugListImages = () => {
@@ -539,10 +671,88 @@
     try {
       const text = (document.body ? document.body.innerText : "") || "";
       const low = text.toLowerCase();
+      
+      // Find withdrawable amount - try multiple patterns
       const wm = low.match(/withdrawable\s*[:=]?\s*[₱$]?\s*([0-9]+(?:\.[0-9]+)?)/);
       if (wm && wm[1]) out.withdrawable = wm[1];
-      const pm = low.match(/([0-9]+)\s*\/\s*([0-9]+)/);
-      if (pm) { out.pointsDone = pm[1]; out.pointsTotal = pm[2]; }
+      if (!out.withdrawable) {
+        const bm = low.match(/(?:balance|wallet|available|funds|total)\s*[:=]?\s*[₱$]?\s*([0-9]+(?:\.[0-9]+)?)/);
+        if (bm && bm[1]) out.withdrawable = bm[1];
+      }
+      // More robust withdrawable fallback: look for ₱ or $ amount near progress area
+      if (!out.withdrawable) {
+        const pm = text.match(/[₱$]\s*([0-9]+(?:\.[0-9]{1,4})?)/);
+        if (pm && pm[1]) {
+          const v = parseFloat(pm[1]);
+          if (v > 5 && v < 100000) out.withdrawable = pm[1];
+        }
+      }
+
+      // --- POINTS: robust search for X / 250 specifically ---
+      // 1) Direct body regex for "X / 250" (most reliable, avoids picking wrong X/Y)
+      const m250 = text.match(/(\d{1,3})\s*\/\s*250\b/);
+      if (m250) {
+        out.pointsDone = m250[1];
+        out.pointsTotal = "250";
+      }
+      // 2) Search elements whose text contains "/250"
+      if (!out.pointsDone) {
+        const allEls = document.querySelectorAll('*');
+        for (const el of allEls) {
+          const t = (el.innerText || '').trim();
+          if (!t || t.length > 200) continue;
+          if (!t.includes('/')) continue;
+          // exact X / 250 inside element
+          const mm = t.match(/(\d{1,3})\s*\/\s*250\b/);
+          if (mm) { out.pointsDone = mm[1]; out.pointsTotal = "250"; break; }
+          // exact X/Y but prefer total 250
+          const m = t.match(/^(\d{1,3})\s*\/\s*(\d{1,3})$/);
+          if (m) {
+            const done = parseInt(m[1], 10);
+            const total = parseInt(m[2], 10);
+            if (total === 250 && done >= 0 && done <= total) {
+              out.pointsDone = m[1];
+              out.pointsTotal = m[2];
+              break;
+            }
+          }
+        }
+      }
+      // 3) Generic X/Y with total 100-500 if 250 not found
+      if (!out.pointsDone) {
+        const allEls = document.querySelectorAll('*');
+        for (const el of allEls) {
+          const t = (el.innerText || '').trim();
+          if (t.length > 100 || t.length < 3) continue;
+          const m = t.match(/^(\d{1,3})\s*\/\s*(\d{1,3})$/);
+          if (m) {
+            const done = parseInt(m[1], 10);
+            const total = parseInt(m[2], 10);
+            if (total >= 100 && total <= 500 && done >= 0 && done <= total) {
+              out.pointsDone = m[1];
+              out.pointsTotal = m[2];
+              break;
+            }
+          }
+        }
+      }
+      // 4) Fallback generic in body text
+      if (!out.pointsDone) {
+        const pm = low.match(/([0-9]+)\s*\/\s*([0-9]+)/);
+        if (pm) { out.pointsDone = pm[1]; out.pointsTotal = pm[2]; }
+      }
+      if (!out.pointsDone) {
+        const pm2 = low.match(/(?:points?|score|progress)\s*[:=]?\s*([0-9]+)\s*(?:of|\/|out of)\s*([0-9]+)/i);
+        if (pm2) { out.pointsDone = pm2[1]; out.pointsTotal = pm2[2]; }
+      }
+      const progressEls = document.querySelectorAll('[class*="progress"], [class*="points"], [class*="score"], [class*="count"]');
+      for (const el of progressEls) {
+        const t = (el.innerText || '').trim();
+        const m = t.match(/([0-9]+)\s*\/\s*([0-9]+)/);
+        if (m && !out.pointsDone) { out.pointsDone = m[1]; out.pointsTotal = m[2]; break; }
+      }
+      // Debug: expose raw finder for logs
+      vt._lastMetaRaw = { bodySnippet: text.substring(0, 400), pointsDone: out.pointsDone, pointsTotal: out.pointsTotal, withdrawable: out.withdrawable };
     } catch (e) {}
     return out;
   };
@@ -551,7 +761,8 @@
     url: window.location.href,
     isECNL: window.location.href.includes("ecnlmediamarket.com"),
     isWork: WORK_RE.test(window.location.href),
-    isAuth: /login|signin|auth|account|password/i.test(window.location.href) || !!(document && document.querySelector('input[type="password"]'))
+    isAuth: /login|signin|auth|account|password/i.test(window.location.href) || !!(document && document.querySelector('input[type="password"]')),
+    grabDebug: vt._grabDebug || null
   });
 
   vt.requestRefresh = () => { signal({ type: "stale_refresh", src: "manual" }); return { status: "ok" }; };
@@ -562,7 +773,7 @@
     if (staleTimer) clearTimeout(staleTimer);
     staleTimer = setTimeout(() => {
       signal({ type: "stale_refresh", src: "staleTimer" });
-    }, 300000);
+    }, 120000);
   };
   resetStaleTimer();
   try { new MutationObserver(resetStaleTimer).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
@@ -582,5 +793,4 @@
   setInterval(centerTaskArea, 1500);
   try { new MutationObserver(centerTaskArea).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
 
-  window.__vtapi = vt;
 })();

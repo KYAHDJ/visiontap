@@ -27,7 +27,6 @@ function writeJson(file, data) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
-    log(`writeJson OK: ${file}`);
   } catch (e) { log(`writeJson ERROR ${file}: ${e.message}`); }
 }
 
@@ -42,32 +41,92 @@ function getStats() {
   try { return JSON.parse(run("curl -s http://127.0.0.1:5566/stats")); }
   catch (e) { return { slots: {} }; }
 }
+function getEarnings() {
+  try { return JSON.parse(run("curl -s http://127.0.0.1:5566/earnings")); }
+  catch (e) { return {}; }
+}
 function getStatus() {
   const scannerUp = run("curl -s http://127.0.0.1:5566/health").includes("online");
   const electronProcs = parseInt(run("ps aux | grep electron | grep -v grep | wc -l")) || 0;
   const stats = getStats();
+  const earnings = getEarnings();
   const loopPaused = isLoopPaused();
-  return { scannerUp, electronProcs, stats, loopPaused };
+  return { scannerUp, electronProcs, stats, earnings, loopPaused };
 }
 function getMergedSlots(status) {
   const electronSlots = getElectronSlots();
   const scannerSlots = (status.stats && status.stats.slots) || {};
+  const slotEarnings = (status.earnings) || {};
   const creds = getCreds();
   const merged = [];
   for (const slot of (electronSlots.active || [])) {
-    const id = slot.id;
+    const id = String(slot.id);
     const name = slot.accountName || slot.name || `Slot ${Number(id) + 1}`;
-    const sc = scannerSlots[name] || scannerSlots[`Slot ${Number(id) + 1}`] || {};
-    const cred = creds[id] || {};
-    merged.push({
+    // Resolve scanner slot by id, name, or legacy Slot N keys (100% live)
+    let sc = scannerSlots[id] || scannerSlots[name] || scannerSlots[`Slot ${id}`] || scannerSlots[`Slot ${Number(id) + 1}`] || scannerSlots[String(Number(id)+1)] || null;
+    // Fallback: if no direct key, pick the scanner slot with most tasks / newest update (handles stale id mapping)
+    if (!sc || Object.keys(sc).length === 0) {
+      const all = Object.entries(scannerSlots);
+      if (all.length === 1) {
+        sc = all[0][1];
+      } else if (all.length > 1) {
+        // Prefer entry whose key contains id or name, else newest lastUpdate / max taskCount
+        let best = null;
+        for (const [k, v] of all) {
+          if (!best) best = v;
+          else {
+            const aTasks = Number(v.taskCount || v.correctCount || 0);
+            const bTasks = Number(best.taskCount || best.correctCount || 0);
+            if (aTasks > bTasks) best = v;
+          }
+        }
+        sc = best || {};
+      } else {
+        sc = {};
+      }
+    }
+    const cred = creds[id] || creds[slot.id] || {};
+    // Earnings are stored by slot id in server.py; also check by name for legacy + fallback
+    let hist = slotEarnings[id] || slotEarnings[name] || slotEarnings[`Slot ${id}`] || slotEarnings[`Slot ${Number(id) + 1}`] || null;
+    if (!hist || !Array.isArray(hist) || hist.length === 0) {
+      // Fallback: if no hist for this id, pick earnings entry with most records
+      const allHist = Object.entries(slotEarnings);
+      if (allHist.length === 1) hist = allHist[0][1];
+      else if (allHist.length > 1) {
+        let bestH = hist;
+        let maxLen = 0;
+        for (const [, v] of allHist) {
+          if (Array.isArray(v) && v.length > maxLen) { maxLen = v.length; bestH = v; }
+        }
+        if (maxLen > 0) hist = bestH;
+      }
+      if (!Array.isArray(hist)) hist = [];
+    }
+    if (!Array.isArray(hist)) hist = [];
+    const totalEarned = hist.reduce((sum, e) => sum + (e.earning || 0), 0);
+    let pointsDone = sc.pointsDone != null ? Number(sc.pointsDone) : 0;
+    let pointsTotal = sc.pointsTotal != null ? Number(sc.pointsTotal) : 250;
+    // Live reset when points hit 250 — display reset but don't hide data
+    let displayHist = hist;
+    if (pointsDone >= 250) {
+      pointsDone = 0;
+      displayHist = [];
+    }
+    const mergedSlot = {
       id, name, accountName: slot.accountName || "",
       user: cred.user || "", pass: cred.pass || "",
       correctCount: sc.correctCount || 0,
       wrongCount: sc.wrongCount || 0,
       errorCount: sc.errorCount || 0,
-      withdrawable: sc.withdrawable || 0,
-      lastUpdate: sc.lastUpdate || ""
-    });
+      taskCount: sc.taskCount || 0,
+      withdrawable: sc.withdrawable != null ? sc.withdrawable : 0,
+      pointsDone: pointsDone,
+      pointsTotal: pointsTotal,
+      totalEarned: Math.round(totalEarned * 10000) / 10000,
+      lastUpdate: sc.lastUpdate || "",
+      earningsHistory: displayHist.filter(e => e && e.earning < 10).slice(-20).reverse()
+    };
+    merged.push(mergedSlot);
   }
   return merged;
 }
@@ -76,130 +135,165 @@ function sendCommands(cmds) {
   log(`Commands sent: ${JSON.stringify(cmds)}`);
 }
 
-function esc(s) { return String(s || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/'/g,"&#39;"); }
-
-function buildPage(status) {
-  const slots = getMergedSlots(status);
+function buildPage() {
   const history = getHistory();
-  const loopText = status.loopPaused ? "PAUSED" : "RUNNING";
-  const loopColor = status.loopPaused ? "#f59e0b" : "#10b981";
-  const historyOpts = history.users.map(v => `<option value="${esc(v)}">`).join("");
-
-  let slotsHTML = "";
-  if (slots.length === 0) {
-    slotsHTML = `<div class="empty-state"><p>No slots configured</p><span>Add a slot in Settings</span></div>`;
-  } else {
-    for (const s of slots) {
-      const sc = s.correctCount > 0 ? "#10b981" : (s.wrongCount > 0 ? "#ef4444" : "#64748b");
-      const st = s.correctCount > 0 ? "Active" : (s.wrongCount > 0 ? "Issues" : "Idle");
-      const sid = encodeURIComponent(s.id);
-      slotsHTML += `
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <span style="font-weight:600;color:#e2e8f0">${esc(s.name)}</span>
-          <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${sc}20;color:${sc}">${st}</span>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-bottom:10px">
-          <div style="background:#0f172a;border-radius:6px;padding:6px"><div style="color:#facc15;font-weight:700">${s.withdrawable}</div><div style="color:#64748b;font-size:10px">Balance</div></div>
-          <div style="background:#0f172a;border-radius:6px;padding:6px"><div style="color:#10b981;font-weight:700">${s.correctCount}</div><div style="color:#64748b;font-size:10px">Correct</div></div>
-          <div style="background:#0f172a;border-radius:6px;padding:6px"><div style="color:#ef4444;font-weight:700">${s.wrongCount}</div><div style="color:#64748b;font-size:10px">Wrong</div></div>
-          <div style="background:#0f172a;border-radius:6px;padding:6px"><div style="color:#f59e0b;font-weight:700">${s.errorCount}</div><div style="color:#64748b;font-size:10px">Error</div></div>
-        </div>
-        <form class="cred-form" method="GET" action="/save-creds">
-          <input type="hidden" name="slot" value="${esc(s.id)}">
-          <div class="cred-row">
-            <input type="text" name="user" placeholder="Username" value="${esc(s.user)}" list="hu">
-            <input type="text" name="pass" placeholder="Password" value="${esc(s.pass)}">
-            <button type="submit" class="btn-sm btn-save">Save</button>
-          </div>
-        </form>
-        <div class="slot-actions">
-          <a class="icon-btn" href="/cmd?action=pause&slot=${sid}" title="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></a>
-          <a class="icon-btn" href="/cmd?action=resume&slot=${sid}" title="Resume"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg></a>
-          <a class="icon-btn" href="/cmd?action=restart&slot=${sid}" title="Restart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></a>
-          <a class="icon-btn" href="/cmd?action=refresh&slot=${sid}" title="Refresh"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></a>
-          <a class="icon-btn danger" href="/cmd?action=remove&slot=${sid}" onclick="return confirm('Remove this slot?')" title="Remove"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></a>
-        </div>
-      </div>`;
-    }
-  }
+  const historyOpts = history.users.map(v => `<option value="${v}">`).join("");
 
   return `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>VisionTap Control</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0a0e1a;--card:#111827;--border:#1e293b;--text:#e2e8f0;--muted:#64748b;--accent:#38bdf8;--green:#10b981;--red:#ef4444;--yellow:#f59e0b;--purple:#a78bfa}
-body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.container{max-width:500px;margin:0 auto;padding:20px 16px}
-h1{font-size:20px;text-align:center;color:var(--accent);margin-bottom:16px}
-.status-bar{display:flex;gap:6px;margin-bottom:16px;justify-content:center;flex-wrap:wrap}
-.status-pill{display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:16px;font-size:11px;font-weight:500;background:var(--card);border:1px solid var(--border)}
-.status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:16px 0 8px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px}
-.btn{display:block;width:100%;padding:10px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center}
-.btn:hover{opacity:0.85}
-.btn-green{background:var(--green);color:#fff}
-.btn-red{background:var(--red);color:#fff}
-.btn-yellow{background:var(--yellow);color:#000}
-.btn-purple{background:var(--purple);color:#fff}
-.btn-full{grid-column:span 2}
-.icon-btn{width:28px;height:28px;border:none;border-radius:5px;background:#0f172a;color:var(--muted);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
-.icon-btn:hover{color:var(--text);background:#1a2332}
-.icon-btn.danger:hover{color:var(--red)}
-.global-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
-.cred-row{display:flex;gap:4px;margin-bottom:8px}
-.cred-row input{flex:1;padding:5px 8px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:5px;font-size:12px}
-.btn-sm{padding:5px 10px;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap}
-.btn-save{background:var(--green);color:#fff}
-.btn-save:hover{opacity:0.85}
-.slot-actions{display:flex;gap:4px;justify-content:flex-end}
-.empty-state{text-align:center;padding:30px;color:var(--muted)}
-.empty-state p{font-size:14px;color:var(--text)}
-.footer{text-align:center;padding:16px 0;font-size:11px;color:#334155}
-</style></head><body>
-<div class="container">
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:600px;margin:0 auto;padding:12px 12px 60px}
+h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
+.pills{display:flex;gap:6px;margin-bottom:12px;justify-content:center;flex-wrap:wrap}
+.pill{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:16px;font-size:10px;font-weight:500;background:var(--card);border:1px solid var(--border);white-space:nowrap}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.stitle{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:14px 0 6px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px}
+.card-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.card-nm{font-weight:600;font-size:14px}
+.card-bg{font-size:9px;padding:2px 8px;border-radius:10px;font-weight:600}
+.sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;text-align:center;margin-bottom:8px}
+.sbox{background:#0f172a;border-radius:6px;padding:6px 4px}
+.sv{font-weight:700;font-size:14px;line-height:1.2}
+.sl{color:var(--muted);font-size:9px;margin-top:1px}
+.pbar{background:#0f172a;border-radius:4px;height:5px;margin-bottom:8px;overflow:hidden}
+.pfill{height:100%;border-radius:4px;background:linear-gradient(90deg,#a78bfa,#38bdf8);transition:width .5s}
+.crow{display:flex;gap:4px;margin-bottom:6px}
+.crow input{flex:1;padding:6px 8px;background:#0f172a;border:1px solid #334155;color:var(--text);border-radius:5px;font-size:12px;min-width:0}
+.crow input:focus{outline:none;border-color:var(--accent)}
+.bsm{padding:6px 10px;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.bsv{background:var(--green);color:#fff}
+.bsv:active{opacity:.7}
+.ehd{font-size:9px;color:var(--muted);margin-top:6px;margin-bottom:4px;font-weight:600;text-transform:uppercase}
+.elst{max-height:140px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.erow{display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11px;border-bottom:1px solid #0f172a;gap:4px}
+.eamt{color:var(--green);font-weight:600;white-space:nowrap}
+.etsk{color:var(--muted);font-size:10px;white-space:nowrap}
+.eclr{color:#475569;font-size:10px;text-transform:capitalize;white-space:nowrap}
+.ets{color:#475569;font-size:9px;white-space:nowrap}
+.sacts{display:flex;gap:4px;justify-content:flex-end;margin-top:6px}
+.ibtn{width:30px;height:30px;border:none;border-radius:6px;background:#0f172a;color:var(--muted);cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:background .15s}
+.ibtn:active{background:#1a2332;color:var(--text)}
+.ibtn.dng:active{color:var(--red)}
+.ggrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.btn{display:block;width:100%;padding:10px;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center;transition:opacity .15s}
+.btn:active{opacity:.7}
+.bgrn{background:var(--green);color:#fff}
+.bred{background:var(--red);color:#fff}
+.byel{background:var(--yellow);color:#000}
+.bpur{background:var(--purple);color:#fff}
+.bful{grid-column:span 2}
+.ftr{text-align:center;padding:12px 0;font-size:10px;color:#334155}
+.livedot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@media(max-width:380px){.wrap{padding:8px 8px 60px}.crow{flex-direction:column}.crow input{width:100%}.bsm{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
   <h1>VisionTap Control</h1>
-  <div class="status-bar">
-    <div class="status-pill"><div class="status-dot" style="background:${status.scannerUp?'var(--green)':'var(--red)'}"></div>Scanner ${status.scannerUp?'Online':'Offline'}</div>
-    <div class="status-pill"><div class="status-dot" style="background:${status.electronProcs>0?'var(--green)':'var(--red)'}"></div>Electron ${status.electronProcs>0?'Running':'Stopped'}</div>
-    <div class="status-pill"><div class="status-dot" style="background:${loopColor}"></div>Loop ${loopText}</div>
+  <div class="pills" id="pills"></div>
+  <div class="stitle">Global Controls</div>
+  <div class="ggrid">
+    <a class="btn bgrn" href="/cmd?action=resume&slot=all">Resume All</a>
+    <a class="btn bred" href="/cmd?action=pause&slot=all">Pause All</a>
+    <a class="btn byel" href="/cmd?action=restart&slot=all">Restart All</a>
+    <a class="btn bpur" href="/cmd?action=refresh&slot=all">Refresh All</a>
+    <a class="btn bred bful" href="/cmd?action=remove&slot=all" onclick="return confirm('Remove ALL slots?')">Remove All Slots</a>
   </div>
-
-  <div class="section-title">Global Controls</div>
-  <div class="global-grid">
-    <a class="btn btn-green" href="/cmd?action=resume&slot=all">▶ Resume All</a>
-    <a class="btn btn-red" href="/cmd?action=pause&slot=all">⏸ Pause All</a>
-    <a class="btn btn-yellow" href="/cmd?action=restart&slot=all">↻ Restart All Pages</a>
-    <a class="btn btn-purple" href="/cmd?action=refresh&slot=all">⟳ Refresh All</a>
-    <a class="btn btn-red btn-full" href="/cmd?action=remove&slot=all" onclick="return confirm('Remove ALL slots?')">✕ Remove All Slots</a>
+  <div class="stitle">Loop</div>
+  <div class="ggrid">
+    <a class="btn bgrn bful" id="lbtn" href="/loop?cmd=resume">Resume Loop</a>
   </div>
-
-  <div class="section-title">Loop</div>
-  <div class="global-grid">
-    ${status.loopPaused
-      ? `<a class="btn btn-green" href="/loop?cmd=resume">▶ Resume Loop</a>`
-      : `<a class="btn btn-red" href="/loop?cmd=pause">⏸ Pause Loop</a>`}
+  <div class="stitle">Slots (<span id="scnt">0</span>)</div>
+  <div id="slots"></div>
+  <div class="stitle">Server</div>
+  <div class="ggrid">
+    <a class="btn bgrn bful" href="/restart" onclick="return confirm('Restart VisionTap?')">Restart VisionTap</a>
   </div>
-
-  <div class="section-title">Slots (${slots.length})</div>
-  <div id="slots">${slotsHTML}</div>
-
-  <div class="section-title">Server</div>
-  <div class="global-grid">
-    <a class="btn btn-green btn-full" href="/restart" onclick="return confirm('Restart VisionTap?')">⟳ Restart VisionTap</a>
-  </div>
-  <div class="footer">Auto-refreshes every 10s</div>
+  <div class="ftr"><span class="livedot"></span><span id="ltxt">Connecting...</span></div>
 </div>
 <datalist id="hu">${historyOpts}</datalist>
-<meta http-equiv="refresh" content="10">
+<script>
+var POLL=2000,LD='';
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+function render(d){
+  var slots=d.slots||[];
+  document.getElementById('scnt').textContent=slots.length;
+  document.getElementById('pills').innerHTML=
+    '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
+    '<div class="pill"><div class="dot" style="background:'+(d.electronProcs>0?'var(--green)':'var(--red)')+'"></div>Electron '+(d.electronProcs>0?'Running':'Stopped')+'</div>'+
+    '<div class="pill"><div class="dot" style="background:'+(d.loopPaused?'var(--yellow)':'var(--green)')+'"></div>Loop '+(d.loopPaused?'Paused':'Running')+'</div>';
+  var lb=document.getElementById('lbtn');
+  if(d.loopPaused){lb.href='/loop?cmd=resume';lb.textContent='Resume Loop';lb.className='btn bgrn bful'}
+  else{lb.href='/loop?cmd=pause';lb.textContent='Pause Loop';lb.className='btn bred bful'}
+  var h='';
+  for(var i=0;i<slots.length;i++){
+    var s=slots[i];
+    var sc=s.correctCount>0?'#10b981':(s.wrongCount>0?'#ef4444':'#64748b');
+    var st=s.correctCount>0?'Active':(s.wrongCount>0?'Issues':'Idle');
+    var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
+    var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
+    var sid=encodeURIComponent(s.id);
+    var eh='';
+    if(s.earningsHistory&&s.earningsHistory.length>0){
+      eh='<div class="ehd">Earnings History</div><div class="elst">';
+      for(var j=0;j<s.earningsHistory.length;j++){
+        var e=s.earningsHistory[j];
+        eh+='<div class="erow"><span class="eamt">+'+e.earning+'</span><span class="etsk">#'+(e.taskNum||'?')+'</span><span class="eclr">'+(e.color||'')+'</span><span class="ets">'+(e.ts||'')+'</span></div>';
+      }
+      eh+='</div>';
+    }
+    h+='<div class="card">'+
+      '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg" style="background:'+sc+'20;color:'+sc+'">'+st+'</span></div>'+
+      '<div class="sgrid">'+
+        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+s.withdrawable+'</div><div class="sl">Balance</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+pts+'</div><div class="sl">Points</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#38bdf8">'+s.correctCount+'&#10003; '+s.wrongCount+'&#10007;</div><div class="sl">Results</div></div>'+
+      '</div>'+
+      (s.pointsTotal>0?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
+      '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
+      '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+
+      '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
+      '<button type="submit" class="bsm bsv">Save</button></form>'+
+      eh+
+      '<div class="sacts">'+
+        '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause">&#9646;&#9646;</a>'+
+        '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume">&#9654;</a>'+
+        '<a class="ibtn" href="/cmd?action=restart&slot='+sid+'" title="Restart">&#8635;</a>'+
+        '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh">&#8634;</a>'+
+        '<a class="ibtn dng" href="/cmd?action=remove&slot='+sid+'" title="Remove">&#10005;</a>'+
+      '</div></div>';
+  }
+  document.getElementById('slots').innerHTML=h;
+}
+
+function poll(){
+  fetch('/api/stats').then(function(r){return r.json()}).then(function(d){
+    var j=JSON.stringify(d);
+    if(j!==LD){LD=j;render(d)}
+    document.getElementById('ltxt').textContent='Live \u2014 '+new Date().toLocaleTimeString();
+  }).catch(function(){
+    document.getElementById('ltxt').textContent='Connection error';
+  });
+  setTimeout(poll,POLL);
+}
+poll();
+</script>
 </body></html>`;
 }
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  log(`${req.method} ${url.pathname} ${url.search || ""}`);
 
   if (url.pathname === "/debug-images" && req.method === "GET") {
     const debugDir = path.join(__dirname, "..", "debug_images");
@@ -233,7 +327,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET-based slot commands
   if (url.pathname === "/cmd") {
     const action = url.searchParams.get("action");
     const slot = url.searchParams.get("slot");
@@ -244,7 +337,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET-based loop control
   if (url.pathname === "/loop") {
     const cmd = url.searchParams.get("cmd");
     if (cmd === "pause" || cmd === "resume") {
@@ -256,7 +348,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET-based credential save
   if (url.pathname === "/save-creds") {
     const slot = url.searchParams.get("slot");
     const user = url.searchParams.get("user") || "";
@@ -282,7 +373,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET-based restart
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
     run("sudo systemctl restart visiontap-electron");
@@ -295,8 +385,7 @@ const server = http.createServer((req, res) => {
   // Dashboard GET
   res.setHeader("Content-Type", "text/html");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.end(buildPage(getStatus()));
+  res.end(buildPage());
 });
 
 server.listen(PORT, "0.0.0.0", () => {
