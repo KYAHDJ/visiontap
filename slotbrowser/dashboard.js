@@ -72,12 +72,20 @@ function getMergedSlots(status) {
     ].filter(v => v && typeof v === 'object' && Object.keys(v).length > 0);
     let sc = null;
     if (candidates.length > 0) {
-      // Pick candidate with highest taskCount, then withdrawable
-      sc = candidates[0];
+      // Pick freshest for points/withdrawable, but keep max taskCount for history
+      let latest = candidates[0];
+      let maxTask = candidates[0];
       for (const c of candidates) {
-        const aT = Number(c.taskCount || 0), bT = Number(sc.taskCount || 0);
-        const aW = Number(c.withdrawable || 0), bW = Number(sc.withdrawable || 0);
-        if (aT > bT || (aT === bT && aW > bW)) sc = c;
+        if ((c.lastUpdate || "") > (latest.lastUpdate || "")) latest = c;
+        if (Number(c.taskCount || 0) > Number(maxTask.taskCount || 0)) maxTask = c;
+      }
+      sc = { ...latest };
+      // Merge history counts from maxTask if latest is heartbeat-only (0 task)
+      if (Number(maxTask.taskCount || 0) > Number(sc.taskCount || 0)) {
+        sc.taskCount = maxTask.taskCount;
+        sc.correctCount = maxTask.correctCount;
+        sc.wrongCount = maxTask.wrongCount;
+        sc.errorCount = maxTask.errorCount;
       }
     } else {
       // No candidate, fallback to best among all
