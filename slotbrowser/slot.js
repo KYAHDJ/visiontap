@@ -655,15 +655,9 @@ class Slot {
       }
 
       const curHash = hashImage(imageData);
+      // Oracle: allow same image to be answered again — no deduplication limit (user requested)
       if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
-        if (this.lastTaskCorrect) {
-          this.status("Same image, already correct. Waiting for next task...");
-          this.isProcessing = false;
-          this.scheduleNext(800);
-          return;
-        }
-        // Same image but last answer was wrong — retry detection
-        this.status(`[${this.taskCount + 1}] Same image, retrying detection...`);
+        this.log(`SAME-IMAGE retry allowed (hash=${curHash}) — submitting again as requested`);
       }
 
       const imgSizeKB = Math.round((imageData.length * 3 / 4) / 1024);

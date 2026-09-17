@@ -228,6 +228,14 @@
     inputBox.dispatchEvent(new Event('input', { bubbles: true }));
     inputBox.dispatchEvent(new Event('change', { bubbles: true }));
 
+    // Random 1-3s delay after input before submit (weighted: 3s rare ~5%)
+    let delayMs;
+    const r = Math.random();
+    if (r < 0.50) delayMs = 1000 + Math.random() * 500;        // 50% -> 1.0-1.5s
+    else if (r < 0.80) delayMs = 1500 + Math.random() * 700;   // 30% -> 1.5-2.2s
+    else if (r < 0.95) delayMs = 2200 + Math.random() * 500;   // 15% -> 2.2-2.7s
+    else delayMs = 2700 + Math.random() * 300;                 // 5%  -> 2.7-3.0s (rare)
+    // console.log(`[VisionTap] submit delay ${Math.round(delayMs)}ms`);
     setTimeout(() => {
       const btn = findSubmitButton();
       if (btn) {
@@ -235,8 +243,8 @@
       } else {
         inputBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
       }
-    }, 200);
-    return { status: "filled" };
+    }, Math.round(delayMs));
+    return { status: "filled", delayMs: Math.round(delayMs) };
   }
 
   // ---- EXACT Chrome extension: 60-Second Inactivity Reload Watchdog ----
