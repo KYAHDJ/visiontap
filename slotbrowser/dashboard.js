@@ -141,10 +141,14 @@ function buildPage() {
   const history = getHistory();
   const historyOpts = history.users.map(v => `<option value="${v}">`).join("");
 
-  return `<!DOCTYPE html>
+  const v = Date.now();
+  return `<!DOCTYPE html><!-- VisionTap v${v} -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>VisionTap Control</title>
 <style>
@@ -280,17 +284,32 @@ function render(d){
 }
 
 function poll(){
-  fetch('/api/stats?t='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(function(r){return r.json()}).then(function(d){
-    render(d);
+  fetch('/api/stats?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+    try{ render(d); }catch(e){ console.error('render error',e); }
     LD=JSON.stringify(d);
-    var now=new Date();
-    document.getElementById('ltxt').textContent='Live \u2014 '+now.toLocaleTimeString()+' ('+now.toLocaleDateString()+')';
-  }).catch(function(){
-    document.getElementById('ltxt').textContent='Connection error — retrying';
+  }).catch(function(e){
+    console.error('poll error',e);
+    var el=document.getElementById('ltxt');
+    if(el) el.textContent='Connection error — '+new Date().toLocaleTimeString();
   });
   setTimeout(poll,POLL);
 }
+// Live clock ticks every second even if fetch stalls — proves JS is running
+setInterval(function(){
+  var el=document.getElementById('ltxt');
+  var now=new Date();
+  if(el) {
+    var txt=el.textContent||'';
+    // Only overwrite if it starts with Live or Connection
+    if(txt.indexOf('Live')===0 || txt.indexOf('Connection')===0) {
+      // Keep Live prefix but update time
+      var base=txt.split('—')[0]||'Live ';
+      el.textContent=base+'— '+now.toLocaleTimeString()+' ('+now.toLocaleDateString()+')';
+    }
+  }
+},1000);
 poll();
+console.log('VisionTap dashboard live poll started v'+Date.now());
 </script>
 </body></html>`;
 }
