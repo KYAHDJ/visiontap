@@ -639,20 +639,20 @@ class Slot {
         return;
       }
       if (page.isAuth) {
-        if (throttle("auth")) this.log(`PAGE auth url=${page.url || "?"}`);
-        // Immediate retry login via injected tryLogin (fixes stuck login loop)
+        if (throttle("auth")) this.log(`PAGE auth url=${page.url || "?"} isAuth=${page.isAuth} isECNL=${page.isECNL}`);
+        // Immediate retry login via injected tryLogin with timeout
         try {
-          const r = await this.api("tryLogin");
+          const r = await Promise.race([this.api("tryLogin"), new Promise((_,rej)=>setTimeout(()=>rej(new Error("tryLogin timeout")), 8000))]);
           if (r) this.log(`TRY-LOGIN result: ${JSON.stringify(r).substring(0,120)}`);
-        } catch(e) {}
+        } catch(e) { this.log(`TRY-LOGIN error/timeout: ${e.message}`); }
         this.status("Login page. Auto-login running, waiting...");
         this.touchProgress();
         this.isProcessing = false;
-        this.log(`SCHEDULING next runIteration in 3000ms for auth page`);
+        this.log(`SCHEDULING next runIteration in 3000ms for auth page id=${this.id}`);
         this.scheduleNext(3000);
         return;
       }
-      if (this.id === "11") this.log(`PAGE DEBUG url=${page.url || this.currentUrl} isECNL=${page.isECNL} isAuth=${page.isAuth} isWork=${page.isWork} hasBox=${!!page.hasBox} hasBtn=${!!page.hasBtn}`);
+      this.log(`PAGE DEBUG id=${this.id} url=${page.url || this.currentUrl} isECNL=${page.isECNL} isAuth=${page.isAuth} isWork=${page.isWork} hasBox=${!!page.hasBox} hasBtn=${!!page.hasBtn} ready=${page.ready}`);
       if (!page.isWork) {
         if (throttle("other")) this.log(`PAGE other url=${page.url || "?"}`);
         this.status("Not on work page. Redirecting...");
