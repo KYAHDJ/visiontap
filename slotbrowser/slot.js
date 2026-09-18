@@ -553,7 +553,7 @@ class Slot {
   }
 
   scheduleNext(delay) {
-    if (this.id === "11") this.log(`scheduleNext called delay=${delay} loop=${this.isLoopRunning} paused=${this.paused}`);
+    this.log(`scheduleNext id=${this.id} delay=${delay} loop=${this.isLoopRunning} paused=${this.paused} processing=${this.isProcessing}`);
     if (!this.isLoopRunning) return;
     let d = Math.round((delay || 0) * this.delayMult);
     if (this.paused) {
@@ -575,8 +575,7 @@ class Slot {
 
   // ---- main loop ----
   async runIteration() {
-    // Debug: log every entry for slot 11
-    if (this.id === "11") this.log(`runIteration ENTRY loop=${this.isLoopRunning} paused=${this.paused} processing=${this.isProcessing} url=${this.currentUrl || "?"}`);
+    this.log(`runIteration ENTRY id=${this.id} loop=${this.isLoopRunning} paused=${this.paused} processing=${this.isProcessing} url=${this.currentUrl || "?"}`);
     // Auto-reset stuck isProcessing (e.g., previous iteration hung) - schedule retry if still stuck
     if (this.isProcessing) {
       const age = Date.now() - (this.taskStartTime || 0);
@@ -653,6 +652,7 @@ class Slot {
         this.scheduleNext(3000);
         return;
       }
+      if (this.id === "11") this.log(`PAGE DEBUG url=${page.url || this.currentUrl} isECNL=${page.isECNL} isAuth=${page.isAuth} isWork=${page.isWork} hasBox=${!!page.hasBox} hasBtn=${!!page.hasBtn}`);
       if (!page.isWork) {
         if (throttle("other")) this.log(`PAGE other url=${page.url || "?"}`);
         this.status("Not on work page. Redirecting...");
