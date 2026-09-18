@@ -186,6 +186,14 @@ function wireSession(ses) {
 // ---- Slot management ----
 function createSlot(id, name, stopRequested, opts) {
   opts = opts || {};
+  // Prevent duplicate renderers: if slot with same id already exists, clean old view first
+  if (slots.has(String(id))) {
+    const old = slots.get(String(id));
+    try { if (win && !win.isDestroyed() && old.view) win.contentView.removeChildView(old.view); } catch(e) {}
+    try { if (old.view && old.view.webContents && !old.view.webContents.isDestroyed()) old.view.webContents.close({waitForBeforeunload:false}); } catch(e) {}
+    slots.delete(String(id));
+    try { const g = ghosts.get(String(id)); if (g) ghosts.delete(String(id)); } catch(e) {}
+  }
   const partition = `persist:vt-slot-${id}`;
   const ses = session.fromPartition(partition);
   wireSession(ses);

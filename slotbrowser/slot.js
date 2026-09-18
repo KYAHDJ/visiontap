@@ -568,7 +568,13 @@ class Slot {
 
   // ---- main loop ----
   async runIteration() {
-    if (!this.isLoopRunning || this.isProcessing || this.paused) {
+    // Auto-reset stuck isProcessing (e.g., previous iteration hung)
+    if (this.isProcessing) {
+      const age = Date.now() - (this.taskStartTime || 0);
+      if (age > 45000) { this.isProcessing = false; this.log("Auto-reset stuck isProcessing after "+Math.round(age/1000)+"s"); }
+      else return;
+    }
+    if (!this.isLoopRunning || this.paused) {
       if (!this.isLoopRunning && !this.loopStopRequested) {
         if (Date.now() - (this.lastHarshRestart||0) > 15000) {
           this.log("Not looping - harsh restart");
