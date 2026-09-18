@@ -442,7 +442,11 @@ class Slot {
 
   // ---- refresh ----
   async refreshPage(reason, navigate) {
-    if (this.isProcessing) { this.log(`SUPPRESSED reload during iteration (${reason}).`); return; }
+    if (this.isProcessing) {
+      const age = Date.now() - (this.taskStartTime || 0);
+      if (age > 30000) { this.isProcessing = false; this.log(`Force reset stuck isProcessing for refresh (${reason}) after ${Math.round(age/1000)}s`); }
+      else { this.log(`SUPPRESSED reload during iteration (${reason}).`); return; }
+    }
     this.errorCount++;
     this.log(`RELOAD reason=${reason}${navigate ? " -> solving-colors" : ""} (counted ERROR)`);
     this.pushHud({});
@@ -568,11 +572,11 @@ class Slot {
 
   // ---- main loop ----
   async runIteration() {
-    // Auto-reset stuck isProcessing (e.g., previous iteration hung)
+    // Auto-reset stuck isProcessing (e.g., previous iteration hung) - schedule retry if still stuck
     if (this.isProcessing) {
       const age = Date.now() - (this.taskStartTime || 0);
       if (age > 45000) { this.isProcessing = false; this.log("Auto-reset stuck isProcessing after "+Math.round(age/1000)+"s"); }
-      else return;
+      else { this.scheduleNext(3000); return; }
     }
     if (!this.isLoopRunning || this.paused) {
       if (!this.isLoopRunning && !this.loopStopRequested) {
