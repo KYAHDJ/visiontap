@@ -558,14 +558,16 @@ function createWindow() {
       if (mt !== lastCredMtime) {
         lastCredMtime = mt;
         const allCreds = readCreds();
-        // ENFORCE: id-based 11->adaihbi, 12->temi (not position)
+        // ENFORCE: id-based 11->adaihbi, 12->temi, 13->danicajgb (not position)
         try {
           allCreds["11"] = { user: "adaihbi", pass: "Iloveyou143!" };
           allCreds["12"] = { user: "temi", pass: "Iloveyou143!" };
+          allCreds["13"] = { user: "danicajgb", pass: "Danik032204" };
           const cur = readCreds();
           let needWrite = false;
           if (!cur["11"] || cur["11"].user !== "adaihbi" || cur["11"].pass !== "Iloveyou143!") { cur["11"] = { user: "adaihbi", pass: "Iloveyou143!" }; needWrite = true; }
           if (!cur["12"] || cur["12"].user !== "temi" || cur["12"].pass !== "Iloveyou143!") { cur["12"] = { user: "temi", pass: "Iloveyou143!" }; needWrite = true; }
+          if (!cur["13"] || cur["13"].user !== "danicajgb" || cur["13"].pass !== "Danik032204") { cur["13"] = { user: "danicajgb", pass: "Danik032204" }; needWrite = true; }
           if (!cur["0"] || cur["0"].user !== "adaihbi") { cur["0"] = { user: "adaihbi", pass: "Iloveyou143!" }; needWrite = true; }
           if (!cur["1"] || cur["1"].user !== "temi") { cur["1"] = { user: "temi", pass: "Iloveyou143!" }; needWrite = true; }
           if (needWrite) writeJson(CREDS_FILE, cur);
@@ -714,27 +716,38 @@ app.whenReady().then(() => {
     }
   }
   if (slots.size === 0 && ghosts.size === 0) {
-    // Auto-ensure 2 persistent slots with saved credentials
+    // Auto-ensure 3 persistent slots with saved credentials (13 is slow 7s)
     let autoCreds = {};
     try { autoCreds = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), ".config", "VisionTap Slots", "state", "credentials.json"),"utf8")); } catch(e) {}
-    const s11 = autoCreds["11"]; const s12 = autoCreds["12"];
+    const s11 = autoCreds["11"]; const s12 = autoCreds["12"]; const s13 = autoCreds["13"];
     createSlot("11", s11 && s11.user ? s11.user : "adaihbi", false, { bootsOnStart: true, accountName: s11 && s11.user ? s11.user : "adaihbi" });
     createSlot("12", s12 && s12.user ? s12.user : "temi", false, { bootsOnStart: true, accountName: s12 && s12.user ? s12.user : "temi" });
+    createSlot("13", s13 && s13.user ? s13.user : "danicajgb", false, { bootsOnStart: true, accountName: s13 && s13.user ? s13.user : "danicajgb" });
     try{
       const fs2=require('fs'); const path2=require('path'); const os2=require('os');
       const cf=path2.join(os2.homedir(), ".config", "VisionTap Slots", "state", "credentials.json");
       let c={}; try{c=JSON.parse(fs2.readFileSync(cf,"utf8"))}catch(e){};
       if(!c["11"]) c["11"]={user:"adaihbi", pass:"Iloveyou143!"};
       if(!c["12"]) c["12"]={user:"temi", pass:"Iloveyou143!"};
+      if(!c["13"]) c["13"]={user:"danicajgb", pass:"Danik032204"};
       fs2.writeFileSync(cf, JSON.stringify(c,null,2));
     }catch(e){}
   } else if (slots.size === 1 && ghosts.size === 0) {
     const has11 = slots.has("11") || ghosts.has("11");
     const has12 = slots.has("12") || ghosts.has("12");
+    const has13 = slots.has("13") || ghosts.has("13");
     if (!has11) createSlot("11", "adaihbi", false, { bootsOnStart: true, accountName: "adaihbi" });
     if (!has12) createSlot("12", "temi", false, { bootsOnStart: true, accountName: "temi" });
+    if (!has13) createSlot("13", "danicajgb", false, { bootsOnStart: true, accountName: "danicajgb" });
+  } else if (slots.size === 2 && ghosts.size === 0) {
+    const has11 = slots.has("11") || ghosts.has("11");
+    const has12 = slots.has("12") || ghosts.has("12");
+    const has13 = slots.has("13") || ghosts.has("13");
+    if (!has11) createSlot("11", "adaihbi", false, { bootsOnStart: true, accountName: "adaihbi" });
+    if (!has12) createSlot("12", "temi", false, { bootsOnStart: true, accountName: "temi" });
+    if (!has13) createSlot("13", "danicajgb", false, { bootsOnStart: true, accountName: "danicajgb" });
   }
-  slotSeq = Math.max(slotSeq, 13);
+  slotSeq = Math.max(slotSeq, 14);
   broadcastState();
   writeSlotsFile();
 }).catch((err) => {

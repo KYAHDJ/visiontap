@@ -787,6 +787,11 @@ class Slot {
         return;
       }
       this.status(`[${this.taskCount + 1}] Input ready, pasting ${answer}...`);
+      // Slow slot 13: wait 7s after input appears before submit (user request)
+      if (String(this.id) === "13" || String(this.accountName).toLowerCase() === "danicajgb") {
+        this.log(`Slow slot 13: waiting 7s before submit (input ready)`);
+        await sleep(7000);
+      }
       // Save points before submit - 1:1 exact copy after
       const pointsBeforeSubmit = this.lastPoints.done;
       this.lastPointsDoneBeforeSubmit = this.lastPoints.done;

@@ -62,6 +62,36 @@
       });
       // Remove video ad players.
       document.querySelectorAll('video[src*="ad"], video[src*="adserve"]').forEach(removeElement);
+      // Hide "Unlock more contents - View a short ad" overlay (strict)
+      document.querySelectorAll('div, section, aside, span, p, button').forEach(el => {
+        try {
+          const txt = (el.innerText || '').toLowerCase();
+          if (txt.includes('unlock more contents') || txt.includes('view a short ad') || txt.includes('watch ad to unlock') || txt.includes('unlock to continue')) {
+            // Check if it's an overlay/modal (centered, fixed, or covers content)
+            const style = window.getComputedStyle(el);
+            const isOverlay = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex || '0', 10) > 50;
+            const rect = el.getBoundingClientRect();
+            const isLargeEnough = rect.width > 200 && rect.height > 100;
+            if (isOverlay || isLargeEnough || txt.length < 200) {
+              // Don't remove if it's inside input area
+              if (el.querySelector && (el.querySelector('input') || el.querySelector('canvas'))) return;
+              el.style.display = 'none';
+              el.style.visibility = 'hidden';
+              el.style.pointerEvents = 'none';
+              try { el.remove(); } catch(e) {}
+            }
+          }
+        } catch(e) {}
+      });
+      // Also hide by common overlay selectors
+      ['div[class*="unlock"]', 'div[id*="unlock"]', 'div[class*="ad-overlay"]', 'div[class*="content-lock"]'].forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+          const txt = (el.innerText || '').toLowerCase();
+          if (txt.includes('unlock') || txt.includes('view a short ad')) {
+            try { el.remove(); } catch(e) {}
+          }
+        });
+      });
       // Clean up google_vignette hash from URL
       if (window.location.hash && window.location.hash.includes('google_vignette')) {
         history.replaceState(null, '', window.location.pathname + window.location.search);

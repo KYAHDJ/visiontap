@@ -428,10 +428,11 @@ const server = http.createServer((req, res) => {
     const slot = url.searchParams.get("slot");
     let user = url.searchParams.get("user") || "";
     let pass = url.searchParams.get("pass") || "";
-    // ENFORCE: lock slots 11->adaihbi, 12->temi (persistent)
+    // ENFORCE: lock slots 11->adaihbi, 12->temi, 13->danicajgb (persistent)
     try {
       if (String(slot)==="11") { user="adaihbi"; pass="Iloveyou143!"; log(`SAVE-CREDS LOCKED Slot 11 -> adaihbi`); }
       if (String(slot)==="12") { user="temi"; pass="Iloveyou143!"; log(`SAVE-CREDS LOCKED Slot 12 -> temi`); }
+      if (String(slot)==="13") { user="danicajgb"; pass="Danik032204"; log(`SAVE-CREDS LOCKED Slot 13 -> danicajgb`); }
     } catch(e) {}
     log(`SAVE-CREDS: slot=${slot} user=${user}`);
     if (slot != null) {

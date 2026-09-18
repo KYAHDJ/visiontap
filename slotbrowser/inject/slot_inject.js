@@ -273,6 +273,23 @@
       document.querySelectorAll('video[src*="ad"], video[src*="adserve"]').forEach(el => {
         try { el.remove(); } catch (e) {}
       });
+      // Strictly hide Unlock more contents overlay
+      document.querySelectorAll('div, section, aside, span, p, button').forEach(el => {
+        try {
+          const txt = (el.innerText || '').toLowerCase();
+          if (txt.includes('unlock more contents') || txt.includes('view a short ad') || txt.includes('watch ad to unlock') || txt.includes('unlock to continue')) {
+            const style = window.getComputedStyle(el);
+            const isOverlay = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex||'0',10) > 50;
+            const rect = el.getBoundingClientRect();
+            if (isOverlay || (rect.width>200 && rect.height>100) || txt.length<200) {
+              if (el.id && el.id.includes('visiontap')) return;
+              if (el.querySelector && (el.querySelector('input') || el.querySelector('canvas'))) return;
+              el.style.display='none'; el.style.visibility='hidden'; el.style.pointerEvents='none';
+              try{el.remove();}catch(e){}
+            }
+          }
+        } catch(e){}
+      });
       document.querySelectorAll('div').forEach(el => {
         if (el.id && el.id.includes('visiontap')) return;
         try {
