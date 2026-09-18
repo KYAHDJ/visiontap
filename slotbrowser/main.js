@@ -547,6 +547,19 @@ function createWindow() {
       if (mt !== lastCredMtime) {
         lastCredMtime = mt;
         const allCreds = readCreds();
+        // ENFORCE: Slot 1 (first) -> adaihbi, Slot 2 (second) -> temi (locked)
+        try {
+          const sids = [...slots.keys()];
+          if (sids[0]) allCreds[sids[0]] = { user: "adaihbi", pass: "Iloveyou143!" };
+          if (sids[1]) allCreds[sids[1]] = { user: "temi", pass: "Iloveyou143!" };
+          const cur = readCreds();
+          let needWrite = false;
+          if (sids[0] && (!cur[sids[0]] || cur[sids[0]].user !== "adaihbi" || cur[sids[0]].pass !== "Iloveyou143!")) { cur[sids[0]] = { user: "adaihbi", pass: "Iloveyou143!" }; needWrite = true; }
+          if (sids[1] && (!cur[sids[1]] || cur[sids[1]].user !== "temi" || cur[sids[1]].pass !== "Iloveyou143!")) { cur[sids[1]] = { user: "temi", pass: "Iloveyou143!" }; needWrite = true; }
+          if (!cur["0"] || cur["0"].user !== "adaihbi") { cur["0"] = { user: "adaihbi", pass: "Iloveyou143!" }; needWrite = true; }
+          if (!cur["1"] || cur["1"].user !== "temi") { cur["1"] = { user: "temi", pass: "Iloveyou143!" }; needWrite = true; }
+          if (needWrite) writeJson(CREDS_FILE, cur);
+        } catch(e) {}
         console.log(`[CREDS] Reloaded: ${JSON.stringify(allCreds).substring(0, 200)}`);
         for (const [id, slot] of slots) {
           const c = allCreds[id] || allCreds[slot.accountName] || null;

@@ -38,7 +38,7 @@ sudo journalctl -u visiontap-electron -f
 ```
 
 ## Display & Electron Flags
-Electron runs low-RAM mode (`app.disableHardwareAcceleration()`, `--disable-gpu`, `--max-old-space-size=64`, `renderer-process-limit=2`, `disable-dev-shm-usage` etc.) See `slotbrowser/main.js:42-71`. State dir: `~/.config/VisionTap Slots/state/` (`slots.json`, `credentials.json`, `settings.json`, `slot_commands.json`, `loop_command.json`).
+Electron runs in low-RAM mode (`app.disableHardwareAcceleration()`, `--disable-gpu`, and `disable-dev-shm-usage`). It no longer limits renderer processes to two, so three or more slots can run independently. State dir: `~/.config/VisionTap Slots/state/` (`slots.json`, `credentials.json`, `settings.json`, `slot_commands.json`, `loop_command.json`).
 
 ## Scanner Deps (Oracle)
 Installed via `setup_server.sh`:

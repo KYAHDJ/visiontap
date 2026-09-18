@@ -299,6 +299,15 @@ def report():
         if data.get('withdrawable') is not None:
             try: s['withdrawable'] = float(data['withdrawable'])
             except: pass
+        if data.get('timerText') is not None:
+            try: s['timerText'] = str(data['timerText'])
+            except: pass
+        if data.get('elapsed') is not None:
+            try: s['elapsed'] = int(data['elapsed'])
+            except: pass
+        if data.get('loopStartTime') is not None:
+            try: s['loopStartTime'] = int(data['loopStartTime'])
+            except: pass
         if data.get('taskCount') is not None:
             try: s['taskCount'] = int(data['taskCount'])
             except: pass
@@ -335,6 +344,25 @@ def report():
             # New cycle start, show 0/250 not 0/0
             s['pointsTotal'] = 250
         s['lastUpdate'] = time.strftime('%H:%M:%S')
+        # Hourly points history for dashboard - keep last 24 hours
+        if 'pointsHistory' not in s:
+            s['pointsHistory'] = []
+        # Only record if points changed or every hour
+        now_hour = int(time.time() // 3600)
+        last_hist = s['pointsHistory'][-1] if s['pointsHistory'] else None
+        should_record = False
+        if not s['pointsHistory']:
+            should_record = True
+        elif last_hist and last_hist.get('hour') != now_hour:
+            should_record = True
+        elif last_hist and s.get('pointsDone',0) != last_hist.get('pointsDone',0):
+            # Also record if points changed significantly
+            if abs(s.get('pointsDone',0) - last_hist.get('pointsDone',0)) >= 1:
+                should_record = True
+        if should_record:
+            s['pointsHistory'].append({'hour': now_hour, 'ts': int(time.time()), 'pointsDone': s.get('pointsDone',0), 'withdrawable': s.get('withdrawable',0), 'timeStr': time.strftime('%H:%M')})
+            if len(s['pointsHistory']) > 500:
+                s['pointsHistory'] = s['pointsHistory'][-500:]
         existing['slots'][slot] = s
 
         with open(STATS_FILE, 'w') as f:

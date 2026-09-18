@@ -454,7 +454,7 @@
         '<div style="font-weight:bold;color:#38bdf8;margin-bottom:4px;display:flex;justify-content:space-between;">' +
         '<span id="vt-hud-title">VisionTap <span id="vt-hud-slot"></span></span>' +
         '<span id="vt-hud-state" style="color:#4ade80;">READY</span></div>' +
-        '<div>Time: <span id="vt-hud-timer" style="color:#facc15;">00:00</span> | Correct: <span id="vt-hud-correct" style="color:#4ade80;">0</span> | Wrong: <span id="vt-hud-wrong" style="color:#f87171;">0</span> | Error: <span id="vt-hud-error" style="color:#facc15;">0</span></div>' +
+        '<div>Time: <span id="vt-hud-timer" style="color:#facc15;">00:00</span></div>' +
         '<div id="vt-hud-status" style="margin-top:4px;color:#94a3b8;max-width:320px;white-space:pre-wrap;word-wrap:break-word;">Waiting...</div>';
       document.body.appendChild(hud);
     }
@@ -468,8 +468,7 @@
       getOrCreateHUD(state.slotName);
       if (state.statusText !== undefined) document.getElementById('vt-hud-status').innerText = state.statusText;
       if (state.timerText !== undefined) document.getElementById('vt-hud-timer').innerText = state.timerText;
-      if (state.correctCount !== undefined) document.getElementById('vt-hud-correct').innerText = state.correctCount;
-      if (state.wrongCount !== undefined) document.getElementById('vt-hud-wrong').innerText = state.wrongCount;
+      // Removed correct/wrong HUD update - time only
       if (state.errorCount !== undefined) document.getElementById('vt-hud-error').innerText = state.errorCount;
       const s = document.getElementById('vt-hud-state');
       if (s) {
@@ -650,25 +649,44 @@
 
   vt.getVerdict = () => {
     try {
-      const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
+      const bodyText = document.body ? document.body.innerText : '';
+      const low = bodyText.toLowerCase();
+      // Method 0: ONLY check feedback toast/alert - NOT entire body (placeholder "correct answer" would false trigger)
+      const feedbackEls = document.querySelectorAll('.alert, .toast, .swal2-popup, [class*="alert"], [class*="toast"], [role="alert"], [class*="success"], [class*="error"], [class*="correct"], [class*="incorrect"], [class*="wrong"]');
+      for (const el of feedbackEls) {
+        if (!el.offsetParent) continue;
+        const t = (el.innerText || '').toLowerCase().trim();
+        if (!t || t.length > 300) continue;
+        // Must be visible feedback, not placeholder
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+        if (t.includes("correct answer") || t.includes("well done") || t.includes("congratulations") || t.includes("successfully")) return { correct: true, raw: t.substring(0,80) };
+        if (t.includes("incorrect answer") || t.includes("wrong answer") || t.includes("incorrect") || t.includes("wrong") ) {
+          // Ensure it's feedback, not task description
+          if (t.length < 120) return { correct: false, raw: t.substring(0,80) };
+        }
+      }
+      // Also check for small centered feedback near submit button (green/red)
+      const maybeFeedback = document.querySelectorAll('div, p, span, h1, h2, h3, h4, strong, b');
+      for (const el of maybeFeedback) {
+        const t = (el.innerText || '').toLowerCase().trim();
+        if (!t || t.length > 120 || t.length < 5) continue;
+        if (!el.offsetParent) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 50 || rect.height < 15) continue;
+        // Check if it's near center and has green/red
+        const style = window.getComputedStyle(el);
+        const color = style.color || '';
+        const bg = style.backgroundColor || '';
+        const isGreen = color.includes('0, 128') || color.includes('34, 197') || color.includes('22, 163') || color.includes('16, 185') || bg.includes('0, 128') || el.className.toString().toLowerCase().includes('success');
+        const isRed = color.includes('220, 38') || color.includes('239, 68') || color.includes('185, 28') || bg.includes('220, 38') || el.className.toString().toLowerCase().includes('error') || el.className.toString().toLowerCase().includes('wrong');
+        if (isGreen && (t.includes("correct") || t.includes("success") || t.includes("well done"))) return { correct: true, raw: t.substring(0,80) };
+        if (isRed && (t.includes("incorrect") || t.includes("wrong") || t.includes("try again"))) return { correct: false, raw: t.substring(0,80) };
+      }
 
-      // Method 1: Check for explicit correct/incorrect messages in body text
-      const wrongPatterns = [
-        /(?:answer|result|status|response)\s*(?:is|:)?\s*(?:wrong|incorrect|not correct|invalid|try again)/i,
-        /(?:wrong|incorrect|not correct|invalid)\s*(?:answer|response)/i,
-        /(?:try|please try)\s*again/i,
-        /(?:sorry|oops|unfortunately)[,.]?\s*(?:that(?:'s| is)|you(?:'re| are))?\s*(?:wrong|incorrect|not right)/i
-      ];
-      for (const pat of wrongPatterns) {
-        if (pat.test(bodyText)) return { correct: false };
-      }
-      const correctPatterns = [
-        /(?:answer|result|status|response)\s*(?:is|:)?\s*(?:correct|right|well done|accurate)/i,
-        /(?:congratulations|nice|great|good)\s*(?:!|\.|,|\s*(?:job|work|answer|response))/i
-      ];
-      for (const pat of correctPatterns) {
-        if (pat.test(bodyText)) return { correct: true };
-      }
+      // Method 1: DISABLED - too broad (placeholder triggers). Only feedback elements count.
+      // const wrongPatterns = [...]
+      // for (...) if (pat.test(bodyText)) return ...
 
       // Method 2: Check result/alert/feedback elements
       const resultSelectors = [
@@ -703,16 +721,9 @@
         }
       }
 
-      // Method 4: Check withdrawal amount increase (most reliable for correct)
-      const wm = bodyText.match(/withdrawable\s*[:=]?\s*[₱$]?\s*([0-9]+(?:\.[0-9]+)?)/);
-      if (wm && wm[1]) {
-        const current = parseFloat(wm[1]);
-        if (this._lastWithdrawable && current > this._lastWithdrawable) {
-          this._lastWithdrawable = current;
-          return { correct: true };
-        }
-        this._lastWithdrawable = current;
-      }
+      // Method 4: DISABLED per user - only green/red counts, not withdrawable
+      // const wm = bodyText.match(/withdrawable\s*[:=]?\s*[₱$]?\s*([0-9]+(?:\.[0-9]+)?)/);
+      // if (wm && wm[1]) { ... }
 
       return { correct: null };
     } catch (e) { return { correct: null }; }

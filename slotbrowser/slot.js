@@ -89,6 +89,12 @@ class Slot {
     this.pointsSyncTimer = null;
     this.withdrawableCache = null;
     this._lastPointsPush = 0;
+    // Single-detect cache: store detected answer and wait for inputbox, don't re-detect while waiting
+    this.pendingAnswer = null;
+    this.pendingHash = null;
+    this.pendingImage = null;
+    this.lastHarshRestart = 0;
+    this.consecutiveNoProgress = 0;
   }
 
   getWorkUrl() {
@@ -279,8 +285,8 @@ class Slot {
       slotName: this.name,
       statusText: partial.statusText !== undefined ? partial.statusText : this.lastHudText,
       timerText: partial.timerText || `${mm}:${ss}`,
-      correctCount: this.correctCount,
-      wrongCount: this.wrongCount,
+      correctCount: 0, // removed - time only
+      wrongCount: 0, // removed - time only
       errorCount: this.errorCount,
       isRunning: this.isLoopRunning,
       lastTaskCorrect: this.lastTaskCorrect
@@ -341,10 +347,10 @@ class Slot {
         battery = j && j.battery != null ? j.battery : null;
       } catch (e) {}
       payload = Object.assign({}, payload, {
-        battery, slot: this.name,
+        battery, slot: String(this.id),
         taskCount: this.taskCount,
-        correctCount: this.correctCount,
-        wrongCount: this.wrongCount,
+        correctCount: 0, // removed - time only
+        wrongCount: 0, // removed - time only
         errorCount: this.errorCount
       });
       await fetch(`${SCANNER_URL}/report`, {
@@ -362,11 +368,13 @@ class Slot {
     (async () => {
       let correct = null, theirs = null, withdrawable = null, pointsDone = null, pointsTotal = null;
 
-      // Wait a moment for the page to show verdict feedback
-      await sleep(1500);
+      // Wait 1 sec after submit button clicked as user requested
+      const fillDelay = reportData.fillDelay || 1500;
+      // fill() schedules click after fillDelay, so wait fillDelay + 1000 for verdict to appear
+      await sleep(fillDelay + 1000);
 
-      // Check verdict multiple times for accuracy
-      for (let attempt = 0; attempt < 3; attempt++) {
+      // Check verdict multiple times for accuracy - 5 attempts over ~4s to catch green/red
+      for (let attempt = 0; attempt < 5; attempt++) {
         try {
           const v = await this.api("getVerdict");
           if (v && v.correct !== null) {
@@ -375,7 +383,7 @@ class Slot {
             break;
           }
         } catch (e) {}
-        if (attempt < 2) await sleep(500);
+        if (attempt < 4) await sleep(700);
       }
 
       try {
@@ -400,23 +408,20 @@ class Slot {
         this.errorCount = 0;
       }
 
-      // Fallback: points rose = correct answer
-      if (correct == null) {
-        const oldV = parseInt(String(reportData.pointsBeforeSubmit || ""), 10);
-        const newV = parseInt(String(pointsDone || ""), 10);
-        if (isFinite(oldV) && isFinite(newV) && newV > oldV) {
-          correct = true;
-          this.log(`Verdict: points rose ${oldV}->${newV}; counted CORRECT.`);
-        } else if (isFinite(oldV) && isFinite(newV) && newV === oldV && oldV > 0) {
-          // Points didn't change after submit — likely wrong answer
-          correct = false;
-          this.log(`Verdict: points unchanged ${newV}; counted WRONG.`);
-        }
+      // ONLY verdict from website green/red AFTER actual submit - never from detection alone
+      if (!reportData.pasted) {
+        this.errorCount++;
+        this.log(`Verdict: not submitted (pasted=false) counted ERROR`);
+      } else if (correct === true) {
+        // removed // removed correctCount++ // leave time only
+        this.log(`Verdict: CORRECT (green) after submit`);
+      } else if (correct === false) {
+        // removed // removed wrongCount++ // leave time only
+        this.log(`Verdict: INCORRECT (red) after submit`);
+      } else {
+        this.errorCount++;
+        this.log(`Verdict: unknown (no green/red) counted ERROR - points ${reportData.pointsBeforeSubmit}->${pointsDone}`);
       }
-
-      if (correct === true) this.correctCount++;
-      else if (correct === false) this.wrongCount++;
-      else { this.errorCount++; this.log(`Verdict: unknown; counted ERROR.`); }
       this.lastTaskCorrect = correct;
       this.lastPoints.done = pointsDone;
       this.lastPoints.total = pointsTotal;
@@ -435,6 +440,15 @@ class Slot {
     if (!this.wcIsAlive()) return;
     try { if (navigate) await this.wc.loadURL(this.getWorkUrl()); else this.wc.reload(); } catch (e) {}
     this.touchAction();
+  }
+
+  async maybeHarshRestart(reason) {
+    const now = Date.now();
+    if (now - (this.lastHarshRestart||0) < 15000) return false;
+    this.lastHarshRestart = now;
+    this.log(`HARSH-RESTART single ${reason} - reloading`);
+    await this.hardRestart();
+    return true;
   }
 
   async hardRestart() {
@@ -457,6 +471,9 @@ class Slot {
       this.wrongCount = 0;
       this.errorCount = 0;
       this.lastPoints = { done: null, total: null };
+    this.pendingAnswer = null;
+    this.pendingHash = null;
+    this.pendingImage = null;
     this.lastSubmittedImageHash = null;
     this.lastSubmittedAnswer = null;
     this.lastTaskCorrect = false;
@@ -541,7 +558,15 @@ class Slot {
 
   // ---- main loop ----
   async runIteration() {
-    if (!this.isLoopRunning || this.isProcessing || this.paused) return;
+    if (!this.isLoopRunning || this.isProcessing || this.paused) {
+      if (!this.isLoopRunning && !this.loopStopRequested) {
+        if (Date.now() - (this.lastHarshRestart||0) > 15000) {
+          this.log("Not looping - harsh restart");
+          await this.maybeHarshRestart("not-looping");
+        }
+      }
+      return;
+    }
     if (!this.wcIsAlive()) return;
     this.isProcessing = true;
 
@@ -609,33 +634,15 @@ class Slot {
         return;
       }
 
-      // Wait for input box
-      const inputReady = await this.waitForInputBox();
-      if (!inputReady) {
-        this.status("Input box not found. Refreshing...");
-        this.isProcessing = false;
-        this.touchAction();
-        await this.refreshPage("input-not-found", true);
-        this.scheduleNext(4000);
-        return;
-      }
-
       this.status(`[${this.taskCount + 1}] Task ready. Checking scanner...`);
 
-      // Snapshot points
+      // Snapshot points 1:1 from web - exact copy of withdrawable balance area (e.g., 49/250)
       try {
         const meta = await this.api("getTaskMeta");
         if (meta) {
           if (meta.pointsDone != null) this.lastPoints.done = String(meta.pointsDone);
           if (meta.pointsTotal != null) this.lastPoints.total = String(meta.pointsTotal);
-          // Check if points increased since last submission → last answer was correct
-          if (this.lastPointsDoneBeforeSubmit !== null && meta.pointsDone != null) {
-            const prev = parseInt(this.lastPointsDoneBeforeSubmit, 10);
-            const curr = parseInt(String(meta.pointsDone), 10);
-            if (!isNaN(prev) && !isNaN(curr) && curr > prev) {
-              this.lastTaskCorrect = true;
-            }
-          }
+          // Do NOT infer correct from points - only green/red verdict counts
         }
       } catch (e) {}
 
@@ -647,9 +654,13 @@ class Slot {
         return;
       }
 
-      // Grab image
-      this.status(`[${this.taskCount + 1}] Grabbing image...`);
+      // Single-detect: reuse cached answer for same image while waiting for inputbox
       let imageData = null;
+      let curHash = null;
+      let answer = null;
+      // If we have pending answer for same hash, reuse it (dont re-detect while waiting)
+      // First, peek image to get hash for cache check
+      this.status(`[${this.taskCount + 1}] Grabbing image...`);
       try { imageData = await this.api("grabImage", true); imageData = imageData && imageData.imageData; } catch (e) {}
 
       if (!imageData) {
@@ -657,10 +668,10 @@ class Slot {
         this.status(`[${this.taskCount + 1}] No image. Retry (${this.consecutiveDetectFails})`);
         this.touchAction();
         if (this.consecutiveDetectFails >= 3) {
-          this.log("No image 3x. Recovery reload.");
+          this.log("No image 3x. Harsh reload.");
           this.isProcessing = false;
-          await this.refreshPage("no-image-x3", true);
           this.consecutiveDetectFails = 0;
+          if (!await this.maybeHarshRestart("no-image-x3")) await this.refreshPage("no-image-x3", true);
           this.scheduleNext(4000);
           return;
         }
@@ -669,33 +680,40 @@ class Slot {
         return;
       }
 
-      const curHash = hashImage(imageData);
-      // Oracle: allow same image to be answered again — no deduplication limit (user requested)
-      if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
-        this.log(`SAME-IMAGE retry allowed (hash=${curHash}) — submitting again as requested`);
-      }
-
-      const imgSizeKB = Math.round((imageData.length * 3 / 4) / 1024);
-      this.status(`[${this.taskCount + 1}] Image (${imgSizeKB}KB). Detecting...`);
-      this.touchAction();
-
-      const endpoint = "/detect";
-      let result;
-      try {
-        const scanRes = await fetch(`${SCANNER_URL}${endpoint}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: imageData })
-        });
-        result = await scanRes.json();
-      } catch (e) {
-        this.status(`[${this.taskCount + 1}] Scanner connection failed.`);
-        this.isProcessing = false;
-        this.scheduleNext(3000);
-        return;
-      }
-
-      if (result.error) {
+      curHash = hashImage(imageData);
+      // If same image as pending and we already have answer, reuse (dont re-detect)
+      if (this.pendingHash !== null && curHash === this.pendingHash && this.pendingAnswer) {
+        answer = this.pendingAnswer;
+        this.log(`CACHED answer ${answer} for hash=${curHash} - skipping re-detect`);
+      } else {
+        // Need fresh detect
+        // Allow same image retry but use cached answer if pending (dont spam re-detect while waiting)
+        if (this.lastSubmittedImageHash !== null && curHash === this.lastSubmittedImageHash) {
+          if (this.pendingAnswer) {
+            this.log(`SAME-IMAGE same hash=${curHash} - reusing cached ${this.pendingAnswer} (no re-detect)`);
+          } else {
+            this.log(`SAME-IMAGE same hash=${curHash} - allowing retry as new task`);
+          }
+        }
+        const imgSizeKB = Math.round((imageData.length * 3 / 4) / 1024);
+        this.status(`[${this.taskCount + 1}] Image (${imgSizeKB}KB). Detecting...`);
+        this.touchAction();
+        const endpoint = "/detect";
+        let result;
+        try {
+          const scanRes = await fetch(`${SCANNER_URL}${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: imageData })
+          });
+          result = await scanRes.json();
+        } catch (e) {
+          this.status(`[${this.taskCount + 1}] Scanner connection failed.`);
+          this.isProcessing = false;
+          this.scheduleNext(3000);
+          return;
+        }
+        if (result.error) {
         this.consecutiveDetectFails++;
         this.log(`[${this.taskCount + 1}] Detect FAIL: ${result.error} ${result.message || ""}`);
         this.status(`[${this.taskCount + 1}] Detection failed: ${result.message || result.error}`);
@@ -712,33 +730,56 @@ class Slot {
         return;
       }
 
-      // Build answer (color mode only)
-      let answer = result.color;
-      this.consecutiveDetectFails = 0;
-      this.taskCount++;
-      this.lastSubmittedImageHash = curHash;
-      this.lastSubmittedAnswer = answer;
-
+        // Build answer (color mode only)
+        answer = result.color;
+        this.consecutiveDetectFails = 0;
+        // Cache detected answer - wait for inputbox then submit, dont re-detect
+        this.pendingAnswer = answer;
+        this.pendingHash = curHash;
+        this.pendingImage = imageData;
+      }
+      // At this point answer is either cached or freshly detected - DONT increment yet, wait until after submit
       if (!answer || answer === "unknown") {
-        this.status(`[${this.taskCount}] Unknown result. Skipping...`);
+        this.status(`[${this.taskCount + 1}] Unknown result. Skipping...`);
+        this.pendingAnswer = null;
+        this.pendingHash = null;
+        this.pendingImage = null;
         this.isProcessing = false;
         this.scheduleNext(1500);
         return;
       }
 
-      this.status(`[${this.taskCount}] DETECTED: ${answer}. Pasting...`);
-
-      // Save points before submit to detect correctness next iteration
+      this.status(`[${this.taskCount + 1}] DETECTED: ${answer}. Waiting for input box...`);
+      // Wait for inputbox AFTER detection (single-detect flow) - get image detect then wait
+      const inputReadyAfterDetect = await this.waitForInputBox();
+      if (!inputReadyAfterDetect) {
+        this.status(`[${this.taskCount + 1}] Input not ready after detect, will retry submit (keep cached ${answer})`);
+        this.isProcessing = false;
+        this.scheduleNext(1500);
+        return;
+      }
+      this.status(`[${this.taskCount + 1}] Input ready, pasting ${answer}...`);
+      // Save points before submit - 1:1 exact copy after
       const pointsBeforeSubmit = this.lastPoints.done;
       this.lastPointsDoneBeforeSubmit = this.lastPoints.done;
       this.lastTaskCorrect = false;
-
-      // Fill and submit
+      // Fill and submit - ONLY now increment taskCount after actual submit attempt
       let pasted = false;
+      let fillDelay = 1500;
       try {
         const r = await this.api("fill", answer);
         pasted = !!(r && (r.status === "filled"));
+        if (r && r.delayMs) fillDelay = r.delayMs;
       } catch (e) {}
+      if (!pasted) {
+        this.status(`[${this.taskCount + 1}] Fill failed for ${answer}, will retry`);
+        this.isProcessing = false;
+        this.scheduleNext(1500);
+        return;
+      }
+      this.taskCount++;
+      this.lastSubmittedImageHash = curHash;
+      this.lastSubmittedAnswer = answer;
 
       this.captureAndSendReport({
         questionId: curHash != null ? String(curHash) : String(this.taskCount),
@@ -746,15 +787,34 @@ class Slot {
         color: answer,
         image: imageData,
         pasted,
+        fillDelay,
         pointsBeforeSubmit,
         ts: Date.now()
       });
 
       this.status(`[${this.taskCount}] Submitted: ${answer}. Next task...`);
+      // Strict: clear pending and wait for next task's new image before next detect
+      this.pendingAnswer = null;
+      this.pendingHash = null;
+      this.pendingImage = null;
+      // Wait for new image hash to appear (dont re-detect same image)
+      for (let w = 0; w < 10; w++) {
+        await sleep(600);
+        try {
+          const nd = await this.api("grabImage", true);
+          const ndData = nd && nd.imageData;
+          if (!ndData) continue;
+          const nh = hashImage(ndData);
+          if (nh && nh !== curHash) {
+            this.log(`New task image ready hash=${nh} (prev ${curHash})`);
+            break;
+          }
+        } catch (e) {}
+      }
       this.touchAction();
       this.touchProgress();
       this.isProcessing = false;
-      this.scheduleNext(800);
+      this.scheduleNext(2000);
       return;
     } catch (err) {
       console.error(`[${this.name}] Iteration error:`, err);
@@ -821,8 +881,8 @@ class Slot {
       paused: this.paused,
       url: this.currentUrl || "",
       taskCount: this.taskCount,
-      correctCount: this.correctCount,
-      wrongCount: this.wrongCount,
+      correctCount: 0, // removed - time only
+      wrongCount: 0, // removed - time only
       errorCount: this.errorCount,
       status: this.lastHudText || "",
       pointsDone: this.lastPoints.done,
@@ -830,7 +890,10 @@ class Slot {
       hudEnabled: this.hudEnabled,
       zoom: this.zoom,
       delayMult: this.delayMult,
-      stopRequested: this.loopStopRequested
+      stopRequested: this.loopStopRequested,
+      timerText: (()=>{ const e=this.loopStartTime?Math.floor((Date.now()-this.loopStartTime)/1000):0; const m=String(Math.floor(e/60)).padStart(2,"0"); const s=String(e%60).padStart(2,"0"); return `${m}:${s}`; })(),
+      elapsed: this.loopStartTime?Math.floor((Date.now()-this.loopStartTime)/1000):0,
+      loopStartTime: this.loopStartTime
     };
   }
 
@@ -874,16 +937,19 @@ class Slot {
               pointsTotal: pt,
               withdrawable: wd != null ? parseFloat(wd) : undefined,
               taskCount: this.taskCount,
-              correctCount: this.correctCount,
-              wrongCount: this.wrongCount,
+              correctCount: 0, // removed - time only
+              wrongCount: 0, // removed - time only
               errorCount: this.errorCount,
-              lastUpdate: new Date().toLocaleTimeString()
+              lastUpdate: new Date().toLocaleTimeString(),
+              timerText: (()=>{ const e=this.loopStartTime?Math.floor((Date.now()-this.loopStartTime)/1000):0; const m=String(Math.floor(e/60)).padStart(2,"0"); const s=String(e%60).padStart(2,"0"); return `${m}:${s}`; })(),
+              elapsed: this.loopStartTime?Math.floor((Date.now()-this.loopStartTime)/1000):0,
+              loopStartTime: this.loopStartTime
             })
           }).catch(() => {});
           this.log(`POINTS-SYNC points=${pd != null ? pd + '/' + (pt || 250) : '?'} bal=${wd || '?'} -> scanner`);
         }
       } catch (e) {}
-    }, 8000);
+    }, 3000);
   }
 
   stopPointsSync() {

@@ -126,7 +126,10 @@ function getMergedSlots(status) {
       pointsTotal: pointsTotal,
       totalEarned: Math.round(totalEarned * 10000) / 10000,
       lastUpdate: sc.lastUpdate || "",
-      earningsHistory: displayHist.filter(e => e && e.earning < 10).slice(-20).reverse()
+      earningsHistory: displayHist.filter(e => e && e.earning < 10).slice(-20).reverse(),
+      timerText: sc.timerText || slot.timerText || "00:00",
+      elapsed: sc.elapsed != null ? sc.elapsed : (slot.elapsed || 0),
+      loopStartTime: slot.loopStartTime || sc.loopStartTime || null
     };
     merged.push(mergedSlot);
   }
@@ -165,7 +168,7 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .card-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .card-nm{font-weight:600;font-size:14px}
 .card-bg{font-size:9px;padding:2px 8px;border-radius:10px;font-weight:600}
-.sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;text-align:center;margin-bottom:8px}
+.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;text-align:center;margin-bottom:8px}
 .sbox{background:#0f172a;border-radius:6px;padding:6px 4px}
 .sv{font-weight:700;font-size:14px;line-height:1.2}
 .sl{color:var(--muted);font-size:9px;margin-top:1px}
@@ -245,8 +248,8 @@ function render(d){
   var h='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
-    var sc=s.correctCount>0?'#10b981':(s.wrongCount>0?'#ef4444':'#64748b');
-    var st=s.correctCount>0?'Active':(s.wrongCount>0?'Issues':'Idle');
+    var sc='#38bdf8';
+    var st='Active'; // Removed correct/wrong badge
     var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
@@ -264,9 +267,35 @@ function render(d){
       '<div class="sgrid">'+
         '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+s.withdrawable+'</div><div class="sl">Balance</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#a78bfa">'+pts+'</div><div class="sl">Points</div></div>'+
-        '<div class="sbox"><div class="sv" style="color:#38bdf8">'+s.correctCount+'&#10003; '+s.wrongCount+'&#10007;</div><div class="sl">Results</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#38bdf8" id="timer-'+esc(s.id)+'">'+esc(s.timerText||'00:00')+'</div><div class="sl">Time</div></div>'+
       '</div>'+
       (s.pointsTotal>0?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
+      '<div style="margin:6px 0 8px; font-size:9px; color:var(--muted); line-height:1.4; background:#0f172a; border-radius:6px; padding:6px;">' +
+        '<div style="font-weight:600; color:var(--text); margin-bottom:4px;">Points History</div>' +
+        (function(){
+          var hist = s.pointsHistory || [];
+          var cur = s.pointsDone || 0;
+          var now = Date.now()/1000;
+          function ptsAt(hoursAgo){
+            var target = now - hoursAgo*3600;
+            // Find closest history entry before target
+            var best = null;
+            for(var i=hist.length-1;i>=0;i--){
+              if(hist[i].ts <= target){ best=hist[i]; break; }
+            }
+            if(!best && hist.length>0) best=hist[0];
+            return best ? best.pointsDone : cur;
+          }
+          var h1 = ptsAt(1), h3 = ptsAt(3), h7 = ptsAt(7), h10 = ptsAt(10);
+          var avg = hist.length>1 ? ((cur - (hist[0].pointsDone||0)) / (hist.length>0 ? ( (now - hist[0].ts)/3600 ) : 1)).toFixed(1) : '0.0';
+          // Also calculate avg per hour from last 10h
+          var totalGain = cur - (ptsAt(10) || 0);
+          var avg10 = (totalGain/10).toFixed(1);
+          return '<div>Last 1h: <span style="color:var(--text)">'+h1+'</span> &bull; 3h: <span style="color:var(--text)">'+h3+'</span> &bull; 7h: <span style="color:var(--text)">'+h7+'</span> &bull; 10h: <span style="color:var(--text)">'+h10+'</span></div>' +
+                 '<div style="margin-top:2px;">Avg/hr: <span style="color:#38bdf8">'+avg10+'</span> pts &bull; Total: <span style="color:#facc15">'+cur+'/250</span></div>' +
+                 '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Updated: '+ (s.lastUpdate||'') +' &bull; Timer: <span id="timer-'+s.id+'">'+ (s.timerText||'00:00') +'</span></div>';
+        })() +
+      '</div>' +
       '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
       '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
@@ -281,6 +310,21 @@ function render(d){
       '</div></div>';
   }
   document.getElementById('slots').innerHTML=h;
+  window._lastSlots = slots; // for live timer 1:1
+  // Update per-slot timers live (elapsed since lastUpdate)
+  for(var i=0;i<slots.length;i++){
+    var s=slots[i];
+    var el=document.getElementById('timer-'+s.id);
+    if(el){
+      // Use lastUpdate as base, or show 00:00 if no update
+      // For now, show live clock based on lastUpdate time
+      var base = s.lastUpdate ? new Date('1970-01-01T'+s.lastUpdate) : null;
+      // Simple: show current time as timer (or elapsed)
+      // Better: calculate elapsed from pointsDone time? For now show live time
+      // We will make it count up from 00:00 using setInterval per slot - for simplicity show lastUpdate
+      el.textContent = s.lastUpdate || '00:00';
+    }
+  }
 }
 
 function poll(){
@@ -295,6 +339,25 @@ function poll(){
   setTimeout(poll,POLL);
 }
 // Live clock ticks every second even if fetch stalls — proves JS is running
+// Per-slot timers 1:1 copy of overlay - increment live every second from last render value
+setInterval(function(){
+  // 1:1 live - recalculate from loopStartTime via last render data
+  // We store last slots data in window._lastSlots
+  if(window._lastSlots){
+    for(var i=0;i<window._lastSlots.length;i++){
+      var s=window._lastSlots[i];
+      var el=document.getElementById('timer-'+s.id);
+      if(el && s.loopStartTime){
+        var elapsed=Math.floor((Date.now()-s.loopStartTime)/1000);
+        if(elapsed<0) elapsed=0;
+        if(elapsed>86400) elapsed=0;
+        var m=Math.floor(elapsed/60), sec=elapsed%60;
+        el.textContent=(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec);
+      }
+    }
+  }
+},1000);
+// Global live clock
 setInterval(function(){
   var el=document.getElementById('ltxt');
   var now=new Date();
@@ -372,8 +435,17 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/save-creds") {
     const slot = url.searchParams.get("slot");
-    const user = url.searchParams.get("user") || "";
-    const pass = url.searchParams.get("pass") || "";
+    let user = url.searchParams.get("user") || "";
+    let pass = url.searchParams.get("pass") || "";
+    // ENFORCE: lock first two active slots
+    try {
+      const sdata = getElectronSlots();
+      const a = (sdata.active||[]);
+      if (a[0] && String(a[0].id) === String(slot)) { user = "adaihbi"; pass = "Iloveyou143!"; log(`SAVE-CREDS LOCKED Slot 1 -> adaihbi`); }
+      if (a[1] && String(a[1].id) === String(slot)) { user = "temi"; pass = "Iloveyou143!"; log(`SAVE-CREDS LOCKED Slot 2 -> temi`); }
+      if (String(slot)==="0") { user="adaihbi"; pass="Iloveyou143!"; }
+      if (String(slot)==="1") { user="temi"; pass="Iloveyou143!"; }
+    } catch(e) {}
     log(`SAVE-CREDS: slot=${slot} user=${user}`);
     if (slot != null) {
       const creds = getCreds();

@@ -20,8 +20,7 @@ VisionTap/
 │   ├── preload/       # slot/shell bridges
 │   ├── shell/         # Toolbar HTML/CSS
 │   └── package.json   # electron 44, electron-builder
-├── VisionTapColor/    # Chrome extension legacy (task_script.js)
-└── math_test/, sampletask/ # Test images
+└── math_test/, sampletask/ # Optional test images
 ```
 
 ## Quick Start
