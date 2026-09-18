@@ -127,6 +127,7 @@ function getMergedSlots(status) {
       totalEarned: Math.round(totalEarned * 10000) / 10000,
       lastUpdate: sc.lastUpdate || "",
       earningsHistory: displayHist.filter(e => e && e.earning < 10).slice(-20).reverse(),
+      pointsHistory: sc.pointsHistory || slot.pointsHistory || [],
       timerText: sc.timerText || slot.timerText || "00:00",
       elapsed: sc.elapsed != null ? sc.elapsed : (slot.elapsed || 0),
       loopStartTime: slot.loopStartTime || sc.loopStartTime || null
@@ -271,29 +272,33 @@ function render(d){
       '</div>'+
       (s.pointsTotal>0?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
       '<div style="margin:6px 0 8px; font-size:9px; color:var(--muted); line-height:1.4; background:#0f172a; border-radius:6px; padding:6px;">' +
-        '<div style="font-weight:600; color:var(--text); margin-bottom:4px;">Points History</div>' +
+        '<div style="font-weight:600; color:var(--text); margin-bottom:4px;">Balance History</div>' +
         (function(){
           var hist = s.pointsHistory || [];
-          var cur = s.pointsDone || 0;
+          var curBal = s.withdrawable || 0;
+          var curPts = s.pointsDone || 0;
           var now = Date.now()/1000;
-          function ptsAt(hoursAgo){
+          function balAt(hoursAgo){
             var target = now - hoursAgo*3600;
-            // Find closest history entry before target
             var best = null;
             for(var i=hist.length-1;i>=0;i--){
               if(hist[i].ts <= target){ best=hist[i]; break; }
             }
             if(!best && hist.length>0) best=hist[0];
-            return best ? best.pointsDone : cur;
+            return best ? (best.withdrawable != null ? best.withdrawable : best.pointsDone) : curBal;
           }
-          var h1 = ptsAt(1), h3 = ptsAt(3), h7 = ptsAt(7), h10 = ptsAt(10);
-          var avg = hist.length>1 ? ((cur - (hist[0].pointsDone||0)) / (hist.length>0 ? ( (now - hist[0].ts)/3600 ) : 1)).toFixed(1) : '0.0';
-          // Also calculate avg per hour from last 10h
-          var totalGain = cur - (ptsAt(10) || 0);
-          var avg10 = (totalGain/10).toFixed(1);
-          return '<div>Last 1h: <span style="color:var(--text)">'+h1+'</span> &bull; 3h: <span style="color:var(--text)">'+h3+'</span> &bull; 7h: <span style="color:var(--text)">'+h7+'</span> &bull; 10h: <span style="color:var(--text)">'+h10+'</span></div>' +
-                 '<div style="margin-top:2px;">Avg/hr: <span style="color:#38bdf8">'+avg10+'</span> pts &bull; Total: <span style="color:#facc15">'+cur+'/250</span></div>' +
-                 '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Updated: '+ (s.lastUpdate||'') +' &bull; Timer: <span id="timer-'+s.id+'">'+ (s.timerText||'00:00') +'</span></div>';
+          var h1 = balAt(1), h3 = balAt(3), h7 = balAt(7), h10 = balAt(10);
+          var totalGainBal = curBal - (balAt(10) || (hist[0] ? hist[0].withdrawable : curBal) || 0);
+          var hrsSpan = 10;
+          if (hist.length > 1) {
+            var firstTs = hist[0].ts || (Date.now()/1000);
+            var spanHrs = (Date.now()/1000 - firstTs) / 3600;
+            if (spanHrs > 0.1 && spanHrs < 10) hrsSpan = spanHrs;
+          }
+          var avgBal10 = hrsSpan > 0 ? (totalGainBal / hrsSpan).toFixed(2) : "0.00";
+          return '<div>Last 1h: <span style="color:var(--text)">₱'+Number(h1).toFixed(2)+'</span> &bull; 3h: <span style="color:var(--text)">₱'+Number(h3).toFixed(2)+'</span> &bull; 7h: <span style="color:var(--text)">₱'+Number(h7).toFixed(2)+'</span> &bull; 10h: <span style="color:var(--text)">₱'+Number(h10).toFixed(2)+'</span></div>' +
+                 '<div style="margin-top:2px;">Avg/hr: <span style="color:#38bdf8">₱'+avgBal10+'</span></div>' +
+                 '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Live sync</div>';
         })() +
       '</div>' +
       '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
@@ -310,21 +315,7 @@ function render(d){
       '</div></div>';
   }
   document.getElementById('slots').innerHTML=h;
-  window._lastSlots = slots; // for live timer 1:1
-  // Update per-slot timers live (elapsed since lastUpdate)
-  for(var i=0;i<slots.length;i++){
-    var s=slots[i];
-    var el=document.getElementById('timer-'+s.id);
-    if(el){
-      // Use lastUpdate as base, or show 00:00 if no update
-      // For now, show live clock based on lastUpdate time
-      var base = s.lastUpdate ? new Date('1970-01-01T'+s.lastUpdate) : null;
-      // Simple: show current time as timer (or elapsed)
-      // Better: calculate elapsed from pointsDone time? For now show live time
-      // We will make it count up from 00:00 using setInterval per slot - for simplicity show lastUpdate
-      el.textContent = s.lastUpdate || '00:00';
-    }
-  }
+  window._lastSlots = slots; // for live timer 1:1 - sync live only, no stale lastUpdate
 }
 
 function poll(){
@@ -437,14 +428,10 @@ const server = http.createServer((req, res) => {
     const slot = url.searchParams.get("slot");
     let user = url.searchParams.get("user") || "";
     let pass = url.searchParams.get("pass") || "";
-    // ENFORCE: lock first two active slots
+    // ENFORCE: lock slots 11->adaihbi, 12->temi (persistent)
     try {
-      const sdata = getElectronSlots();
-      const a = (sdata.active||[]);
-      if (a[0] && String(a[0].id) === String(slot)) { user = "adaihbi"; pass = "Iloveyou143!"; log(`SAVE-CREDS LOCKED Slot 1 -> adaihbi`); }
-      if (a[1] && String(a[1].id) === String(slot)) { user = "temi"; pass = "Iloveyou143!"; log(`SAVE-CREDS LOCKED Slot 2 -> temi`); }
-      if (String(slot)==="0") { user="adaihbi"; pass="Iloveyou143!"; }
-      if (String(slot)==="1") { user="temi"; pass="Iloveyou143!"; }
+      if (String(slot)==="11") { user="adaihbi"; pass="Iloveyou143!"; log(`SAVE-CREDS LOCKED Slot 11 -> adaihbi`); }
+      if (String(slot)==="12") { user="temi"; pass="Iloveyou143!"; log(`SAVE-CREDS LOCKED Slot 12 -> temi`); }
     } catch(e) {}
     log(`SAVE-CREDS: slot=${slot} user=${user}`);
     if (slot != null) {

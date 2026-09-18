@@ -704,8 +704,26 @@ app.whenReady().then(() => {
     }
   }
   if (slots.size === 0 && ghosts.size === 0) {
-    createSlot(String(slotSeq++), "Slot 1", false, { bootsOnStart: true });
+    // Auto-ensure 2 persistent slots with saved credentials
+    const autoCreds = (()=>{ try{ return JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), ".config", "VisionTap Slots", "state", "credentials.json"),"utf8")); }catch(e){return {}})();
+    const s11 = autoCreds["11"]; const s12 = autoCreds["12"];
+    createSlot("11", s11 && s11.user ? s11.user : "adaihbi", false, { bootsOnStart: true, accountName: s11 && s11.user ? s11.user : "adaihbi" });
+    createSlot("12", s12 && s12.user ? s12.user : "temi", false, { bootsOnStart: true, accountName: s12 && s12.user ? s12.user : "temi" });
+    try{
+      const fs2=require('fs'); const path2=require('path'); const os2=require('os');
+      const cf=path2.join(os2.homedir(), ".config", "VisionTap Slots", "state", "credentials.json");
+      let c={}; try{c=JSON.parse(fs2.readFileSync(cf,"utf8"))}catch(e){};
+      if(!c["11"]) c["11"]={user:"adaihbi", pass:"Iloveyou143!"};
+      if(!c["12"]) c["12"]={user:"temi", pass:"Iloveyou143!"};
+      fs2.writeFileSync(cf, JSON.stringify(c,null,2));
+    }catch(e){}
+  } else if (slots.size === 1 && ghosts.size === 0) {
+    const has11 = slots.has("11") || ghosts.has("11");
+    const has12 = slots.has("12") || ghosts.has("12");
+    if (!has11) createSlot("11", "adaihbi", false, { bootsOnStart: true, accountName: "adaihbi" });
+    if (!has12) createSlot("12", "temi", false, { bootsOnStart: true, accountName: "temi" });
   }
+  slotSeq = Math.max(slotSeq, 13);
   broadcastState();
   writeSlotsFile();
 }).catch((err) => {
