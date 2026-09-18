@@ -575,10 +575,12 @@ class Slot {
     // Auto-reset stuck isProcessing (e.g., previous iteration hung) - schedule retry if still stuck
     if (this.isProcessing) {
       const age = Date.now() - (this.taskStartTime || 0);
+      this.log(`runIteration SKIP isProcessing=true age=${Math.round(age/1000)}s paused=${this.paused} loop=${this.isLoopRunning}`);
       if (age > 45000) { this.isProcessing = false; this.log("Auto-reset stuck isProcessing after "+Math.round(age/1000)+"s"); }
       else { this.scheduleNext(3000); return; }
     }
     if (!this.isLoopRunning || this.paused) {
+      this.log(`runIteration SKIP loop=${this.isLoopRunning} paused=${this.paused} stopReq=${this.loopStopRequested}`);
       if (!this.isLoopRunning && !this.loopStopRequested) {
         if (Date.now() - (this.lastHarshRestart||0) > 15000) {
           this.log("Not looping - harsh restart");
