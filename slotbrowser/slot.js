@@ -453,6 +453,8 @@ class Slot {
     if (!this.wcIsAlive()) return;
     try { if (navigate) await this.wc.loadURL(this.getWorkUrl()); else this.wc.reload(); } catch (e) {}
     this.touchAction();
+    // Ensure loop continues after refresh
+    this.scheduleNext(2000);
   }
 
   async maybeHarshRestart(reason) {
@@ -572,6 +574,8 @@ class Slot {
 
   // ---- main loop ----
   async runIteration() {
+    // Debug: log every entry for slot 11
+    if (this.id === "11") this.log(`runIteration ENTRY loop=${this.isLoopRunning} paused=${this.paused} processing=${this.isProcessing} url=${this.currentUrl || "?"}`);
     // Auto-reset stuck isProcessing (e.g., previous iteration hung) - schedule retry if still stuck
     if (this.isProcessing) {
       const age = Date.now() - (this.taskStartTime || 0);
