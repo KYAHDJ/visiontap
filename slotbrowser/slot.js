@@ -553,6 +553,7 @@ class Slot {
   }
 
   scheduleNext(delay) {
+    if (this.id === "11") this.log(`scheduleNext called delay=${delay} loop=${this.isLoopRunning} paused=${this.paused}`);
     if (!this.isLoopRunning) return;
     let d = Math.round((delay || 0) * this.delayMult);
     if (this.paused) {
@@ -648,6 +649,7 @@ class Slot {
         this.status("Login page. Auto-login running, waiting...");
         this.touchProgress();
         this.isProcessing = false;
+        this.log(`SCHEDULING next runIteration in 3000ms for auth page`);
         this.scheduleNext(3000);
         return;
       }
