@@ -705,7 +705,8 @@ app.whenReady().then(() => {
   }
   if (slots.size === 0 && ghosts.size === 0) {
     // Auto-ensure 2 persistent slots with saved credentials
-    const autoCreds = (()=>{ try{ return JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), ".config", "VisionTap Slots", "state", "credentials.json"),"utf8")); }catch(e){return {}})();
+    let autoCreds = {};
+    try { autoCreds = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), ".config", "VisionTap Slots", "state", "credentials.json"),"utf8")); } catch(e) {}
     const s11 = autoCreds["11"]; const s12 = autoCreds["12"];
     createSlot("11", s11 && s11.user ? s11.user : "adaihbi", false, { bootsOnStart: true, accountName: s11 && s11.user ? s11.user : "adaihbi" });
     createSlot("12", s12 && s12.user ? s12.user : "temi", false, { bootsOnStart: true, accountName: s12 && s12.user ? s12.user : "temi" });
