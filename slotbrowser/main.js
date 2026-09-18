@@ -231,7 +231,10 @@ function createSlot(id, name, stopRequested, opts) {
   slot.bootsOnStart = opts.bootsOnStart !== false;
   slot.accountName = opts.accountName || "";
   if (slot.accountName) slot.name = slot.accountName;
-  slot.setPaused(!(win && win.isVisible()));
+  // Don't force paused at boot - let window show handler manage it
+  slot.pausedByWindow = false;
+  slot.dashboardPaused = false;
+  slot.setPaused(false);
   slot.attach();
   view.setVisible(true);
   win.contentView.addChildView(view);

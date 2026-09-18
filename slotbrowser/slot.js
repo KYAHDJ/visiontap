@@ -257,7 +257,16 @@ class Slot {
     console.log(`[Slot ${this.id}] setPaused(${p})`);
     this.paused = p;
     if (p) this.status("Paused (dashboard)");
-    else if (this.isLoopRunning) { this.status("Resuming..."); this.startStaggered(1500); }
+    else {
+      this.status("Resuming...");
+      if (!this.isLoopRunning && !this.loopStopRequested) this.startLoop();
+      else this.startStaggered(1500);
+      // Ensure isProcessing not stuck
+      if (this.isProcessing) {
+        const age = Date.now() - (this.taskStartTime || 0);
+        if (age > 30000) { this.isProcessing = false; this.log("Reset stuck isProcessing"); }
+      }
+    }
   }
 
   // ---- HUD ----
@@ -541,12 +550,13 @@ class Slot {
     if (!this.isLoopRunning) return;
     let d = Math.round((delay || 0) * this.delayMult);
     if (this.paused) {
+      // While paused, retry every 3s but don't stack timers
       if (!this.nextTimer) {
         this.nextTimer = setTimeout(() => {
           this.nextTimer = null;
-          if (this.paused) this.scheduleNext(5000);
+          if (this.paused) this.scheduleNext(3000);
           else if (this.isLoopRunning) this.runIteration();
-        }, 5000);
+        }, 3000);
       }
       return;
     }

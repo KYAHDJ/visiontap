@@ -4,8 +4,8 @@ export HOME=/home/opc
 APP_DIR=/home/opc/VisionTap/slotbrowser
 SCANNER_DIR=/home/opc/VisionTap/pcapp/scanner
 LOG=/tmp/visiontap-watchdog.log
-MAX_RESTARTS=5
-RESTART_WINDOW=300
+MAX_RESTARTS=8
+RESTART_WINDOW=600
 
 echo "[$(date)] Watchdog v2 started - auto-heal enabled" >> $LOG
 
@@ -111,8 +111,8 @@ while true; do
         CNT=$(cat /tmp/.no_renderer_count)
         CNT=$((CNT+1))
         echo $CNT > /tmp/.no_renderer_count
-        if [ $CNT -ge 4 ]; then
-          echo "[$(date)] Black screen detected (0 renderers for 60s) - restarting electron + display stack" >> $LOG
+        if [ $CNT -ge 8 ]; then
+          echo "[$(date)] Black screen detected (0 renderers for 4m) - restarting electron + display stack" >> $LOG
           sudo systemctl restart visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-electron >> $LOG 2>&1
           echo 0 > /tmp/.no_renderer_count
         fi
@@ -135,17 +135,17 @@ while true; do
     fi
   fi
 
-  # 7. If many restarts in window, do full system heal (restart all)
+  # 7. Crash loop - only restart the failing service, not whole system (avoid random full restarts)
   for svc in electron scanner dashboard; do
     cnt=${restart_count[$svc]:-0}
     last=${restart_time[$svc]:-0}
     now=$(date +%s)
     if [ $cnt -ge $MAX_RESTARTS ] && [ $((now - last)) -lt $RESTART_WINDOW ]; then
-      echo "[$(date)] $svc crash loop -> full stack restart" >> $LOG
-      sudo systemctl restart visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-scanner visiontap-dashboard visiontap-electron >> $LOG 2>&1
+      echo "[$(date)] $svc crash loop ($cnt) - restarting only $svc (not full system)" >> $LOG
+      sudo systemctl restart visiontap-$svc >> $LOG 2>&1
       restart_count[$svc]=0
     fi
   done
 
-  sleep 15
+  sleep 30
 done
