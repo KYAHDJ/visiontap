@@ -347,16 +347,19 @@ def report():
         # Hourly points history for dashboard - keep last 24 hours
         if 'pointsHistory' not in s:
             s['pointsHistory'] = []
-        # Only record if points changed or every hour
+        # Record every point change, every hour, and every 10 min even if stuck (for 1h/3h history)
         now_hour = int(time.time() // 3600)
+        now_ts = int(time.time())
         last_hist = s['pointsHistory'][-1] if s['pointsHistory'] else None
         should_record = False
         if not s['pointsHistory']:
             should_record = True
         elif last_hist and last_hist.get('hour') != now_hour:
             should_record = True
+        elif last_hist and now_ts - last_hist.get('ts',0) > 600:
+            # Every 10 min snapshot even if points stuck (for 1h history)
+            should_record = True
         elif last_hist and s.get('pointsDone',0) != last_hist.get('pointsDone',0):
-            # Also record if points changed significantly
             if abs(s.get('pointsDone',0) - last_hist.get('pointsDone',0)) >= 1:
                 should_record = True
         if should_record:
