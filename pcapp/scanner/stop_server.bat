@@ -1,0 +1,1 @@
+taskkill /f /im pythonw.exe /im python.exe
