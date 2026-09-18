@@ -1,0 +1,52 @@
+{
+  "name": "visiontap-slots",
+  "productName": "VisionTap Slots",
+  "version": "0.1.0",
+  "description": "Multi-slot ECNL automation browser - several isolated instances in split-screen panels, automation built in, no Chrome dependency.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.visiontap.slots",
+    "productName": "VisionTap Slots",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "slot.js",
+      "preload/**/*",
+      "inject/**/*",
+      "shell/**/*",
+      "state/credentials.example.json",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3"
+  }
+}

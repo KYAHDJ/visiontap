@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "VisionTap Color Solver",
+  "description": "Lightweight targeted color scanner for ECNL.",
+  "version": "3.0.0",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1:5566/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "trigger-scan": {
+      "suggested_key": {
+        "default": "Alt+M"
+      },
+      "description": "Start/Stop Color Loop"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://ecnlmediamarket.com/*", "http://ecnlmediamarket.com/*"],
+      "js": ["task_script.js"],
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["ad_blocker.js"],
+      "all_frames": true,
+      "run_at": "document_start"
+    }
+  ]
+}
