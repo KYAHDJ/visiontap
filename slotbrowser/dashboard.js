@@ -14,18 +14,32 @@ const SLOT_CMD_FILE = path.join(ELECTRON_STATE_DIR, "slot_commands.json");
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
- // Per-minute points tracking
-let lastCorrectTime = 0;
-let minuteCorrectCount = 0;
-let pointsPerMinute = 0;
-let pointsPerHour = 0;
-let currentTargetPoints = 1200; // 300 pesos = 1200 points
-let pointsUntilTarget = 1200;
-let lastBalanceUpdateTime = Date.now();
-let lastBalanceValue = 0;
+// Dashboard persistent metrics (survives restarts/resets) — per-slot
+const METRICS_FILE = path.join(ELECTRON_STATE_DIR, "dashboard_metrics.json");
 
-// Per-slot minute window tracking
-const slotMinuteWindow = {}; // { [id]: { windowStart: number, correctCountAtStart: number } }
+function loadMetrics() {
+  return readJson(METRICS_FILE, {}); // { [id]: { windowStart, correctAtStart, prevCorrect, ppm, pph, cooldownStart, lastComputedAt, lastBalanceValue, lastBalanceTime, targetPoints } }
+}
+function saveMetrics(m) {
+  writeJson(METRICS_FILE, m);
+}
+function getSlotMetrics(all, id) {
+  if (!all[id]) {
+    all[id] = {
+      windowStart: 0,
+      correctAtStart: 0,
+      prevCorrect: 0,
+      ppm: 0,
+      pph: 0,
+      cooldownStart: 0,
+      lastComputedAt: 0,
+      lastBalanceValue: 0,
+      lastBalanceTime: 0,
+      targetPoints: 1200
+    };
+  }
+  return all[id];
+}
 
 function run(cmd) {
   try { return execSync(cmd, { timeout: 10000 }).toString().trim(); }
@@ -128,58 +142,135 @@ function getMergedSlots(status) {
       displayHist = [];
     }
 
-    // Per-slot minute window tracking
-    const slotId = id;
-    if (!slotMinuteWindow[slotId]) {
-      slotMinuteWindow[slotId] = { windowStart: 0, correctCountAtStart: 0 };
-    }
-    const minWin = slotMinuteWindow[slotId];
+    // --- Persistent per-slot metrics ---
+    const metricsAll = loadMetrics();
+    const ms = getSlotMetrics(metricsAll, id);
+    const nowMs = Date.now();
     const scCorrect = sc.correctCount != null ? Number(sc.correctCount) : 0;
+    const currentWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
+    let dirty = false;
+    // First-seen init: avoid inflated first window (set prevCorrect to current, don't start window yet)
+    if (ms.prevCorrect === 0 && ms.windowStart === 0 && ms.cooldownStart === 0 && ms.lastComputedAt === 0 && ms.ppm === 0 && scCorrect > 0) {
+      ms.prevCorrect = scCorrect;
+      dirty = true;
+    }
 
-    // Detect new correct answers
-    if (scCorrect > minWin.correctCountAtStart) {
-      // New correct answer detected
-      if (minWin.windowStart === 0) {
-        // Start new minute window
-        minWin.windowStart = Date.now();
-        minWin.correctCountAtStart = scCorrect;
+    // Balance history — dashboard PH time, persisted
+    if (ms.lastBalanceTime === 0 && currentWithdrawable !== 0) {
+      // first sight — init without counting as update
+      ms.lastBalanceValue = currentWithdrawable;
+      ms.lastBalanceTime = nowMs;
+      dirty = true;
+    } else if (currentWithdrawable !== ms.lastBalanceValue) {
+      ms.lastBalanceValue = currentWithdrawable;
+      ms.lastBalanceTime = nowMs; // dashboard time (not oracle)
+      dirty = true;
+    }
+
+    // Target points logic: 300 pesos =1200 pts -> 400=1600 ->500=2000 ...
+    const pointsEarnedTotal = Math.floor(totalEarned * 4); // ₱ to pts
+    // init target if not set
+    if (!ms.targetPoints || ms.targetPoints < 1200) ms.targetPoints = 1200;
+    while (pointsEarnedTotal >= ms.targetPoints) {
+      ms.targetPoints += 400; // next 100 pesos = 400 pts
+      dirty = true;
+    }
+    const currentTargetPoints = ms.targetPoints;
+    const pointsUntilTarget = Math.max(0, currentTargetPoints - pointsEarnedTotal);
+    const targetPesos = Math.trunc(currentTargetPoints / 4);
+
+    // Per-minute detection: 1 minute detect -> 60s -> count -> 1 minute break -> repeat
+    // ppm is whole number, truncated (Math.trunc). pph = ppm*60
+    // Window starts on first increment, captures for 60s, then enters 60s cooldown
+
+    // Handle cooldown expiry
+    if (ms.cooldownStart > 0) {
+      if (nowMs - ms.cooldownStart >= 60000) {
+        ms.cooldownStart = 0;
+        ms.windowStart = 0;
+        ms.correctAtStart = scCorrect;
+        // keep prevCorrect in sync
+        ms.prevCorrect = scCorrect;
+        dirty = true;
       }
     }
 
-    // Check if 60 seconds have passed since window started
-    const windowElapsed = Date.now() - minWin.windowStart;
-    if (windowElapsed >= 60000 && minWin.windowStart > 0) {
-      // 60 seconds elapsed - calculate points per minute
-      const count = scCorrect - minWin.correctCountAtStart;
-      minWin.pointsPerMinute = Math.trunc(count); // whole number, truncate decimals
-      minWin.pointsPerHour = minWin.pointsPerMinute * 60;
-      // Reset window
-      minWin.windowStart = 0;
-      minWin.correctCountAtStart = scCorrect;
-      minWin.pointsPerMinute = 0;
-      minWin.pointsPerHour = 0;
+    if (ms.cooldownStart === 0) {
+      if (ms.windowStart === 0) {
+        // idle — waiting for an increment to start window
+        if (scCorrect > ms.prevCorrect) {
+          // first increment detected — start 60s window
+          ms.windowStart = nowMs;
+          ms.correctAtStart = ms.prevCorrect; // count includes this increment
+          dirty = true;
+        }
+        // keep prevCorrect up to date when idle (but not during window? during window we track separately)
+        // if no window, sync prevCorrect to current so we don't miss next increment
+        if (ms.prevCorrect !== scCorrect && ms.windowStart === 0) {
+          // Only update prevCorrect if we didn't just start window; if we started, correctAtStart already captured prev
+          if (ms.windowStart === 0) {
+            ms.prevCorrect = scCorrect;
+            dirty = true;
+          }
+        }
+      } else {
+        // window active — check 60s elapsed
+        const elapsed = nowMs - ms.windowStart;
+        if (elapsed >= 60000) {
+          const count = scCorrect - ms.correctAtStart;
+          const ppm = Math.trunc(Math.max(0, count)); // whole number, never round up
+          const pph = ppm * 60;
+          ms.ppm = ppm;
+          ms.pph = pph;
+          ms.lastComputedAt = nowMs;
+          ms.cooldownStart = nowMs; // 1 minute break
+          ms.windowStart = 0;
+          ms.correctAtStart = scCorrect;
+          ms.prevCorrect = scCorrect;
+          dirty = true;
+        } else {
+          // still within window — update prevCorrect to track latest, but ppm stays as last computed until window closes
+          // we also expose live running count if no completed window yet?
+          // If ppm==0 and we have a running window, show running count as live ppm (truncated)
+          // This keeps UI live-adjusting
+          ms.prevCorrect = scCorrect;
+          dirty = true;
+        }
+      }
+    }
+
+    // Derive live ppm/pph for display:
+    // If we have a completed window ppm, show it frozen during cooldown
+    // If we are mid-window and ppm==0 (first window never completed), show running truncated count so user sees live
+    let displayPpm = ms.ppm || 0;
+    let displayPph = ms.pph || 0;
+    if (ms.windowStart > 0 && ms.ppm === 0) {
+      const running = Math.trunc(Math.max(0, scCorrect - ms.correctAtStart));
+      displayPpm = running;
+      displayPph = running * 60;
+    }
+
+    // ETA hours — live adjusting based on per-minute
+    let etaHours = 0;
+    let etaText = "";
+    if (displayPph > 0 && pointsUntilTarget > 0) {
+      etaHours = pointsUntilTarget / displayPph;
+      if (etaHours < 1) {
+        const mins = Math.trunc(etaHours * 60);
+        etaText = mins <= 1 ? "1 min" : mins + " mins";
+      } else {
+        const h = Math.trunc(etaHours);
+        const mins = Math.trunc((etaHours - h) * 60);
+        if (mins === 0) etaText = h + (h === 1 ? " hour" : " hours");
+        else etaText = h + "h " + mins + "m";
+      }
+    } else if (pointsUntilTarget === 0) {
+      etaText = "reached";
     } else {
-      // Still within minute window - show running count
-      minWin.pointsPerMinute = Math.trunc(scCorrect - minWin.correctCountAtStart);
-      minWin.pointsPerHour = minWin.pointsPerMinute * 60;
+      etaText = "-";
     }
 
-    // Calculate points until target (300, 400, 500... pesos)
-    // Conversion: 4 points = 1 peso, so 300 pesos = 1200 points
-    const pointsEarnedTotal = totalEarned * 4; // convert ₱ to approximate points
-    pointsUntilTarget = currentTargetPoints - Math.max(0, Math.floor(pointsEarnedTotal));
-    if (pointsUntilTarget <= 0) {
-      // Move to next target
-      currentTargetPoints += 100; // next target: 400, 500, etc.
-      pointsUntilTarget = currentTargetPoints - Math.max(0, Math.floor(pointsEarnedTotal));
-    }
-
-    // Track last balance update time (dashboard time, not oracle)
-    const currentWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
-    if (currentWithdrawable !== lastBalanceValue) {
-      lastBalanceValue = currentWithdrawable;
-      lastBalanceUpdateTime = Date.now();
-    }
+    if (dirty) saveMetrics(metricsAll);
 
     const mergedSlot = {
       id, name, accountName: slot.accountName || "",
@@ -198,13 +289,19 @@ function getMergedSlots(status) {
       timerText: sc.timerText || slot.timerText || "00:00",
       elapsed: sc.elapsed != null ? sc.elapsed : (slot.elapsed || 0),
       loopStartTime: slot.loopStartTime || sc.loopStartTime || null,
-      // New fields
-      pointsPerMinute: minWin.pointsPerMinute || 0,
-      pointsPerHour: minWin.pointsPerHour || 0,
+      // Live metrics (PH dashboard time, persisted)
+      pointsPerMinute: displayPpm,
+      pointsPerHour: displayPph,
       pointsUntilTarget: pointsUntilTarget,
       currentTargetPoints: currentTargetPoints,
-      lastBalanceUpdate: lastBalanceUpdateTime,
-      lastBalanceValue: lastBalanceValue
+      targetPesos: targetPesos,
+      etaHours: etaHours,
+      etaText: etaText,
+      lastBalanceUpdate: ms.lastBalanceTime || 0,
+      lastBalanceValue: ms.lastBalanceValue != null ? ms.lastBalanceValue : 0,
+      // keep raw for debug
+      _windowActive: ms.windowStart > 0,
+      _cooldownActive: ms.cooldownStart > 0
     };
     merged.push(mergedSlot);
   }
@@ -359,22 +456,25 @@ function render(d){
       '<div style="margin:6px 0 8px; font-size:9px; color:var(--muted); line-height:1.4; background:#0f172a; border-radius:6px; padding:6px;">' +
         '<div style="font-weight:600; color:var(--text); margin-bottom:4px;">Balance History</div>' +
         (function(){
-          var hist = s.pointsHistory || [];
-          var curBal = s.withdrawable || 0;
-          var curPts = s.pointsDone || 0;
-          var ptsPerMin = s.pointsPerMinute || 0;
-          var ptsPerHour = s.pointsPerHour || 0;
-          var ptsUntilTarget = s.pointsUntilTarget || 1200;
-          var curTarget = s.currentTargetPoints || 1200;
+          var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
+          var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
+          var ptsUntilTarget = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
+          var curTarget = (s.currentTargetPoints != null ? s.currentTargetPoints : 1200);
+          var targetPesos = (s.targetPesos != null ? s.targetPesos : Math.trunc(curTarget/4));
+          var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
           var lastBalUpd = s.lastBalanceUpdate || 0;
-          var lastBalVal = s.lastBalanceValue || 0;
-          var lastBalTime = lastBalUpd ? new Date(lastBalUpd).toLocaleTimeString() : '-';
-
-          // Balance history: show last balance with dashboard time only
-          var hh = '<div>Last balance: <span style="color:var(--text)">₱'+Number(lastBalVal).toFixed(2)+'</span> <span style="color:var(--muted)">('+lastBalTime+')</span></div>' +
-                   '<div style="margin-top:2px; font-size:9px; color:var(--muted);">Pts/min: <span style="color:#facc15">'+ptsPerMin+'</span> &bull; Pts/hr: <span style="color:#facc15">'+ptsPerHour+'</span></div>' +
-                   '<div style="margin-top:2px; font-size:9px; color:var(--muted);">Target: <span style="color:#38bdf8">₱'+Number(curTarget/4).toFixed(0)+'</span> (<span style="color:#38bdf8">'+ptsUntilTarget+'</span> pts '+(ptsUntilTarget>0?'until':'reached')+')</div>' +
-                   '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Dashboard time sync</div>';
+          var lastBalVal = (s.lastBalanceValue != null ? s.lastBalanceValue : "");
+          var hasBal = lastBalUpd && lastBalVal !== "" && Number(lastBalVal) !== 0;
+          var lastBalTime = "";
+          if (lastBalUpd) {
+            try { lastBalTime = new Date(lastBalUpd).toLocaleTimeString('en-PH', {timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true}) + ' PH'; } catch(e) { lastBalTime = new Date(lastBalUpd).toLocaleTimeString(); }
+          } else { lastBalTime = ""; }
+          // Never show undefined — empty if no data
+          var balLine = hasBal ? '<div>Last balance: <span style="color:var(--text)">&#8369;'+Number(lastBalVal).toFixed(2)+'</span> <span style="color:var(--muted)">('+esc(lastBalTime)+')</span></div>' : '<div>Last balance: <span style="color:var(--muted)">-</span></div>';
+          var ppmLine = '<div style="margin-top:2px; font-size:9px; color:var(--muted);">Avg points per minute: <span style="color:#facc15">'+ptsPerMin+'</span> &nbsp;&bull;&nbsp; Avg points per hour: <span style="color:#facc15">'+ptsPerHour+'</span></div>';
+          var targetLine = '<div style="margin-top:2px; font-size:9px; color:var(--muted);">How many points before &#8369;'+targetPesos+': <span style="color:#38bdf8">'+ptsUntilTarget+' pts</span> <span style="color:var(--muted)">in '+esc(etaText)+'</span></div>';
+          var liveNote = '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Dashboard PH time \u2022 live 1-min detect / 1-min break cycle \u2022 truncate no round-up</div>';
+          return balLine + ppmLine + targetLine + liveNote;
         })() +
       '</div>' +
       '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
