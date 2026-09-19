@@ -669,7 +669,8 @@ class Slot {
       // Page checks - redirect to work page if needed
       if (!page || !page.isECNL) {
         const curUrl = this.currentUrl || "";
-        const onECNL = /ecnlmediamarket\.com/i.test(curUrl);
+        const onECNL = /(ecnlmediamarket\.com|pmath100\.com)/i.test(curUrl);
+        if (this.isPmathSlot()) this.log(`PMATH curUrl=${curUrl} onECNL=${onECNL} page=${JSON.stringify(page).substring(0,300)}`);
         if (onECNL) {
           // On ECNL but __vtapi not ready yet — retry shortly
           if (throttle("noecnl")) this.log(`PAGE __vtapi not ready on ECNL, retrying url=${curUrl}`);
