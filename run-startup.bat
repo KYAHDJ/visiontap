@@ -1,0 +1,3 @@
+@echo off
+cd /d "%~dp0slotbrowser"
+start "" "%~dp0slotbrowser\node_modules\electron\dist\electron.exe" . --disable-gpu --disable-software-rasterization --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --js-flags="--max-old-space-size=64" --disable-dev-shm-usage --disable-accelerated-2d-canvas --disable-accelerated-video-decode --disable-gpu-compositing --disable-gpu-rasterization
