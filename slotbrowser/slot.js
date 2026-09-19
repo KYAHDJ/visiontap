@@ -9,7 +9,10 @@ const SCANNER_URL = "http://127.0.0.1:5566";
 const KEEPER_HEARTBEAT_URL = "http://127.0.0.1:8177/heartbeat";
 const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
-const WORK_RE = /\/solving-colors/;
+const PMATH_WORK_URL = "https://pmath100.com/games-mathproblem#";
+const PMATH_CONVERT_URL = "https://pmath100.com/convert-coins";
+const WORK_RE = /\/solving-colors|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
+const PMATH_RE = /pmath100\.com/;
 
 const STALL_RESET_MS = 15000;
 const HEARTBEAT_MS = 30000;
@@ -98,7 +101,51 @@ class Slot {
   }
 
   getWorkUrl() {
+    if (String(this.id) === "14" || String(this.accountName).toLowerCase() === "kyaiko" || this.taskMode === "math") return PMATH_WORK_URL;
     return COLOR_WORK_URL;
+  }
+  isPmathSlot() {
+    return String(this.id) === "14" || String(this.accountName).toLowerCase() === "kyaiko" || this.taskMode === "math" || PMATH_RE.test(this.currentUrl || "");
+  }
+  async handlePmathConvert() {
+    try {
+      // Check if on convert page
+      const isConvert = (this.currentUrl || "").includes("/convert-coins");
+      if (!isConvert) {
+        // Navigate to convert page
+        this.log("PMATH: navigating to convert page");
+        await this.wc.loadURL(PMATH_CONVERT_URL).catch(()=>{});
+        await new Promise(r=>setTimeout(r,3000));
+      }
+      // Try to convert via inject
+      const res = await this.api("pmathDoConvert", { amount: 100 });
+      if (res && res.status === "converted") {
+        this.log(`PMATH: converted ${res.converted || 100} coins`);
+        // Report to scanner? Use coins as withdrawable
+        try {
+          const meta = await this.api("pmathGetMeta");
+          if (meta && meta.coins != null) {
+            this.lastPoints.done = String(meta.coins);
+            this.withdrawableCache = String(meta.coins);
+          }
+        } catch(e){}
+        await new Promise(r=>setTimeout(r,2000));
+        await this.wc.loadURL(PMATH_WORK_URL).catch(()=>{});
+        this.touchProgress();
+        return true;
+      }
+      // Fallback: try Convert All button directly
+      const fallback = await this.api("pmathDoConvertAll");
+      if (fallback && fallback.status === "clicked") {
+        await new Promise(r=>setTimeout(r,2000));
+        await this.wc.loadURL(PMATH_WORK_URL).catch(()=>{});
+        return true;
+      }
+      return false;
+    } catch(e) {
+      this.log(`PMATH convert error: ${e.message}`);
+      return false;
+    }
   }
 
   attach() {
@@ -107,7 +154,7 @@ class Slot {
     // Block any navigation away from solving-colors/math (allow login pages)
     wc.on("will-navigate", (_e, url) => {
       this.log(`NAV-WILL -> ${url}`);
-      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+      if (url && (/ecnlmediamarket\.com|pmath100\.com/i.test(url)) && !WORK_RE.test(url) && !/(login|signin|auth|convert)/i.test(url)) {
         _e.preventDefault();
         this.log(`NAV-BLOCKED: ${url} -> forcing work page`);
         wc.loadURL(this.getWorkUrl()).catch(() => {});
@@ -117,8 +164,8 @@ class Slot {
     wc.on("did-navigate", (_e, url) => {
       this.currentUrl = url || "";
       this.log(`NAV-TOP -> ${url || ""}`);
-      // Safety: if landed on non-work ecnl page, redirect
-      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+      // Safety: if landed on non-work ecnl/pmath page, redirect
+      if (url && (/ecnlmediamarket\.com|pmath100\.com/i.test(url)) && !WORK_RE.test(url) && !/(login|signin|auth|convert)/i.test(url)) {
         this.log(`NAV-FIX: redirecting to work page`);
         wc.loadURL(this.getWorkUrl()).catch(() => {});
       }
@@ -126,7 +173,7 @@ class Slot {
 
     wc.on("did-redirect-navigation", (_e, url) => {
       this.log(`NAV-REDIRECT -> ${url}`);
-      if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+      if (url && (/ecnlmediamarket\.com|pmath100\.com/i.test(url)) && !WORK_RE.test(url) && !/(login|signin|auth|convert)/i.test(url)) {
         _e.preventDefault();
         this.log(`NAV-REDIRECT-BLOCKED: ${url}`);
         wc.loadURL(this.getWorkUrl()).catch(() => {});
@@ -653,6 +700,14 @@ class Slot {
         return;
       }
       this.log(`PAGE DEBUG id=${this.id} url=${page.url || this.currentUrl} isECNL=${page.isECNL} isAuth=${page.isAuth} isWork=${page.isWork} hasBox=${!!page.hasBox} hasBtn=${!!page.hasBtn} ready=${page.ready}`);
+      // PMATH convert page handling
+      if (this.isPmathSlot() && page.url && page.url.includes("/convert-coins")) {
+        this.log("PMATH on convert page, handling convert");
+        const conv = await this.handlePmathConvert();
+        this.isProcessing = false;
+        this.scheduleNext(conv ? 3000 : 2000);
+        return;
+      }
       if (!page.isWork) {
         if (throttle("other")) this.log(`PAGE other url=${page.url || "?"}`);
         this.status("Not on work page. Redirecting...");
@@ -660,6 +715,28 @@ class Slot {
         this.isProcessing = false;
         this.scheduleNext(4000);
         return;
+      }
+
+      // PMATH: check convert at 100 coins before solving
+      if (this.isPmathSlot()) {
+        try {
+          // If on convert page, handle it
+          if ((this.currentUrl || "").includes("/convert-coins")) {
+            const conv = await this.handlePmathConvert();
+            this.isProcessing = false;
+            this.scheduleNext(conv ? 3000 : 2000);
+            return;
+          }
+          // Check coins balance via pmath meta
+          const pmeta = await this.api("pmathGetMeta");
+          if (pmeta && pmeta.coins != null && Number(pmeta.coins) >= 100) {
+            this.log(`PMATH: coins ${pmeta.coins} >=100, converting`);
+            const conv = await this.handlePmathConvert();
+            this.isProcessing = false;
+            this.scheduleNext(3000);
+            return;
+          }
+        } catch(e) {}
       }
 
       this.status(`[${this.taskCount + 1}] Task ready. Checking scanner...`);
@@ -670,7 +747,11 @@ class Slot {
         if (meta) {
           if (meta.pointsDone != null) this.lastPoints.done = String(meta.pointsDone);
           if (meta.pointsTotal != null) this.lastPoints.total = String(meta.pointsTotal);
-          // Do NOT infer correct from points - only green/red verdict counts
+          // For pmath, also sync coins
+          if (this.isPmathSlot() && meta.coins != null) {
+            this.lastPoints.done = String(meta.coins);
+            this.withdrawableCache = String(meta.coins);
+          }
         }
       } catch (e) {}
 
@@ -679,6 +760,81 @@ class Slot {
         this.status("Scanner OFFLINE. Starting...");
         this.isProcessing = false;
         this.scheduleNext(5000);
+        return;
+      }
+
+      // PMATH instant math solving (separate, no stall limit)
+      if (this.isPmathSlot()) {
+        let pmathImage = null;
+        try { const r = await this.api("grabImage", true); pmathImage = r && r.imageData; } catch(e) {}
+        if (!pmathImage) {
+          this.status("PMATH No image. Retry");
+          this.isProcessing = false;
+          this.scheduleNext(1500);
+          return;
+        }
+        const pHash = hashImage(pmathImage);
+        let pAnswer = null;
+        // Try solve_math
+        let pResult;
+        try {
+          const res = await fetch(`${SCANNER_URL}/solve_math`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: pmathImage })
+          });
+          pResult = await res.json();
+        } catch(e) {
+          this.status("PMATH scanner fail");
+          this.isProcessing = false;
+          this.scheduleNext(2000);
+          return;
+        }
+        if (pResult.error || !pResult.answer) {
+          this.log(`PMATH solve fail: ${pResult.error || 'no answer'} raw=${pResult.raw || ''}`);
+          this.isProcessing = false;
+          this.scheduleNext(1500);
+          return;
+        }
+        pAnswer = String(pResult.answer).trim();
+        this.log(`PMATH solved ${pResult.expression || ''} = ${pAnswer} (raw ${pResult.raw})`);
+        // Wait for input box (TYPE HERE)
+        const pReady = await this.waitForInputBox();
+        if (!pReady) {
+          this.isProcessing = false;
+          this.scheduleNext(1000);
+          return;
+        }
+        // Instant fill (kyaiko no delay)
+        let pPasted = false;
+        let pDelay = 0;
+        try {
+          const r = await this.api("fill", pAnswer);
+          pPasted = !!(r && r.status === "filled");
+          if (r && r.delayMs != null) pDelay = r.delayMs;
+        } catch(e) {}
+        if (!pPasted) {
+          this.isProcessing = false;
+          this.scheduleNext(1000);
+          return;
+        }
+        this.taskCount++;
+        this.lastSubmittedImageHash = pHash;
+        // For pmath, report coins via /report
+        try {
+          const meta = await this.api("pmathGetMeta");
+          const coins = meta && meta.coins != null ? String(meta.coins) : null;
+          this.lastPoints.done = coins;
+          this.withdrawableCache = coins;
+          await fetch(`${SCANNER_URL}/report`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ slot: String(this.id), slotName: this.name, pointsDone: coins ? parseInt(coins,10) : undefined, pointsTotal: 250, withdrawable: coins ? parseFloat(coins) : undefined, taskCount: this.taskCount, correctCount: 0, wrongCount: 0, errorCount: this.errorCount, correct: true, color: pResult.expression || '', taskNum: this.taskCount })
+          }).catch(()=>{});
+        } catch(e) {}
+        this.touchAction(); this.touchProgress();
+        this.isProcessing = false;
+        this.scheduleNext(800);
         return;
       }
 
@@ -793,6 +949,7 @@ class Slot {
         const nameLow = String(this.accountName || "").toLowerCase();
         let waitMs = 0;
         if (idStr === "11" || nameLow === "adaihbi") waitMs = 0;
+        else if (idStr === "14" || nameLow === "kyaiko") waitMs = 0;
         else if (idStr === "12" || nameLow === "temi") waitMs = 2500;
         else if (idStr === "13" || nameLow === "danicajgb") waitMs = 4500;
         if (waitMs > 0) {

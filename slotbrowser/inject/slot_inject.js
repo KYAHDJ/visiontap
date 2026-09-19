@@ -231,7 +231,7 @@
 
     // Slot 11 (adaihbi) instant submit as requested, others random 1-3s
     let delayMs;
-    const isInstantSlot = window.__vtCreds && String(window.__vtCreds.user||"").toLowerCase()==="adaihbi";
+    const uInstant = String(window.__vtCreds && window.__vtCreds.user||"").toLowerCase(); const isInstantSlot = uInstant==="adaihbi" || uInstant==="kyaiko";
     if (isInstantSlot) {
       delayMs = 0;
     } else {
@@ -865,6 +865,65 @@
       vt._lastMetaRaw = { bodySnippet: text.substring(0, 400), pointsDone: out.pointsDone, pointsTotal: out.pointsTotal, withdrawable: out.withdrawable };
     } catch (e) {}
     return out;
+  };
+
+  // PMATH helpers
+  vt.pmathGetMeta = () => {
+    const out = { coins: null, convertible: null };
+    try {
+      const txt = (document.body ? document.body.innerText : "") || "";
+      // Coins Balance
+      const m1 = txt.match(/Coins Balance\s*([0-9,]+)/i);
+      if (m1) out.coins = m1[1].replace(/,/g,'');
+      else {
+        const m = txt.match(/Convertible now:\s*([0-9,]+)\s*coins/i);
+        if (m) out.coins = m[1].replace(/,/g,'');
+      }
+      const m2 = txt.match(/Convertible now:\s*([0-9,]+)/i);
+      if (m2) out.convertible = m2[1].replace(/,/g,'');
+      // Fallback: look for element with Coins text
+      if (!out.coins) {
+        const els = Array.from(document.querySelectorAll('*'));
+        for (const el of els) {
+          const t = (el.innerText||'').trim();
+          if (/^\d+$/.test(t) && t.length<5) {
+            const parent = el.parentElement ? el.parentElement.innerText : "";
+            if (/Coins Balance/i.test(parent)) { out.coins = t; break; }
+          }
+        }
+      }
+    } catch(e){}
+    return out;
+  };
+  vt.pmathDoConvert = async (opts) => {
+    const amount = (opts && opts.amount) ? String(opts.amount) : "100";
+    try {
+      // Find convert input (placeholder Example: 100, 500, 1000)
+      const inputs = Array.from(document.querySelectorAll('input, textarea'));
+      let inp = inputs.find(el => (el.placeholder||'').toLowerCase().includes('example')) || inputs.find(el => el.type==='number' || el.type==='text') || inputs[0];
+      if (!inp) return { status: "no-input" };
+      inp.focus(); inp.click();
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(inp, amount);
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r=>setTimeout(r, 500));
+      // Find Convert All or Convert Coins button
+      const btns = Array.from(document.querySelectorAll('button, a.btn, input[type="button"], input[type="submit"]'));
+      let btn = btns.find(b => (b.textContent||b.value||'').toLowerCase().includes('convert all'));
+      if (!btn) btn = btns.find(b => (b.textContent||b.value||'').toLowerCase().includes('convert coins'));
+      if (!btn) btn = btns.find(b => (b.textContent||'').toLowerCase().includes('convert'));
+      if (btn) { btn.click(); return { status: "converted", amount }; }
+      // fallback Enter
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+      return { status: "converted", amount };
+    } catch(e){ return { status: "error", error: e.message }; }
+  };
+  vt.pmathDoConvertAll = async () => {
+    const btns = Array.from(document.querySelectorAll('button, a.btn'));
+    let btn = btns.find(b => (b.textContent||'').toLowerCase().includes('convert all'));
+    if (btn) { btn.click(); return { status: "clicked" }; }
+    return { status: "no-btn" };
   };
 
   vt.pageReady = () => ({

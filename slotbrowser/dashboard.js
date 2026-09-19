@@ -64,12 +64,13 @@ function getSlotMetrics(id) {
   }
   return ms;
 }
-function pointsDelta(cur, start) {
+function pointsDelta(cur, start, isPmath) {
   cur = Number(cur) || 0;
   start = Number(start) || 0;
   if (cur >= start) return cur - start;
-  // wrap 0-250 cycle reset
-  return (250 - start) + cur;
+  // wrap: 0-250 for ecnl, 0-100 for pmath
+  const max = isPmath ? 100 : 250;
+  return (max - start) + cur;
 }
 
 function run(cmd) {
@@ -191,28 +192,46 @@ function getMergedSlots(status) {
       }
     }
 
-    // Target logic: 250 task points = 3 pesos (83.33 pts/₱) — fixed to 3 as requested
-    const POINTS_PER_CYCLE = 250;
-    const PESOS_PER_CYCLE = 3;
-    const POINTS_PER_PESO = POINTS_PER_CYCLE / PESOS_PER_CYCLE; // 83.333...
-    let targetPesos = ms.targetPesos || (ms.targetPoints ? Math.trunc(ms.targetPoints/4) : 300);
-    if (!targetPesos || targetPesos < 300) targetPesos = 300;
-    if (ms.targetPoints && !ms.targetPesos) {
-      targetPesos = Math.trunc(ms.targetPoints/4);
-      if (targetPesos < 300) targetPesos = 300;
+    const isPmath = String(id) === "14" || String(name).toLowerCase() === "kyaiko";
+    // Target logic: ecnl 250 pts = 3 pesos (83.33), pmath 100 coins = 1 peso (100 coins per convert)
+    let targetPesos, pesosNeeded, pointsUntilMid, pointsUntilLow, pointsUntilHigh, currentTargetPoints, pointsUntilTarget;
+    if (isPmath) {
+      // pmath: target 100 coins
+      targetPesos = 100;
+      // For pmath, withdrawable is coins, target is 100 coins
+      pesosNeeded = Math.max(0, 100 - currentWithdrawable);
+      // Points for pmath is coins
+      pointsUntilMid = Math.max(0, Math.trunc(pesosNeeded));
+      pointsUntilLow = pointsUntilMid;
+      pointsUntilHigh = pointsUntilMid;
+      currentTargetPoints = 100;
+      pointsUntilTarget = pointsUntilMid;
+      ms.targetPesos = 100;
+      if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
+    } else {
+      const POINTS_PER_CYCLE = 250;
+      const PESOS_PER_CYCLE = 3;
+      const POINTS_PER_PESO = POINTS_PER_CYCLE / PESOS_PER_CYCLE;
+      let tp = ms.targetPesos || (ms.targetPoints ? Math.trunc(ms.targetPoints/4) : 300);
+      if (!tp || tp < 300) tp = 300;
+      if (ms.targetPoints && !ms.targetPesos) {
+        tp = Math.trunc(ms.targetPoints/4);
+        if (tp < 300) tp = 300;
+      }
+      while (currentWithdrawable >= tp) {
+        tp += 100;
+        dirty = true;
+      }
+      ms.targetPesos = tp;
+      if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
+      targetPesos = tp;
+      pesosNeeded = Math.max(0, tp - currentWithdrawable);
+      pointsUntilMid = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO));
+      pointsUntilLow = pointsUntilMid;
+      pointsUntilHigh = pointsUntilMid;
+      currentTargetPoints = Math.trunc(tp * POINTS_PER_PESO);
+      pointsUntilTarget = pointsUntilMid;
     }
-    while (currentWithdrawable >= targetPesos) {
-      targetPesos += 100;
-      dirty = true;
-    }
-    ms.targetPesos = targetPesos;
-    if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
-    const pesosNeeded = Math.max(0, targetPesos - currentWithdrawable);
-    const pointsUntilMid = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO));
-    const pointsUntilLow = pointsUntilMid;
-    const pointsUntilHigh = pointsUntilMid;
-    const currentTargetPoints = Math.trunc(targetPesos * POINTS_PER_PESO);
-    const pointsUntilTarget = pointsUntilMid;
 
     // Per-minute: continuous 60s window, truncated whole number, live without reset to 1
     // Window starts on first increment, every 60s compute ppm and immediately start next window
@@ -237,7 +256,7 @@ function getMergedSlots(status) {
     } else {
       const elapsed = nowMs - ms.windowStart;
       if (elapsed >= 60000) {
-        const count = pointsDelta(curPoints, ms.pointsAtStart);
+        const count = pointsDelta(curPoints, ms.pointsAtStart, isPmath);
         const ppm = Math.trunc(Math.max(0, count));
         const pph = ppm * 60;
         ms.ppm = ppm;
@@ -259,7 +278,7 @@ function getMergedSlots(status) {
     let displayPpm = ms.ppm || 0;
     let displayPph = ms.pph || 0;
     if (ms.windowStart > 0 && ms.ppm === 0) {
-      const running = Math.trunc(Math.max(0, pointsDelta(curPoints, ms.pointsAtStart)));
+      const running = Math.trunc(Math.max(0, pointsDelta(curPoints, ms.pointsAtStart, isPmath)));
       displayPpm = running;
       displayPph = running * 60;
     }
@@ -486,17 +505,20 @@ function render(d){
     var cardHtml='<div class="card '+cardClass+'">'+
       '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg" style="background:'+sc+'20;color:'+sc+'">'+st+'</span></div>'+
       '<div class="sgrid">'+
-        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+s.withdrawable+'</div><div class="sl">Balance</div></div>'+
-        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+pts+'</div><div class="sl">Points</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+s.withdrawable+'</div><div class="sl">'+(String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko"?"Coins":"Balance")+'</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+(String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko"? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+(String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko"?"Coins":"Points")+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#38bdf8" id="timer-'+esc(s.id)+'">'+esc(s.timerText||'00:00')+'</div><div class="sl">Time</div></div>'+
       '</div>'+
       (s.pointsTotal>0?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
       (function(){
+        var isPmathCard = String(s.id)==="14" || String(s.accountName).toLowerCase()==="kyaiko";
         var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
         var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
         var ptsUntilMid = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
-        var targetPesos = (s.targetPesos != null ? s.targetPesos : 300);
+        var targetPesos = (s.targetPesos != null ? s.targetPesos : (isPmathCard?100:300));
         var pesosNeeded = (s.pesosNeeded != null ? s.pesosNeeded : Math.max(0, targetPesos - Number(s.withdrawable||0)));
+        // For pmath, pesosNeeded is coins needed, target is 100
+        if (isPmathCard) { targetPesos = 100; pesosNeeded = Math.max(0, 100 - Number(s.withdrawable||0)); ptsUntilMid = pesosNeeded; }
         var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
         function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
@@ -512,7 +534,7 @@ function render(d){
         }
         var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/250).toFixed(1) : '0';
         var leftCol = '<div class="bcol"><div class="bcol-hd">Balance History (10)</div><div class="bhist-list">'+histHtml+'</div></div>';
-        var rightCol = '<div class="bcol"><div class="bcol-hd">Calculation (250=3&#8369;)</div>'
+        var rightCol = '<div class="bcol"><div class="bcol-hd">'+(isPmathCard?'Calculation (100=1&#8369;)':'Calculation (250=3&#8369;)')+'</div>'
           +'<div class="bcalc-line">&#8369;'+targetPesos+': <span class="bcalc-em">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span></div>'
           +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
           +'<div class="bcalc-line">Getting: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' pts/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'

@@ -11,7 +11,8 @@ const { Slot, ensureScripts } = require("./slot.js");
 
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const MATH_WORK_URL = "https://ecnlmediamarket.com/solving-math";
-const WORK_RE = /\/solving-(colors|math)/;
+const PMATH_WORK_URL = "https://pmath100.com/games-mathproblem#";
+const WORK_RE = /\/solving-(colors|math)|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
 
 const STATE_DIR = path.join(app.getPath("userData"), "state");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
@@ -217,21 +218,23 @@ function createSlot(id, name, stopRequested, opts) {
   // Block popups and non-solving-colors/math navigation
   view.webContents.setWindowOpenHandler(({ url }) => {
     appendLog(`[${name}]`, `POPUP-DENIED: ${url}`);
-    if (WORK_RE.test(url) || /(login|signin|auth)/i.test(url)) {
+    if (WORK_RE.test(url) || /(login|signin|auth|convert)/i.test(url)) {
       view.webContents.loadURL(url).catch(() => {});
-    } else if (/ecnlmediamarket\.com/i.test(url)) {
+    } else if (/ecnlmediamarket\.com|pmath100\.com/i.test(url)) {
       appendLog(`[${name}]`, `REDIRECT non-work -> work page: ${url}`);
-      view.webContents.loadURL(COLOR_WORK_URL).catch(() => {});
+      const isPmath = String(id) === "14" || /pmath100\.com/i.test(url);
+      view.webContents.loadURL(isPmath ? PMATH_WORK_URL : COLOR_WORK_URL).catch(() => {});
     }
     return { action: "deny" };
   });
 
-  // Block navigation away from solving-colors/math (allow login pages)
+  // Block navigation away from work pages (allow login/convert)
   view.webContents.on("will-navigate", (_e, url) => {
-    if (url && /ecnlmediamarket\.com/i.test(url) && !WORK_RE.test(url) && !/(login|signin|auth)/i.test(url)) {
+    if (url && (/ecnlmediamarket\.com|pmath100\.com/i.test(url)) && !WORK_RE.test(url) && !/(login|signin|auth|convert)/i.test(url)) {
       _e.preventDefault();
       appendLog(`[${name}]`, `NAV-BLOCKED: ${url}`);
-      view.webContents.loadURL(COLOR_WORK_URL).catch(() => {});
+      const isPmath = String(id) === "14" || /pmath100\.com/i.test(url);
+      view.webContents.loadURL(isPmath ? PMATH_WORK_URL : COLOR_WORK_URL).catch(() => {});
     }
   });
 
@@ -563,11 +566,13 @@ function createWindow() {
           allCreds["11"] = { user: "adaihbi", pass: "Iloveyou143!" };
           allCreds["12"] = { user: "temi", pass: "Iloveyou143!" };
           allCreds["13"] = { user: "danicajgb", pass: "Danik032204" };
+          allCreds["14"] = { user: "kyaiko", pass: "Iloveyou143!" };
           const cur = readCreds();
           let needWrite = false;
           if (!cur["11"] || cur["11"].user !== "adaihbi" || cur["11"].pass !== "Iloveyou143!") { cur["11"] = { user: "adaihbi", pass: "Iloveyou143!" }; needWrite = true; }
           if (!cur["12"] || cur["12"].user !== "temi" || cur["12"].pass !== "Iloveyou143!") { cur["12"] = { user: "temi", pass: "Iloveyou143!" }; needWrite = true; }
           if (!cur["13"] || cur["13"].user !== "danicajgb" || cur["13"].pass !== "Danik032204") { cur["13"] = { user: "danicajgb", pass: "Danik032204" }; needWrite = true; }
+          if (!cur["14"] || cur["14"].user !== "kyaiko" || cur["14"].pass !== "Iloveyou143!") { cur["14"] = { user: "kyaiko", pass: "Iloveyou143!" }; needWrite = true; }
           if (!cur["0"] || cur["0"].user !== "adaihbi") { cur["0"] = { user: "adaihbi", pass: "Iloveyou143!" }; needWrite = true; }
           if (!cur["1"] || cur["1"].user !== "temi") { cur["1"] = { user: "temi", pass: "Iloveyou143!" }; needWrite = true; }
           if (needWrite) writeJson(CREDS_FILE, cur);
@@ -716,13 +721,14 @@ app.whenReady().then(() => {
     }
   }
   if (slots.size === 0 && ghosts.size === 0) {
-    // Auto-ensure 3 persistent slots with saved credentials (13 is slow 7s)
+    // Auto-ensure 4 persistent slots (11,12,13 ecnl + 14 pmath100 kyaiko)
     let autoCreds = {};
     try { autoCreds = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), ".config", "VisionTap Slots", "state", "credentials.json"),"utf8")); } catch(e) {}
-    const s11 = autoCreds["11"]; const s12 = autoCreds["12"]; const s13 = autoCreds["13"];
+    const s11 = autoCreds["11"]; const s12 = autoCreds["12"]; const s13 = autoCreds["13"]; const s14 = autoCreds["14"];
     createSlot("11", s11 && s11.user ? s11.user : "adaihbi", false, { bootsOnStart: true, accountName: s11 && s11.user ? s11.user : "adaihbi" });
     createSlot("12", s12 && s12.user ? s12.user : "temi", false, { bootsOnStart: true, accountName: s12 && s12.user ? s12.user : "temi" });
     createSlot("13", s13 && s13.user ? s13.user : "danicajgb", false, { bootsOnStart: true, accountName: s13 && s13.user ? s13.user : "danicajgb" });
+    createSlot("14", s14 && s14.user ? s14.user : "kyaiko", false, { bootsOnStart: true, accountName: s14 && s14.user ? s14.user : "kyaiko" });
     try{
       const fs2=require('fs'); const path2=require('path'); const os2=require('os');
       const cf=path2.join(os2.homedir(), ".config", "VisionTap Slots", "state", "credentials.json");
@@ -730,24 +736,40 @@ app.whenReady().then(() => {
       if(!c["11"]) c["11"]={user:"adaihbi", pass:"Iloveyou143!"};
       if(!c["12"]) c["12"]={user:"temi", pass:"Iloveyou143!"};
       if(!c["13"]) c["13"]={user:"danicajgb", pass:"Danik032204"};
+      if(!c["14"]) c["14"]={user:"kyaiko", pass:"Iloveyou143!"};
       fs2.writeFileSync(cf, JSON.stringify(c,null,2));
     }catch(e){}
   } else if (slots.size === 1 && ghosts.size === 0) {
     const has11 = slots.has("11") || ghosts.has("11");
     const has12 = slots.has("12") || ghosts.has("12");
     const has13 = slots.has("13") || ghosts.has("13");
+    const has14 = slots.has("14") || ghosts.has("14");
     if (!has11) createSlot("11", "adaihbi", false, { bootsOnStart: true, accountName: "adaihbi" });
     if (!has12) createSlot("12", "temi", false, { bootsOnStart: true, accountName: "temi" });
     if (!has13) createSlot("13", "danicajgb", false, { bootsOnStart: true, accountName: "danicajgb" });
+    if (!has14) createSlot("14", "kyaiko", false, { bootsOnStart: true, accountName: "kyaiko" });
   } else if (slots.size === 2 && ghosts.size === 0) {
     const has11 = slots.has("11") || ghosts.has("11");
     const has12 = slots.has("12") || ghosts.has("12");
     const has13 = slots.has("13") || ghosts.has("13");
+    const has14 = slots.has("14") || ghosts.has("14");
     if (!has11) createSlot("11", "adaihbi", false, { bootsOnStart: true, accountName: "adaihbi" });
     if (!has12) createSlot("12", "temi", false, { bootsOnStart: true, accountName: "temi" });
     if (!has13) createSlot("13", "danicajgb", false, { bootsOnStart: true, accountName: "danicajgb" });
+    if (!has14) createSlot("14", "kyaiko", false, { bootsOnStart: true, accountName: "kyaiko" });
   }
-  slotSeq = Math.max(slotSeq, 14);
+  // Ensure pmath100 slot 14 (kyaiko) always exists under AIKO — separate instant math
+  {
+    const has14 = slots.has("14") || ghosts.has("14");
+    if (!has14) {
+      let autoCreds14 = {};
+      try { autoCreds14 = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), ".config", "VisionTap Slots", "state", "credentials.json"),"utf8")); } catch(e) {}
+      const s14 = autoCreds14["14"];
+      createSlot("14", s14 && s14.user ? s14.user : "kyaiko", false, { bootsOnStart: true, accountName: s14 && s14.user ? s14.user : "kyaiko" });
+      try { const fs2=require('fs'); const path2=require('path'); const os2=require('os'); const cf=path2.join(os2.homedir(), ".config", "VisionTap Slots", "state", "credentials.json"); let c={}; try{c=JSON.parse(fs2.readFileSync(cf,"utf8"))}catch(e){}; if(!c["14"]) c["14"]={user:"kyaiko", pass:"Iloveyou143!"}; fs2.writeFileSync(cf, JSON.stringify(c,null,2)); } catch(e){}
+    }
+  }
+  slotSeq = Math.max(slotSeq, 15);
   broadcastState();
   writeSlotsFile();
 }).catch((err) => {

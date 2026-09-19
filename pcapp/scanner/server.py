@@ -229,6 +229,65 @@ def detect():
         print(f"[EXCEPT] {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/solve_math', methods=['POST'])
+def solve_math():
+    try:
+        data = request.get_json()
+        if not data or 'image' not in data:
+            return jsonify({"error": "No image payload"}), 400
+        img_data = data['image']
+        if ',' in img_data:
+            img_data = img_data.split(',')[1]
+        img_bytes = base64.b64decode(img_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({"error": "Failed to decode image"}), 400
+        # Darken all colors to black, keep white text contrast (as requested)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # Threshold: white text (>180) stays white, colored blocks become black
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+        # Invert for tesseract (black text on white)
+        inv = cv2.bitwise_not(thresh)
+        # Upscale 2x for better OCR
+        scaled = cv2.resize(inv, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+        # OCR with math whitelist
+        config = '--psm 7 -c tessedit_char_whitelist=0123456789+-xX*/='
+        text = pytesseract.image_to_string(scaled, config=config).strip()
+        print(f"[MATH OCR raw] '{text}'")
+        # Clean text: keep only math chars
+        cleaned = re.sub(r'[^0-9+\-xX*/]', '', text)
+        # Normalize X to *
+        cleaned = cleaned.replace('x', '*').replace('X', '*')
+        # Handle case where OCR misreads: e.g., "2917X555" -> "2917*555"
+        # Try to find pattern: number operator number
+        m = re.search(r'(\d{1,5})\s*([+\-*/])\s*(\d{1,5})', cleaned)
+        if not m:
+            # Try with original text
+            m2 = re.search(r'(\d+)\s*([+\-xX*/])\s*(\d+)', text)
+            if m2:
+                a, op, b = m2.groups()
+                op = op.replace('x','*').replace('X','*')
+                cleaned = f"{a}{op}{b}"
+                m = re.search(r'(\d+)([+\-*/])(\d+)', cleaned)
+        if not m:
+            return jsonify({"error": f"Could not parse math: '{text}' cleaned '{cleaned}'"}), 400
+        a_str, op, b_str = m.groups()
+        try:
+            a = int(a_str); b = int(b_str)
+        except:
+            return jsonify({"error": f"Invalid numbers: {a_str}, {b_str}"}), 400
+        if op == '+': ans = a + b
+        elif op == '-': ans = a - b
+        elif op == '*': ans = a * b
+        elif op == '/': ans = a // b if b != 0 else 0
+        else: ans = 0
+        print(f"[MATH SOLVED] {a} {op} {b} = {ans} (from '{text}')")
+        return jsonify({"answer": str(ans), "expression": f"{a}{op}{b}", "raw": text, "cleaned": cleaned})
+    except Exception as e:
+        print(f"[MATH EXCEPT] {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/debug_detect', methods=['POST'])
 def debug_detect():
     """Debug endpoint: saves input image, runs detection with full debug output, returns debug info."""
