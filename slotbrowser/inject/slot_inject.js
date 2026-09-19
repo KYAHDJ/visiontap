@@ -27,18 +27,37 @@
   // ---- EXACT Chrome extension: findAnswerInput ----
   function findAnswerInput() {
     const inputs = Array.from(document.querySelectorAll('input, textarea'));
-    // pmath: TYPE HERE
+    // pmath: TYPE HERE huge placeholder
     let found = inputs.find(el => {
-      const p = ((el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '')).toLowerCase();
+      const p = ((el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('data-placeholder')||'')).toLowerCase();
       return p.includes('type') || p.includes('answer') || p.includes('type here');
     });
     if (found) return found;
-    // pmath fallback: any visible input
+    // pmath: look for input near TYPE HERE text
+    const typeHereEl = Array.from(document.querySelectorAll('*')).find(el => (el.innerText||'').trim().toLowerCase() === 'type here');
+    if (typeHereEl) {
+      const near = typeHereEl.closest('form') || typeHereEl.parentElement;
+      if (near) {
+        const inp = near.querySelector('input, textarea');
+        if (inp) return inp;
+      }
+    }
+    // fallback: any visible input with large size (pmath TYPE HERE is huge)
     const visibles = inputs.filter(el => {
+      const st = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return st.display !== 'none' && st.visibility !== 'hidden' && rect.width > 100 && rect.height > 30;
+    });
+    if (visibles.length) {
+      // prefer largest
+      visibles.sort((a,b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width);
+      return visibles[0];
+    }
+    const anyVis = inputs.filter(el => {
       const st = window.getComputedStyle(el);
       return st.display !== 'none' && st.visibility !== 'hidden' && el.offsetParent !== null;
     });
-    if (visibles.length) return visibles[0];
+    if (anyVis.length) return anyVis[0];
     return inputs[0] || null;
   }
 
@@ -623,7 +642,9 @@
       vt._blankNoTaskLogged = false;
     }
 
-    const ready = loaded && imgOk && !boxHidden && !btnHidden && !isBlank2026 && !isBlankNoTask;
+    // pmath: TYPE HERE huge text, allow ready even if isUIFullyLoaded is strict
+    const isPmathPage = /pmath100\.com/i.test(window.location.href);
+    const ready = isPmathPage ? (!!box && !boxHidden && !!btn && !btnHidden && !isBlank2026) : (loaded && imgOk && !boxHidden && !btnHidden && !isBlank2026 && !isBlankNoTask);
     const boxRect = box ? box.getBoundingClientRect() : null;
     const btnRect = btn ? btn.getBoundingClientRect() : null;
     const newVal = box ? ('' + (box.value || box.textContent || '')).trim() : '';
