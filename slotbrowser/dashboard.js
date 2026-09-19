@@ -14,6 +14,19 @@ const SLOT_CMD_FILE = path.join(ELECTRON_STATE_DIR, "slot_commands.json");
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
+ // Per-minute points tracking
+let lastCorrectTime = 0;
+let minuteCorrectCount = 0;
+let pointsPerMinute = 0;
+let pointsPerHour = 0;
+let currentTargetPoints = 1200; // 300 pesos = 1200 points
+let pointsUntilTarget = 1200;
+let lastBalanceUpdateTime = Date.now();
+let lastBalanceValue = 0;
+
+// Per-slot minute window tracking
+const slotMinuteWindow = {}; // { [id]: { windowStart: number, correctCountAtStart: number } }
+
 function run(cmd) {
   try { return execSync(cmd, { timeout: 10000 }).toString().trim(); }
   catch (e) { return "error"; }
@@ -114,6 +127,60 @@ function getMergedSlots(status) {
       // New cycle start — don't show old 195+ history, show fresh
       displayHist = [];
     }
+
+    // Per-slot minute window tracking
+    const slotId = id;
+    if (!slotMinuteWindow[slotId]) {
+      slotMinuteWindow[slotId] = { windowStart: 0, correctCountAtStart: 0 };
+    }
+    const minWin = slotMinuteWindow[slotId];
+    const scCorrect = sc.correctCount != null ? Number(sc.correctCount) : 0;
+
+    // Detect new correct answers
+    if (scCorrect > minWin.correctCountAtStart) {
+      // New correct answer detected
+      if (minWin.windowStart === 0) {
+        // Start new minute window
+        minWin.windowStart = Date.now();
+        minWin.correctCountAtStart = scCorrect;
+      }
+    }
+
+    // Check if 60 seconds have passed since window started
+    const windowElapsed = Date.now() - minWin.windowStart;
+    if (windowElapsed >= 60000 && minWin.windowStart > 0) {
+      // 60 seconds elapsed - calculate points per minute
+      const count = scCorrect - minWin.correctCountAtStart;
+      minWin.pointsPerMinute = Math.trunc(count); // whole number, truncate decimals
+      minWin.pointsPerHour = minWin.pointsPerMinute * 60;
+      // Reset window
+      minWin.windowStart = 0;
+      minWin.correctCountAtStart = scCorrect;
+      minWin.pointsPerMinute = 0;
+      minWin.pointsPerHour = 0;
+    } else {
+      // Still within minute window - show running count
+      minWin.pointsPerMinute = Math.trunc(scCorrect - minWin.correctCountAtStart);
+      minWin.pointsPerHour = minWin.pointsPerMinute * 60;
+    }
+
+    // Calculate points until target (300, 400, 500... pesos)
+    // Conversion: 4 points = 1 peso, so 300 pesos = 1200 points
+    const pointsEarnedTotal = totalEarned * 4; // convert ₱ to approximate points
+    pointsUntilTarget = currentTargetPoints - Math.max(0, Math.floor(pointsEarnedTotal));
+    if (pointsUntilTarget <= 0) {
+      // Move to next target
+      currentTargetPoints += 100; // next target: 400, 500, etc.
+      pointsUntilTarget = currentTargetPoints - Math.max(0, Math.floor(pointsEarnedTotal));
+    }
+
+    // Track last balance update time (dashboard time, not oracle)
+    const currentWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
+    if (currentWithdrawable !== lastBalanceValue) {
+      lastBalanceValue = currentWithdrawable;
+      lastBalanceUpdateTime = Date.now();
+    }
+
     const mergedSlot = {
       id, name, accountName: slot.accountName || "",
       user: cred.user || "", pass: cred.pass || "",
@@ -130,7 +197,14 @@ function getMergedSlots(status) {
       pointsHistory: sc.pointsHistory || slot.pointsHistory || [],
       timerText: sc.timerText || slot.timerText || "00:00",
       elapsed: sc.elapsed != null ? sc.elapsed : (slot.elapsed || 0),
-      loopStartTime: slot.loopStartTime || sc.loopStartTime || null
+      loopStartTime: slot.loopStartTime || sc.loopStartTime || null,
+      // New fields
+      pointsPerMinute: minWin.pointsPerMinute || 0,
+      pointsPerHour: minWin.pointsPerHour || 0,
+      pointsUntilTarget: pointsUntilTarget,
+      currentTargetPoints: currentTargetPoints,
+      lastBalanceUpdate: lastBalanceUpdateTime,
+      lastBalanceValue: lastBalanceValue
     };
     merged.push(mergedSlot);
   }
@@ -288,28 +362,19 @@ function render(d){
           var hist = s.pointsHistory || [];
           var curBal = s.withdrawable || 0;
           var curPts = s.pointsDone || 0;
-          var now = Date.now()/1000;
-          function balAt(hoursAgo){
-            var target = now - hoursAgo*3600;
-            var best = null;
-            for(var i=hist.length-1;i>=0;i--){
-              if(hist[i].ts <= target){ best=hist[i]; break; }
-            }
-            if(!best && hist.length>0) best=hist[0];
-            return best ? (best.withdrawable != null ? best.withdrawable : best.pointsDone) : curBal;
-          }
-          var h1 = balAt(1), h3 = balAt(3), h7 = balAt(7), h10 = balAt(10);
-          var totalGainBal = curBal - (balAt(10) || (hist[0] ? hist[0].withdrawable : curBal) || 0);
-          var hrsSpan = 10;
-          if (hist.length > 1) {
-            var firstTs = hist[0].ts || (Date.now()/1000);
-            var spanHrs = (Date.now()/1000 - firstTs) / 3600;
-            if (spanHrs > 0.1 && spanHrs < 10) hrsSpan = spanHrs;
-          }
-          var avgBal10 = hrsSpan > 0 ? (totalGainBal / hrsSpan).toFixed(2) : "0.00";
-          return '<div>Last 1h: <span style="color:var(--text)">₱'+Number(h1).toFixed(2)+'</span> &bull; 3h: <span style="color:var(--text)">₱'+Number(h3).toFixed(2)+'</span> &bull; 7h: <span style="color:var(--text)">₱'+Number(h7).toFixed(2)+'</span> &bull; 10h: <span style="color:var(--text)">₱'+Number(h10).toFixed(2)+'</span></div>' +
-                 '<div style="margin-top:2px;">Avg/hr: <span style="color:#38bdf8">₱'+avgBal10+'</span></div>' +
-                 '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Live sync</div>';
+          var ptsPerMin = s.pointsPerMinute || 0;
+          var ptsPerHour = s.pointsPerHour || 0;
+          var ptsUntilTarget = s.pointsUntilTarget || 1200;
+          var curTarget = s.currentTargetPoints || 1200;
+          var lastBalUpd = s.lastBalanceUpdate || 0;
+          var lastBalVal = s.lastBalanceValue || 0;
+          var lastBalTime = lastBalUpd ? new Date(lastBalUpd).toLocaleTimeString() : '-';
+
+          // Balance history: show last balance with dashboard time only
+          var hh = '<div>Last balance: <span style="color:var(--text)">₱'+Number(lastBalVal).toFixed(2)+'</span> <span style="color:var(--muted)">('+lastBalTime+')</span></div>' +
+                   '<div style="margin-top:2px; font-size:9px; color:var(--muted);">Pts/min: <span style="color:#facc15">'+ptsPerMin+'</span> &bull; Pts/hr: <span style="color:#facc15">'+ptsPerHour+'</span></div>' +
+                   '<div style="margin-top:2px; font-size:9px; color:var(--muted);">Target: <span style="color:#38bdf8">₱'+Number(curTarget/4).toFixed(0)+'</span> (<span style="color:#38bdf8">'+ptsUntilTarget+'</span> pts '+(ptsUntilTarget>0?'until':'reached')+')</div>' +
+                   '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Dashboard time sync</div>';
         })() +
       '</div>' +
       '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
