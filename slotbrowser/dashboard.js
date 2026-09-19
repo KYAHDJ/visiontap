@@ -221,89 +221,54 @@ function getMergedSlots(status) {
     const currentTargetPoints = Math.trunc(targetPesos * POINTS_PER_PESO);
     const pointsUntilTarget = pointsUntilMid;
 
-    // Per-minute: points delta over 60s window (1-min detect / 1-min break), truncated whole number
-    // Window starts on any points increment, captures delta for 60s, then 60s cooldown
-
-    // Handle cooldown expiry
-    if (ms.cooldownStart > 0) {
-      if (nowMs - ms.cooldownStart >= 60000) {
-        ms.cooldownStart = 0;
-        ms.windowStart = 0;
-        ms.pointsAtStart = curPoints;
-        ms.prevPoints = curPoints;
-        dirty = true;
-      }
-    }
+    // Per-minute: continuous 60s window, truncated whole number, live without reset to 1
+    // Window starts on first increment, every 60s compute ppm and immediately start next window
 
     // Detect increment vs prevPoints (handle 0-250 wrap)
     let hasIncrement = false;
-    if (ms.prevPoints !== null && ms.prevPoints !== curPoints) {
-      // any change counts — pointsDone only moves forward 1 per task (~15-20s) or wrap 249->0
-      // incremental check: if cur != prev, consider increment
-      hasIncrement = true;
-    }
+    if (ms.prevPoints !== null && ms.prevPoints !== curPoints) hasIncrement = true;
 
-    if (ms.cooldownStart === 0) {
-      if (ms.windowStart === 0) {
-        if (hasIncrement && ms.prevPoints !== null) {
-          // start new 60s window on first increment after idle
-          ms.windowStart = nowMs;
-          ms.pointsAtStart = ms.prevPoints; // delta will include this increment via wrap-aware diff
-          dirty = true;
-        }
-        // sync prevPoints when idle
-        if (ms.prevPoints !== curPoints && ms.windowStart === 0) {
-          ms.prevPoints = curPoints;
-          dirty = true;
-        }
-      } else {
-        // window active — check 60s elapsed
-        const elapsed = nowMs - ms.windowStart;
-        if (elapsed >= 60000) {
-          const count = pointsDelta(curPoints, ms.pointsAtStart);
-          const ppm = Math.trunc(Math.max(0, count)); // truncate, never round up (3.7 ->3)
-          const pph = ppm * 60;
-          ms.ppm = ppm;
-          ms.pph = pph;
-          ms.lastComputedAt = nowMs;
-          ms.cooldownStart = nowMs; // 1 minute break
-          ms.windowStart = 0;
-          ms.pointsAtStart = curPoints;
-          ms.prevPoints = curPoints;
-          dirty = true;
-        } else {
-          // still within window — track latest, keep ppm frozen until window closes
-          // but for live display when ppm==0, we will show running delta
-          ms.prevPoints = curPoints;
-          dirty = true;
-        }
+    // Cleanup old cooldown field (no longer used)
+    if (ms.cooldownStart) { ms.cooldownStart = 0; dirty = true; }
+
+    if (ms.windowStart === 0) {
+      if (hasIncrement && ms.prevPoints !== null) {
+        ms.windowStart = nowMs;
+        ms.pointsAtStart = ms.prevPoints;
+        dirty = true;
+      }
+      if (ms.prevPoints !== curPoints && ms.windowStart === 0) {
+        ms.prevPoints = curPoints;
+        dirty = true;
       }
     } else {
-      // in cooldown — keep prevPoints synced
-      if (ms.prevPoints !== curPoints) {
+      const elapsed = nowMs - ms.windowStart;
+      if (elapsed >= 60000) {
+        const count = pointsDelta(curPoints, ms.pointsAtStart);
+        const ppm = Math.trunc(Math.max(0, count));
+        const pph = ppm * 60;
+        ms.ppm = ppm;
+        ms.pph = pph;
+        ms.lastComputedAt = nowMs;
+        // continuous: start next window immediately (no 1-min break)
+        ms.windowStart = nowMs;
+        ms.pointsAtStart = curPoints;
+        ms.prevPoints = curPoints;
+        dirty = true;
+      } else {
         ms.prevPoints = curPoints;
         dirty = true;
       }
     }
 
-    // Derive live ppm/pph: show last completed ppm; if mid-window and no completed yet, show running truncated delta live
+    // Derive live ppm/pph: show last completed ppm live, no reset to 1
+    // Only show running count if we have never completed a window (ppm==0)
     let displayPpm = ms.ppm || 0;
     let displayPph = ms.pph || 0;
-    if (ms.windowStart > 0) {
-      // running live delta
+    if (ms.windowStart > 0 && ms.ppm === 0) {
       const running = Math.trunc(Math.max(0, pointsDelta(curPoints, ms.pointsAtStart)));
-      // if we have no completed ppm yet, show running; otherwise show max of completed and running for live feel
-      if (ms.ppm === 0) {
-        displayPpm = running;
-        displayPph = running * 60;
-      } else {
-        // also expose live adjusting during window: use running if larger than last completed for immediate feedback
-        // but keep at least last completed value
-        if (running > 0) {
-          displayPpm = running;
-          displayPph = running * 60;
-        }
-      }
+      displayPpm = running;
+      displayPph = running * 60;
     }
 
     // ETA — live adjusting based on displayPph
