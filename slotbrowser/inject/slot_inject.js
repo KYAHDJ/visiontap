@@ -27,19 +27,42 @@
   // ---- EXACT Chrome extension: findAnswerInput ----
   function findAnswerInput() {
     const inputs = Array.from(document.querySelectorAll('input, textarea'));
-    return inputs.find(el => {
+    // pmath: TYPE HERE
+    let found = inputs.find(el => {
       const p = ((el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '')).toLowerCase();
-      return p.includes('type') || p.includes('answer');
-    }) || inputs[0] || null;
+      return p.includes('type') || p.includes('answer') || p.includes('type here');
+    });
+    if (found) return found;
+    // pmath fallback: any visible input
+    const visibles = inputs.filter(el => {
+      const st = window.getComputedStyle(el);
+      return st.display !== 'none' && st.visibility !== 'hidden' && el.offsetParent !== null;
+    });
+    if (visibles.length) return visibles[0];
+    return inputs[0] || null;
   }
 
   // ---- EXACT Chrome extension: findSubmitButton ----
   function findSubmitButton() {
-    const btns = Array.from(document.querySelectorAll('button, input[type="submit"], a.btn'));
-    return btns.find(b => {
+    const btns = Array.from(document.querySelectorAll('button, input[type="submit"], a.btn, div[role="button"], span'));
+    let found = btns.find(b => {
       const txt = (b.textContent || b.value || '').toLowerCase();
       return txt.includes('submit') || txt.includes('solve') || txt.includes('answer');
-    }) || null;
+    });
+    if (found) return found;
+    // pmath: Convert All / Convert Coins also are submit
+    found = btns.find(b => {
+      const txt = (b.textContent || '').toLowerCase();
+      return txt.includes('convert');
+    });
+    if (found) return found;
+    // pmath fallback: green submit button
+    const all = Array.from(document.querySelectorAll('button, [class*="submit"], [class*="Submit"]'));
+    for (const b of all) {
+      const t = (b.innerText||b.textContent||'').toLowerCase();
+      if (t.includes('submit')) return b;
+    }
+    return null;
   }
 
   function isCheckingState() {
