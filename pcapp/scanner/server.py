@@ -243,13 +243,18 @@ def solve_math():
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             return jsonify({"error": "Failed to decode image"}), 400
-        # Darken all colors to black, keep white text contrast (as requested)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # Threshold: white text (>180) stays white, colored blocks become black
-        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
-        # Invert for tesseract (black text on white)
-        inv = cv2.bitwise_not(thresh)
-        # Upscale 2x for better OCR
+        # Darken all colors to black, keep white text contrast (as requested) — HSV white detection
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        # White text: low saturation, high value
+        lower_white = np.array([0, 0, 180])
+        upper_white = np.array([180, 50, 255])
+        mask_white = cv2.inRange(hsv, lower_white, upper_white)
+        # Invert for tesseract (black text on white) — mask_white has text white, background black
+        inv = cv2.bitwise_not(mask_white)
+        # Clean small noise
+        kernel = np.ones((2,2), np.uint8)
+        inv = cv2.morphologyEx(inv, cv2.MORPH_OPEN, kernel)
+        # Upscale 3x for better OCR
         scaled = cv2.resize(inv, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
         # OCR with math whitelist
         config = '--psm 7 -c tessedit_char_whitelist=0123456789+-xX*/='
