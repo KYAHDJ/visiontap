@@ -243,11 +243,11 @@ def solve_math():
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             return jsonify({"error": "Failed to decode image"}), 400
-        # Darken all colors to black, keep white text contrast (as requested) — HSV white detection
+        # Darken all colors to black, keep white text contrast (as requested) — HSV white detection (permissive)
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        # White text: low saturation, high value
-        lower_white = np.array([0, 0, 180])
-        upper_white = np.array([180, 50, 255])
+        # White text: low saturation, high value (permissive for anti-aliased white)
+        lower_white = np.array([0, 0, 150])
+        upper_white = np.array([180, 80, 255])
         mask_white = cv2.inRange(hsv, lower_white, upper_white)
         # Invert for tesseract (black text on white) — mask_white has text white, background black
         inv = cv2.bitwise_not(mask_white)
