@@ -172,24 +172,34 @@ function getMergedSlots(status) {
       dirty = true;
     }
 
-    // Target logic: 300 pesos=1200 pts ->400=1600 ->500=2000 ...
-    // Basis: max of withdrawable*4 and earned*4 so per-slot distinct and live
-    const earnedPts = Math.floor(totalEarned * 4);
-    const withdrawPts = Math.floor(currentWithdrawable * 4);
-    // Use withdrawable as primary if non-zero (live balance), else earned
-    let ptsBasis = 0;
-    if (currentWithdrawable > 0) ptsBasis = withdrawPts;
-    else ptsBasis = earnedPts;
-    // If both exist, take max so we never under-count
-    if (earnedPts > ptsBasis) ptsBasis = earnedPts;
-    if (!ms.targetPoints || ms.targetPoints < 1200) ms.targetPoints = 1200;
-    while (ptsBasis >= ms.targetPoints) {
-      ms.targetPoints += 400; // next 100 pesos = 400 pts
+    // Target logic: 250 task points = 3-4 pesos (~71.43 pts/peso at 3.5 mid)
+    // Previous 4 pts/peso (1200 for 300) was wrong. Use withdrawable pesos to compute.
+    const POINTS_PER_CYCLE = 250;
+    const PESOS_PER_CYCLE_MID = 3.5;
+    const POINTS_PER_PESO_MID = POINTS_PER_CYCLE / PESOS_PER_CYCLE_MID; // 71.4286
+    const POINTS_PER_PESO_LOW = POINTS_PER_CYCLE / 4; // 62.5 (optimistic)
+    const POINTS_PER_PESO_HIGH = POINTS_PER_CYCLE / 3; // 83.33 (pessimistic)
+    // Determine next target pesos tier above withdrawable (300,400,500...)
+    let targetPesos = ms.targetPesos || (ms.targetPoints ? Math.trunc(ms.targetPoints/4) : 300);
+    if (!targetPesos || targetPesos < 300) targetPesos = 300;
+    // migrate old targetPoints based target
+    if (ms.targetPoints && !ms.targetPesos) {
+      targetPesos = Math.trunc(ms.targetPoints/4);
+      if (targetPesos < 300) targetPesos = 300;
+    }
+    while (currentWithdrawable >= targetPesos) {
+      targetPesos += 100;
       dirty = true;
     }
-    const currentTargetPoints = ms.targetPoints;
-    const pointsUntilTarget = Math.max(0, currentTargetPoints - ptsBasis);
-    const targetPesos = Math.trunc(currentTargetPoints / 4);
+    ms.targetPesos = targetPesos;
+    if (ms.targetPoints) { delete ms.targetPoints; dirty = true; } // cleanup old
+    const pesosNeeded = Math.max(0, targetPesos - currentWithdrawable);
+    const pointsUntilMid = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO_MID));
+    const pointsUntilLow = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO_LOW));
+    const pointsUntilHigh = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO_HIGH));
+    // keep backward compat fields
+    const currentTargetPoints = Math.trunc(targetPesos * POINTS_PER_PESO_MID);
+    const pointsUntilTarget = pointsUntilMid;
 
     // Per-minute: points delta over 60s window (1-min detect / 1-min break), truncated whole number
     // Window starts on any points increment, captures delta for 60s, then 60s cooldown
@@ -315,12 +325,15 @@ function getMergedSlots(status) {
       timerText: sc.timerText || slot.timerText || "00:00",
       elapsed: sc.elapsed != null ? sc.elapsed : (slot.elapsed || 0),
       loopStartTime: slot.loopStartTime || sc.loopStartTime || null,
-      // Live metrics (PH dashboard time, persisted)
+      // Live metrics (PH dashboard time, persisted) — 250 pts = 3-4 pesos
       pointsPerMinute: displayPpm,
       pointsPerHour: displayPph,
       pointsUntilTarget: pointsUntilTarget,
       currentTargetPoints: currentTargetPoints,
       targetPesos: targetPesos,
+      pesosNeeded: Math.round(pesosNeeded*100)/100,
+      pointsUntilLow: pointsUntilLow,
+      pointsUntilHigh: pointsUntilHigh,
       etaHours: etaHours,
       etaText: etaText,
       lastBalanceUpdate: ms.lastBalanceTime || 0,
@@ -484,9 +497,13 @@ function render(d){
         (function(){
           var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
           var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
-          var ptsUntilTarget = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
-          var curTarget = (s.currentTargetPoints != null ? s.currentTargetPoints : 1200);
-          var targetPesos = (s.targetPesos != null ? s.targetPesos : Math.trunc(curTarget/4));
+          var ptsUntilMid = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
+          var ptsUntilLow = (s.pointsUntilLow != null ? s.pointsUntilLow : ptsUntilMid);
+          var ptsUntilHigh = (s.pointsUntilHigh != null ? s.pointsUntilHigh : ptsUntilMid);
+          var targetPesos = (s.targetPesos != null ? s.targetPesos : 300);
+          var pesosNeeded = (s.pesosNeeded != null ? s.pesosNeeded : 0);
+          // fallback calc if backend older
+          if (!pesosNeeded && s.withdrawable != null && targetPesos) pesosNeeded = Math.max(0, targetPesos - Number(s.withdrawable));
           var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
           var lastBalUpd = s.lastBalanceUpdate || 0;
           var lastBalVal = (s.lastBalanceValue != null ? s.lastBalanceValue : "");
@@ -495,12 +512,13 @@ function render(d){
           if (lastBalUpd) {
             try { lastBalTime = new Date(lastBalUpd).toLocaleTimeString('en-PH', {timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true}) + ' PH'; } catch(e) { lastBalTime = new Date(lastBalUpd).toLocaleTimeString(); }
           } else { lastBalTime = ""; }
-          // Never show undefined — empty if no data
           var balLine = hasBal ? '<div>Last balance: <span style="color:var(--text)">&#8369;'+Number(lastBalVal).toFixed(2)+'</span> <span style="color:var(--muted)">('+esc(lastBalTime)+')</span></div>' : '<div>Last balance: <span style="color:var(--muted)">-</span></div>';
-          var ppmLine = '<div style="margin-top:2px; font-size:9px; color:var(--muted);">Avg points per minute: <span style="color:#facc15">'+ptsPerMin+'</span> &nbsp;&bull;&nbsp; Avg points per hour: <span style="color:#facc15">'+ptsPerHour+'</span></div>';
-          var targetLine = '<div style="margin-top:2px; font-size:9px; color:var(--muted);">How many points before &#8369;'+targetPesos+': <span style="color:#38bdf8">'+ptsUntilTarget+' pts</span> <span style="color:var(--muted)">in '+esc(etaText)+'</span></div>';
-          var liveNote = '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Dashboard PH time \u2022 live 1-min detect / 1-min break cycle \u2022 truncate no round-up</div>';
-          return balLine + ppmLine + targetLine + liveNote;
+          var ppmLine = '<div style="margin-top:2px; font-size:9px; color:var(--muted);">Avg points per minute: <span style="color:#facc15">'+ptsPerMin+'</span> &nbsp;&bull;&nbsp; Avg points per hour: <span style="color:#facc15">'+ptsPerHour+'</span> <span style="color:var(--muted)">(250 pts = 3-4&#8369;)</span></div>';
+          // pesos before target — live pesos, not taskpoints
+          var pesosLine = '<div style="margin-top:2px; font-size:9px; color:var(--muted);">&#8369;'+targetPesos+' target: <span style="color:#38bdf8">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span> ('+Number(s.withdrawable||0).toFixed(2)+' now)</div>';
+          var pointsLine = '<div style="margin-top:1px; font-size:9px; color:var(--muted);">Points before &#8369;'+targetPesos+': <span style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+ptsUntilLow+'-'+ptsUntilHigh+' at 3-4&#8369;/250) in '+esc(etaText)+'</span></div>';
+          var liveNote = '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Dashboard PH time \u2022 live 1-min detect / 1-min break \u2022 truncate no round-up \u2022 next '+targetPesos+' then '+(targetPesos+100)+'</div>';
+          return balLine + ppmLine + pesosLine + pointsLine + liveNote;
         })() +
       '</div>' +
       '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
