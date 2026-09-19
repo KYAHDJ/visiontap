@@ -35,7 +35,9 @@ function getSlotMetrics(all, id) {
       lastComputedAt: 0,
       lastBalanceValue: 0,
       lastBalanceTime: 0,
-      targetPoints: 1200
+      targetPoints: 1200,
+      balanceHistory: [], // [{value, time}]
+      lastHistoryCheck: 0
     };
   } else {
     // migrate old correct-based fields to points-based
@@ -46,6 +48,10 @@ function getSlotMetrics(all, id) {
     }
     if (all[id].pointsAtStart == null) all[id].pointsAtStart = 0;
     if (all[id].prevPoints === undefined) all[id].prevPoints = null;
+    if (!Array.isArray(all[id].balanceHistory)) all[id].balanceHistory = [];
+    if (all[id].lastHistoryCheck == null) all[id].lastHistoryCheck = 0;
+    if (all[id].lastBalanceValue == null) all[id].lastBalanceValue = 0;
+    if (all[id].lastBalanceTime == null) all[id].lastBalanceTime = 0;
   }
   return all[id];
 }
@@ -161,28 +167,53 @@ function getMergedSlots(status) {
       dirty = true;
     }
 
-    // Balance history — dashboard PH time, persisted per-slot
-    if (ms.lastBalanceTime === 0 && currentWithdrawable !== 0) {
+    // Balance history — 2-min timer, 10 entries scrollable, persisted per-slot
+    // Every 2 min check: if same value -> update time of last entry; if changed -> push new entry
+    // Also immediate push on balance change (so history shows update without waiting 2 min)
+    if (!Array.isArray(ms.balanceHistory)) ms.balanceHistory = [];
+    if (ms.balanceHistory.length === 0 && currentWithdrawable !== 0) {
+      ms.balanceHistory.push({ value: currentWithdrawable, time: nowMs });
       ms.lastBalanceValue = currentWithdrawable;
       ms.lastBalanceTime = nowMs;
+      ms.lastHistoryCheck = nowMs;
       dirty = true;
-    } else if (currentWithdrawable !== ms.lastBalanceValue) {
-      ms.lastBalanceValue = currentWithdrawable;
-      ms.lastBalanceTime = nowMs; // dashboard time (not oracle)
-      dirty = true;
+    } else if (ms.balanceHistory.length > 0) {
+      const lastEntry = ms.balanceHistory[ms.balanceHistory.length - 1];
+      const balChanged = currentWithdrawable !== lastEntry.value && currentWithdrawable !== 0;
+      if (balChanged) {
+        // balance updated -> push new history entry immediately
+        ms.balanceHistory.push({ value: currentWithdrawable, time: nowMs });
+        if (ms.balanceHistory.length > 10) ms.balanceHistory = ms.balanceHistory.slice(-10);
+        ms.lastBalanceValue = currentWithdrawable;
+        ms.lastBalanceTime = nowMs;
+        ms.lastHistoryCheck = nowMs;
+        dirty = true;
+      } else {
+        // same balance -> every 2 min update time of last entry to show still same (live check)
+        if (nowMs - (ms.lastHistoryCheck || 0) >= 120000) { // 120000 = 2 min
+          // update last entry time to current PH dashboard time
+          lastEntry.time = nowMs;
+          ms.lastBalanceValue = currentWithdrawable;
+          ms.lastBalanceTime = nowMs;
+          ms.lastHistoryCheck = nowMs;
+          dirty = true;
+        }
+      }
+      // keep lastBalanceValue/Time in sync for legacy fields
+      if (ms.lastBalanceValue !== currentWithdrawable) {
+        ms.lastBalanceValue = currentWithdrawable;
+        ms.lastBalanceTime = nowMs;
+        dirty = true;
+      }
     }
 
-    // Target logic: 250 task points = 3-4 pesos (~71.43 pts/peso at 3.5 mid)
-    // Previous 4 pts/peso (1200 for 300) was wrong. Use withdrawable pesos to compute.
+    // Target logic: 250 task points = 3 pesos (83.33 pts/₱) — fixed to 3 as requested
     const POINTS_PER_CYCLE = 250;
-    const PESOS_PER_CYCLE_MID = 3.5;
-    const POINTS_PER_PESO_MID = POINTS_PER_CYCLE / PESOS_PER_CYCLE_MID; // 71.4286
-    const POINTS_PER_PESO_LOW = POINTS_PER_CYCLE / 4; // 62.5 (optimistic)
-    const POINTS_PER_PESO_HIGH = POINTS_PER_CYCLE / 3; // 83.33 (pessimistic)
+    const PESOS_PER_CYCLE = 3; // fixed 3 only (as requested)
+    const POINTS_PER_PESO = POINTS_PER_CYCLE / PESOS_PER_CYCLE; // 83.333...
     // Determine next target pesos tier above withdrawable (300,400,500...)
     let targetPesos = ms.targetPesos || (ms.targetPoints ? Math.trunc(ms.targetPoints/4) : 300);
     if (!targetPesos || targetPesos < 300) targetPesos = 300;
-    // migrate old targetPoints based target
     if (ms.targetPoints && !ms.targetPesos) {
       targetPesos = Math.trunc(ms.targetPoints/4);
       if (targetPesos < 300) targetPesos = 300;
@@ -192,13 +223,13 @@ function getMergedSlots(status) {
       dirty = true;
     }
     ms.targetPesos = targetPesos;
-    if (ms.targetPoints) { delete ms.targetPoints; dirty = true; } // cleanup old
+    if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
     const pesosNeeded = Math.max(0, targetPesos - currentWithdrawable);
-    const pointsUntilMid = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO_MID));
-    const pointsUntilLow = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO_LOW));
-    const pointsUntilHigh = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO_HIGH));
-    // keep backward compat fields
-    const currentTargetPoints = Math.trunc(targetPesos * POINTS_PER_PESO_MID);
+    const pointsUntilMid = Math.max(0, Math.trunc(pesosNeeded * POINTS_PER_PESO));
+    // keep low/high same as mid now (3 only), but preserve for frontend
+    const pointsUntilLow = pointsUntilMid;
+    const pointsUntilHigh = pointsUntilMid;
+    const currentTargetPoints = Math.trunc(targetPesos * POINTS_PER_PESO);
     const pointsUntilTarget = pointsUntilMid;
 
     // Per-minute: points delta over 60s window (1-min detect / 1-min break), truncated whole number
@@ -325,7 +356,7 @@ function getMergedSlots(status) {
       timerText: sc.timerText || slot.timerText || "00:00",
       elapsed: sc.elapsed != null ? sc.elapsed : (slot.elapsed || 0),
       loopStartTime: slot.loopStartTime || sc.loopStartTime || null,
-      // Live metrics (PH dashboard time, persisted) — 250 pts = 3-4 pesos
+      // Live metrics (PH dashboard time, persisted) — 250 pts = 3 pesos (83.33)
       pointsPerMinute: displayPpm,
       pointsPerHour: displayPph,
       pointsUntilTarget: pointsUntilTarget,
@@ -338,6 +369,7 @@ function getMergedSlots(status) {
       etaText: etaText,
       lastBalanceUpdate: ms.lastBalanceTime || 0,
       lastBalanceValue: ms.lastBalanceValue != null ? ms.lastBalanceValue : 0,
+      balanceHistory: Array.isArray(ms.balanceHistory) ? ms.balanceHistory.slice(-10) : [],
       // keep raw for debug
       _windowActive: ms.windowStart > 0,
       _cooldownActive: ms.cooldownStart > 0
@@ -418,6 +450,22 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .livedot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @media(max-width:380px){.wrap{padding:8px 8px 60px}.crow{flex-direction:column}.crow input{width:100%}.bsm{width:100%}}
+.b2col{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0 8px}
+.bcol{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px;cursor:pointer;min-height:88px;display:flex;flex-direction:column}
+.bcol:hover{border-color:#334155}
+.bcol-hd{font-weight:600;color:var(--text);font-size:9px;margin-bottom:4px;letter-spacing:0.3px}
+.bhist-list{max-height:92px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1}
+.bhist-row{display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:9px;border-bottom:1px solid #1e293b;gap:4px}
+.bhist-val{color:#facc15;font-weight:600;white-space:nowrap}
+.bhist-time{color:var(--muted);font-size:8px;white-space:nowrap}
+.bcalc-line{font-size:9px;color:var(--muted);margin-top:2px;line-height:1.3}
+.bcalc-em{color:var(--text);font-weight:600}
+.moreinfo{font-size:8px;color:var(--accent);text-align:center;margin-top:6px;opacity:0.9;letter-spacing:0.2px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.72);display:none;align-items:center;justify-content:center;z-index:9999;padding:14px}
+.modal.show{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,0.6)}
+.modal-hd{font-weight:700;color:var(--accent);font-size:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.modal-close{background:#0f172a;border:1px solid #334155;color:var(--text);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -492,35 +540,59 @@ function render(d){
         '<div class="sbox"><div class="sv" style="color:#38bdf8" id="timer-'+esc(s.id)+'">'+esc(s.timerText||'00:00')+'</div><div class="sl">Time</div></div>'+
       '</div>'+
       (s.pointsTotal>0?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
-      '<div style="margin:6px 0 8px; font-size:9px; color:var(--muted); line-height:1.4; background:#0f172a; border-radius:6px; padding:6px;">' +
-        '<div style="font-weight:600; color:var(--text); margin-bottom:4px;">Balance History</div>' +
-        (function(){
-          var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
-          var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
-          var ptsUntilMid = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
-          var ptsUntilLow = (s.pointsUntilLow != null ? s.pointsUntilLow : ptsUntilMid);
-          var ptsUntilHigh = (s.pointsUntilHigh != null ? s.pointsUntilHigh : ptsUntilMid);
-          var targetPesos = (s.targetPesos != null ? s.targetPesos : 300);
-          var pesosNeeded = (s.pesosNeeded != null ? s.pesosNeeded : 0);
-          // fallback calc if backend older
-          if (!pesosNeeded && s.withdrawable != null && targetPesos) pesosNeeded = Math.max(0, targetPesos - Number(s.withdrawable));
-          var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
-          var lastBalUpd = s.lastBalanceUpdate || 0;
-          var lastBalVal = (s.lastBalanceValue != null ? s.lastBalanceValue : "");
-          var hasBal = lastBalUpd && lastBalVal !== "" && Number(lastBalVal) !== 0;
-          var lastBalTime = "";
-          if (lastBalUpd) {
-            try { lastBalTime = new Date(lastBalUpd).toLocaleTimeString('en-PH', {timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true}) + ' PH'; } catch(e) { lastBalTime = new Date(lastBalUpd).toLocaleTimeString(); }
-          } else { lastBalTime = ""; }
-          var balLine = hasBal ? '<div>Last balance: <span style="color:var(--text)">&#8369;'+Number(lastBalVal).toFixed(2)+'</span> <span style="color:var(--muted)">('+esc(lastBalTime)+')</span></div>' : '<div>Last balance: <span style="color:var(--muted)">-</span></div>';
-          var ppmLine = '<div style="margin-top:2px; font-size:9px; color:var(--muted);">Avg points per minute: <span style="color:#facc15">'+ptsPerMin+'</span> &nbsp;&bull;&nbsp; Avg points per hour: <span style="color:#facc15">'+ptsPerHour+'</span> <span style="color:var(--muted)">(250 pts = 3-4&#8369;)</span></div>';
-          // pesos before target — live pesos, not taskpoints
-          var pesosLine = '<div style="margin-top:2px; font-size:9px; color:var(--muted);">&#8369;'+targetPesos+' target: <span style="color:#38bdf8">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span> ('+Number(s.withdrawable||0).toFixed(2)+' now)</div>';
-          var pointsLine = '<div style="margin-top:1px; font-size:9px; color:var(--muted);">Points before &#8369;'+targetPesos+': <span style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+ptsUntilLow+'-'+ptsUntilHigh+' at 3-4&#8369;/250) in '+esc(etaText)+'</span></div>';
-          var liveNote = '<div style="margin-top:2px; font-size:8px; opacity:0.7;">Dashboard PH time \u2022 live 1-min detect / 1-min break \u2022 truncate no round-up \u2022 next '+targetPesos+' then '+(targetPesos+100)+'</div>';
-          return balLine + ppmLine + pesosLine + pointsLine + liveNote;
-        })() +
-      '</div>' +
+      (function(){
+        var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
+        var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
+        var ptsUntilMid = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
+        var targetPesos = (s.targetPesos != null ? s.targetPesos : 300);
+        var pesosNeeded = (s.pesosNeeded != null ? s.pesosNeeded : Math.max(0, targetPesos - Number(s.withdrawable||0)));
+        var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
+        var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
+        var midId = 'modal-'+s.id;
+        function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
+        // left column: 10 history scrollable
+        var histHtml = '';
+        if (balHist.length===0) histHtml = '<div style="font-size:9px;color:var(--muted)">-</div>';
+        else {
+          // newest last -> show reversed (latest top)
+          for(var k=balHist.length-1;k>=0;k--){
+            var h=balHist[k];
+            var hv = (h.value!=null?Number(h.value).toFixed(2):'-');
+            var ht = h.time?fmtPH(h.time):'';
+            histHtml += '<div class="bhist-row"><span class="bhist-val">&#8369;'+hv+'</span><span class="bhist-time">'+esc(ht)+'</span></div>';
+          }
+        }
+        var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/250).toFixed(1) : '0';
+        var leftCol = '<div class="bcol" onclick="openModal(\''+esc(s.id)+'\')"><div class="bcol-hd">Balance History (10)</div><div class="bhist-list">'+histHtml+'</div></div>';
+        var rightCol = '<div class="bcol" onclick="openModal(\''+esc(s.id)+'\')"><div class="bcol-hd">Calculation (250=3&#8369;)</div>'
+          +'<div class="bcalc-line">&#8369;'+targetPesos+': <span class="bcalc-em">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span></div>'
+          +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
+          +'<div class="bcalc-line"><span style="color:var(--muted)">'+ptsPerMin+'/min &bull; '+ptsPerHour+'/hr</span></div>'
+          +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
+          +'</div>';
+        var grid = '<div class="b2col">'+leftCol+rightCol+'</div><div class="moreinfo" onclick="openModal(\''+esc(s.id)+'\')" style="cursor:pointer">click me for more info &#9654;</div>';
+        // modal per slot
+        var modalRows = '';
+        for(var k=0;k<balHist.length;k++){
+          var h2=balHist[k];
+          modalRows += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1e293b;font-size:11px"><span style="color:#facc15">&#8369;'+Number(h2.value).toFixed(2)+'</span><span style="color:var(--muted)">'+esc(fmtPH(h2.time))+'</span></div>';
+        }
+        if(modalRows==='') modalRows='<div style="color:var(--muted);font-size:11px">No history yet</div>';
+        var modal = '<div id="'+midId+'" class="modal" onclick="if(event.target.id===\''+midId+'\') closeModal(\''+esc(s.id)+'\')"><div class="modal-card">'
+          +'<div class="modal-hd"><span>'+esc(s.name)+' — Details</span><button class="modal-close" onclick="closeModal(\''+esc(s.id)+'\')">&times; Close</button></div>'
+          +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Balance <span style="color:var(--text)">&#8369;'+Number(s.withdrawable||0).toFixed(2)+'</span> &bull; Points <span style="color:var(--text)">'+s.pointsDone+'/'+s.pointsTotal+'</span> &bull; Time <span style="color:var(--text)">'+esc(s.timerText||'00:00')+'</span></div>'
+          +'<div style="font-size:11px;color:var(--text);margin:8px 0 4px;font-weight:600">Balance History (last 10, 2-min check)</div><div style="max-height:180px;overflow-y:auto;border:1px solid #1e293b;border-radius:6px;padding:6px;background:#0f172a">'+modalRows+'</div>'
+          +'<div style="font-size:11px;color:var(--text);margin:10px 0 4px;font-weight:600">Calculation (250 pts = 3&#8369;)</div>'
+          +'<div style="font-size:11px;line-height:1.5;background:#0f172a;border-radius:6px;padding:8px;border:1px solid #1e293b">'
+          +'<div>Target: <span style="color:#38bdf8">&#8369;'+targetPesos+'</span> &nbsp; Needed: <span style="color:#facc15">&#8369;'+Number(pesosNeeded).toFixed(2)+'</span> &nbsp; Now: &#8369;'+Number(s.withdrawable||0).toFixed(2)+'</div>'
+          +'<div>Points needed: <span style="color:#38bdf8">'+ptsUntilMid+' pts</span> ('+cyclesNeeded+' cycles of 250)</div>'
+          +'<div>Avg: <span style="color:#facc15">'+ptsPerMin+' /min</span> &bull; <span style="color:#facc15">'+ptsPerHour+' /hr</span> &bull; ETA: <span style="color:#facc15">'+esc(etaText)+'</span></div>'
+          +'<div style="margin-top:6px;font-size:10px;color:var(--muted)">Formula: (target - balance) &times; 83.33 (250/3), truncate, no round-up. 1-min detect / 1-min break, PH dashboard time.</div>'
+          +'</div>'
+          +'<div style="text-align:center;margin-top:10px"><button class="modal-close" onclick="closeModal(\''+esc(s.id)+'\')" style="padding:6px 16px">Close</button></div>'
+          +'</div></div>';
+        return grid + modal;
+      })() +
       '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
       '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
@@ -539,6 +611,9 @@ function render(d){
   document.getElementById('slots-danica').innerHTML=hDanica || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No DANICA slots</div>';
   window._lastSlots = slots; // for live timer 1:1 - sync live only, no stale lastUpdate
 }
+
+function openModal(id){ var m=document.getElementById('modal-'+id); if(m) m.classList.add('show'); }
+function closeModal(id){ var m=document.getElementById('modal-'+id); if(m) m.classList.remove('show'); }
 
 function poll(){
   fetch('/api/stats?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
