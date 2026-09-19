@@ -10,7 +10,8 @@
   const signal = (msg) => { if (host && host.signal) { try { host.signal(msg); } catch (e) {} } };
 
   const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
-  const WORK_RE = /\/solving-colors/;
+  const PMATH_WORK_URL = "https://pmath100.com/games-mathproblem#";
+  const WORK_RE = /\/solving-colors|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Stay on work page (colors or math) ----
@@ -928,9 +929,10 @@
 
   vt.pageReady = () => ({
     url: window.location.href,
-    isECNL: window.location.href.includes("ecnlmediamarket.com"),
+    isECNL: /ecnlmediamarket\.com|pmath100\.com/i.test(window.location.href),
     isWork: WORK_RE.test(window.location.href),
     isAuth: /login|signin|auth|account|password/i.test(window.location.href) || !!(document && document.querySelector('input[type="password"]')),
+    isPmath: /pmath100\.com/i.test(window.location.href),
     grabDebug: vt._grabDebug || null
   });
 
