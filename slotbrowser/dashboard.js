@@ -271,20 +271,25 @@ function getMergedSlots(status) {
       displayPph = running * 60;
     }
 
-    // ETA — live adjusting based on displayPph
+    // ETA — live adjusting based on displayPph, + days (hours/24)
     let etaHours = 0;
     let etaText = "";
+    let etaDays = 0;
     if (displayPph > 0 && pointsUntilTarget > 0) {
       etaHours = pointsUntilTarget / displayPph;
+      etaDays = etaHours / 24;
+      let baseText;
       if (etaHours < 1) {
         const mins = Math.trunc(etaHours * 60);
-        etaText = mins <= 1 ? "1 min" : mins + " mins";
+        baseText = mins <= 1 ? "1 min" : mins + " mins";
       } else {
         const h = Math.trunc(etaHours);
         const mins = Math.trunc((etaHours - h) * 60);
-        if (mins === 0) etaText = h + (h === 1 ? " hour" : " hours");
-        else etaText = h + "h " + mins + "m";
+        if (mins === 0) baseText = h + (h === 1 ? " hour" : " hours");
+        else baseText = h + "h " + mins + "m";
       }
+      const daysText = etaDays < 1 ? etaDays.toFixed(2) : etaDays < 10 ? etaDays.toFixed(1) : Math.trunc(etaDays).toString();
+      etaText = baseText + " (" + daysText + " days)";
     } else if (pointsUntilTarget === 0) {
       etaText = "reached";
     } else {
@@ -320,6 +325,7 @@ function getMergedSlots(status) {
       pointsUntilLow: pointsUntilLow,
       pointsUntilHigh: pointsUntilHigh,
       etaHours: etaHours,
+      etaDays: Math.round(etaDays*100)/100,
       etaText: etaText,
       lastBalanceUpdate: ms.lastBalanceTime || 0,
       lastBalanceValue: ms.lastBalanceValue != null ? ms.lastBalanceValue : 0,
