@@ -228,7 +228,7 @@ class Slot {
     if (!this.wcIsAlive()) return;
     if (this._injected) return;
     try {
-      if (this.currentUrl.includes("ecnlmediamarket.com")) {
+      if (this.currentUrl.includes("ecnlmediamarket.com") || this.currentUrl.includes("pmath100.com")) {
         const credsJson = JSON.stringify(this._creds || null);
         await this.wc.executeJavaScript(
           `window.__vtCreds = ${credsJson};`
