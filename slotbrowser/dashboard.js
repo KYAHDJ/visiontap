@@ -442,18 +442,17 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .bcol{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px;cursor:pointer;min-height:88px;display:flex;flex-direction:column}
 .bcol:hover{border-color:#334155}
 .bcol-hd{font-weight:600;color:var(--text);font-size:9px;margin-bottom:4px;letter-spacing:0.3px}
-.bhist-list{max-height:92px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1}
+.bhist-list{max-height:92px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;scrollbar-width:thin;scrollbar-gutter:stable;padding-right:4px}
+.bhist-list::-webkit-scrollbar{width:4px}
+.bhist-list::-webkit-scrollbar-thumb{background:#334155;border-radius:4px}
+.bhist-list::-webkit-scrollbar-track{background:transparent}
 .bhist-row{display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:9px;border-bottom:1px solid #1e293b;gap:4px}
 .bhist-val{color:#facc15;font-weight:600;white-space:nowrap}
 .bhist-time{color:var(--muted);font-size:8px;white-space:nowrap}
 .bcalc-line{font-size:9px;color:var(--muted);margin-top:2px;line-height:1.3}
 .bcalc-em{color:var(--text);font-weight:600}
-.moreinfo{font-size:8px;color:var(--accent);text-align:center;margin-top:6px;opacity:0.9;letter-spacing:0.2px}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,0.72);display:none;align-items:center;justify-content:center;z-index:9999;padding:14px}
-.modal.show{display:flex}
-.modal-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,0.6)}
-.modal-hd{font-weight:700;color:var(--accent);font-size:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
-.modal-close{background:#0f172a;border:1px solid #334155;color:var(--text);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer}
+.bcol{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px;min-height:88px;display:flex;flex-direction:column}
+.bcol-hd{font-weight:600;color:var(--text);font-size:9px;margin-bottom:4px;letter-spacing:0.3px}
 </style>
 </head>
 <body>
@@ -472,9 +471,9 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
   <div class="ggrid">
     <a class="btn bgrn bful" id="lbtn" href="/loop?cmd=resume">Resume Loop</a>
   </div>
-  <div class="stitle section-aiko-title">AIKO — <span id="scnt-aiko">0</span> slots • Fast</div>
+  <div class="stitle section-aiko-title">AIKO — <span id="scnt-aiko">0</span> slots</div>
   <div id="slots-aiko"></div>
-  <div class="stitle section-danica-title">DANICA — <span id="scnt-danica">0</span> slot • Slow</div>
+  <div class="stitle section-danica-title">DANICA — <span id="scnt-danica">0</span> slot</div>
   <div id="slots-danica"></div>
   <div class="stitle">Server</div>
   <div class="ggrid">
@@ -507,7 +506,7 @@ function render(d){
     var isDanica = String(s.id) === "13" || String(s.accountName).toLowerCase() === "danicajgb";
     var sc=isDanica ? '#f472b6' : '#38bdf8';
     var cardClass = isDanica ? 'card-danica' : 'card-aiko';
-    var st=isDanica ? 'DANICA • Slow' : 'AIKO • Fast';
+    var st=isDanica ? 'DANICA' : 'AIKO';
     var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
@@ -536,7 +535,6 @@ function render(d){
         var pesosNeeded = (s.pesosNeeded != null ? s.pesosNeeded : Math.max(0, targetPesos - Number(s.withdrawable||0)));
         var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
-        var midId = 'modal-'+s.id;
         function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
         var histHtml = '';
         if (balHist.length===0) histHtml = '<div style="font-size:9px;color:var(--muted)">-</div>';
@@ -549,34 +547,15 @@ function render(d){
           }
         }
         var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/250).toFixed(1) : '0';
-        var leftCol = '<div class="bcol" onclick="openModal('+esc(s.id)+')"><div class="bcol-hd">Balance History (10)</div><div class="bhist-list">'+histHtml+'</div></div>';
-        var rightCol = '<div class="bcol" onclick="openModal('+esc(s.id)+')"><div class="bcol-hd">Calculation (250=3&#8369;)</div>'
+        var leftCol = '<div class="bcol"><div class="bcol-hd">Balance History (10)</div><div class="bhist-list">'+histHtml+'</div></div>';
+        var rightCol = '<div class="bcol"><div class="bcol-hd">Calculation (250=3&#8369;)</div>'
           +'<div class="bcalc-line">&#8369;'+targetPesos+': <span class="bcalc-em">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span></div>'
           +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
-          +'<div class="bcalc-line"><span style="color:var(--muted)">'+ptsPerMin+'/min &bull; '+ptsPerHour+'/hr</span></div>'
+          +'<div class="bcalc-line">Getting: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' pts/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
           +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
           +'</div>';
-        var grid = '<div class="b2col">'+leftCol+rightCol+'</div><div class="moreinfo" onclick="openModal('+esc(s.id)+')" style="cursor:pointer">click me for more info &#9654;</div>';
-        var modalRows = '';
-        for(var k=0;k<balHist.length;k++){
-          var h2=balHist[k];
-          modalRows += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1e293b;font-size:11px"><span style="color:#facc15">&#8369;'+Number(h2.value).toFixed(2)+'</span><span style="color:var(--muted)">'+esc(fmtPH(h2.time))+'</span></div>';
-        }
-        if(modalRows==='') modalRows='<div style="color:var(--muted);font-size:11px">No history yet</div>';
-        var modal = '<div id="'+midId+'" class="modal" onclick="if(event.target==this) closeModal('+esc(s.id)+')"><div class="modal-card">'
-          +'<div class="modal-hd"><span>'+esc(s.name)+' — Details</span><button class="modal-close" onclick="closeModal('+esc(s.id)+')">&times; Close</button></div>'
-          +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Balance <span style="color:var(--text)">&#8369;'+Number(s.withdrawable||0).toFixed(2)+'</span> &bull; Points <span style="color:var(--text)">'+s.pointsDone+'/'+s.pointsTotal+'</span> &bull; Time <span style="color:var(--text)">'+esc(s.timerText||'00:00')+'</span></div>'
-          +'<div style="font-size:11px;color:var(--text);margin:8px 0 4px;font-weight:600">Balance History (last 10, 2-min check)</div><div style="max-height:180px;overflow-y:auto;border:1px solid #1e293b;border-radius:6px;padding:6px;background:#0f172a">'+modalRows+'</div>'
-          +'<div style="font-size:11px;color:var(--text);margin:10px 0 4px;font-weight:600">Calculation (250 pts = 3&#8369;)</div>'
-          +'<div style="font-size:11px;line-height:1.5;background:#0f172a;border-radius:6px;padding:8px;border:1px solid #1e293b">'
-          +'<div>Target: <span style="color:#38bdf8">&#8369;'+targetPesos+'</span> &nbsp; Needed: <span style="color:#facc15">&#8369;'+Number(pesosNeeded).toFixed(2)+'</span> &nbsp; Now: &#8369;'+Number(s.withdrawable||0).toFixed(2)+'</div>'
-          +'<div>Points needed: <span style="color:#38bdf8">'+ptsUntilMid+' pts</span> ('+cyclesNeeded+' cycles of 250)</div>'
-          +'<div>Avg: <span style="color:#facc15">'+ptsPerMin+' /min</span> &bull; <span style="color:#facc15">'+ptsPerHour+' /hr</span> &bull; ETA: <span style="color:#facc15">'+esc(etaText)+'</span></div>'
-          +'<div style="margin-top:6px;font-size:10px;color:var(--muted)">Formula: (target - balance) &times; 83.33 (250/3), truncate, no round-up. 1-min detect / 1-min break, PH dashboard time.</div>'
-          +'</div>'
-          +'<div style="text-align:center;margin-top:10px"><button class="modal-close" onclick="closeModal('+esc(s.id)+')" style="padding:6px 16px">Close</button></div>'
-          +'</div></div>';
-        return grid + modal;
+        var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
+        return grid;
       })() +
       '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
       '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+

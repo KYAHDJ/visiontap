@@ -787,17 +787,19 @@ class Slot {
         return;
       }
       this.status(`[${this.taskCount + 1}] Input ready, pasting ${answer}...`);
-      // Per-slot submit delay after input ready (user request)
+      // Per-slot submit delay after input ready — 11 instant as requested
       {
         const idStr = String(this.id);
         const nameLow = String(this.accountName || "").toLowerCase();
         let waitMs = 0;
-        if (idStr === "11" || nameLow === "adaihbi") waitMs = 1500;
+        if (idStr === "11" || nameLow === "adaihbi") waitMs = 0;
         else if (idStr === "12" || nameLow === "temi") waitMs = 2500;
         else if (idStr === "13" || nameLow === "danicajgb") waitMs = 4500;
         if (waitMs > 0) {
           this.log(`Slot ${idStr} (${nameLow||idStr}) waiting ${waitMs/1000}s before submit`);
           await sleep(waitMs);
+        } else {
+          this.log(`Slot ${idStr} instant submit (no wait)`);
         }
       }
       // Save points before submit - 1:1 exact copy after

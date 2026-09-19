@@ -229,22 +229,32 @@
     inputBox.dispatchEvent(new Event('input', { bubbles: true }));
     inputBox.dispatchEvent(new Event('change', { bubbles: true }));
 
-    // Random 1-3s delay after input before submit (weighted: 3s rare ~5%)
+    // Slot 11 (adaihbi) instant submit as requested, others random 1-3s
     let delayMs;
-    const r = Math.random();
-    if (r < 0.50) delayMs = 1000 + Math.random() * 500;        // 50% -> 1.0-1.5s
-    else if (r < 0.80) delayMs = 1500 + Math.random() * 700;   // 30% -> 1.5-2.2s
-    else if (r < 0.95) delayMs = 2200 + Math.random() * 500;   // 15% -> 2.2-2.7s
-    else delayMs = 2700 + Math.random() * 300;                 // 5%  -> 2.7-3.0s (rare)
-    // console.log(`[VisionTap] submit delay ${Math.round(delayMs)}ms`);
-    setTimeout(() => {
+    const isInstantSlot = window.__vtCreds && String(window.__vtCreds.user||"").toLowerCase()==="adaihbi";
+    if (isInstantSlot) {
+      delayMs = 0;
+    } else {
+      const r = Math.random();
+      if (r < 0.50) delayMs = 1000 + Math.random() * 500;        // 50% -> 1.0-1.5s
+      else if (r < 0.80) delayMs = 1500 + Math.random() * 700;   // 30% -> 1.5-2.2s
+      else if (r < 0.95) delayMs = 2200 + Math.random() * 500;   // 15% -> 2.2-2.7s
+      else delayMs = 2700 + Math.random() * 300;                 // 5%  -> 2.7-3.0s (rare)
+    }
+    if (delayMs === 0) {
       const btn = findSubmitButton();
-      if (btn) {
-        btn.click();
-      } else {
-        inputBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-      }
-    }, Math.round(delayMs));
+      if (btn) btn.click();
+      else inputBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+    } else {
+      setTimeout(() => {
+        const btn = findSubmitButton();
+        if (btn) {
+          btn.click();
+        } else {
+          inputBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+        }
+      }, Math.round(delayMs));
+    }
     return { status: "filled", delayMs: Math.round(delayMs) };
   }
 
@@ -260,7 +270,8 @@
     'div[class*="cookie-banner"]', 'div[id*="cookie"]',
     'div[class*="consent"]', 'iframe[src*="ads"]',
     'div[aria-label*="advertisement" i]', 'div[aria-label*="sponsored" i]',
-    '#google_vignette', '.google-auto-placed', 'div[id*="google_ads_query"]'
+    '#google_vignette', '.google-auto-placed', 'div[id*="google_ads_query"]',
+    'div[class*="allow-ads"]', 'div[id*="allow-ads"]', 'div[class*="please-allow"]'
   ];
 
   function nukeAds() {
@@ -273,20 +284,39 @@
       document.querySelectorAll('video[src*="ad"], video[src*="adserve"]').forEach(el => {
         try { el.remove(); } catch (e) {}
       });
-      // Strictly hide Unlock more contents overlay
+      // Strictly hide Unlock more contents overlay + Please allow ads popup
       document.querySelectorAll('div, section, aside, span, p, button').forEach(el => {
         try {
           const txt = (el.innerText || '').toLowerCase();
-          if (txt.includes('unlock more contents') || txt.includes('view a short ad') || txt.includes('watch ad to unlock') || txt.includes('unlock to continue')) {
+          if (txt.includes('unlock more contents') || txt.includes('view a short ad') || txt.includes('watch ad to unlock') || txt.includes('unlock to continue') || txt.includes('please allow ads') || txt.includes('allow ads on our site') || txt.includes('please disable') && txt.includes('ad blocker') || txt.includes('adblock') || txt.includes('whitelist')) {
             const style = window.getComputedStyle(el);
             const isOverlay = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex||'0',10) > 50;
             const rect = el.getBoundingClientRect();
-            if (isOverlay || (rect.width>200 && rect.height>100) || txt.length<200) {
+            if (isOverlay || (rect.width>200 && rect.height>100) || txt.length<500) {
               if (el.id && el.id.includes('visiontap')) return;
               if (el.querySelector && (el.querySelector('input') || el.querySelector('canvas'))) return;
               el.style.display='none'; el.style.visibility='hidden'; el.style.pointerEvents='none';
               try{el.remove();}catch(e){}
             }
+          }
+        } catch(e){}
+      });
+      // Also hide any element containing "Please allow ads" even if not overlay, and close buttons
+      document.querySelectorAll('*').forEach(el => {
+        try {
+          const t = (el.innerText || '').toLowerCase();
+          if (t.includes('please allow ads on our site')) {
+            // hide the whole modal/dialog container
+            let cur = el;
+            for(let i=0;i<4 && cur;i++){
+              const s = window.getComputedStyle(cur);
+              if (s.position==='fixed' || s.position==='absolute' || cur.className.toString().toLowerCase().includes('modal') || cur.className.toString().toLowerCase().includes('popup') || cur.className.toString().toLowerCase().includes('dialog')){
+                cur.style.display='none'; try{cur.remove();}catch(e){}
+                break;
+              }
+              cur = cur.parentElement;
+            }
+            el.style.display='none'; try{el.remove();}catch(e){}
           }
         } catch(e){}
       });
