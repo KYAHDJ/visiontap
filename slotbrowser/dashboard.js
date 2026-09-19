@@ -14,18 +14,27 @@ const SLOT_CMD_FILE = path.join(ELECTRON_STATE_DIR, "slot_commands.json");
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
-// Dashboard persistent metrics (survives restarts/resets) — per-slot
-const METRICS_FILE = path.join(ELECTRON_STATE_DIR, "dashboard_metrics.json");
-
-function loadMetrics() {
-  return readJson(METRICS_FILE, {}); // { [id]: { windowStart, correctAtStart, prevCorrect, ppm, pph, cooldownStart, lastComputedAt, lastBalanceValue, lastBalanceTime, targetPoints } }
+// Dashboard persistent metrics — per-slot personal save file (no leaking)
+const METRICS_FILE = path.join(ELECTRON_STATE_DIR, "dashboard_metrics.json"); // legacy single file (migrated)
+function metricsFileForId(id) { return path.join(ELECTRON_STATE_DIR, `dashboard_metrics_${String(id)}.json`); }
+function loadMetricsForId(id) {
+  // try per-slot file first
+  let ms = readJson(metricsFileForId(id), null);
+  if (ms) return ms;
+  // migrate from legacy single file if exists
+  const legacy = readJson(METRICS_FILE, null);
+  if (legacy && legacy[String(id)]) {
+    const m = legacy[String(id)];
+    try { writeJson(metricsFileForId(id), m); } catch(e){}
+    return m;
+  }
+  return null;
 }
-function saveMetrics(m) {
-  writeJson(METRICS_FILE, m);
-}
-function getSlotMetrics(all, id) {
-  if (!all[id]) {
-    all[id] = {
+function saveMetricsForId(id, ms) { writeJson(metricsFileForId(id), ms); }
+function getSlotMetrics(id) {
+  let ms = loadMetricsForId(id);
+  if (!ms) {
+    ms = {
       windowStart: 0,
       pointsAtStart: 0,
       prevPoints: null,
@@ -40,17 +49,20 @@ function getSlotMetrics(all, id) {
       lastHistoryCheck: 0
     };
   } else {
-    if (all[id].prevCorrect != null && all[id].prevPoints == null) {
-      all[id].prevPoints = null;
-      delete all[id].prevCorrect;
-      delete all[id].correctAtStart;
+    if (ms.prevCorrect != null && ms.prevPoints == null) {
+      ms.prevPoints = null;
+      delete ms.prevCorrect;
+      delete ms.correctAtStart;
     }
-    if (all[id].pointsAtStart == null) all[id].pointsAtStart = 0;
-    if (all[id].prevPoints === undefined) all[id].prevPoints = null;
-    if (!Array.isArray(all[id].balanceHistory)) all[id].balanceHistory = [];
-    if (all[id].lastHistoryCheck == null) all[id].lastHistoryCheck = 0;
+    if (ms.pointsAtStart == null) ms.pointsAtStart = 0;
+    if (ms.prevPoints === undefined) ms.prevPoints = null;
+    if (!Array.isArray(ms.balanceHistory)) ms.balanceHistory = [];
+    if (ms.lastHistoryCheck == null) ms.lastHistoryCheck = 0;
+    if (ms.targetPoints && !ms.targetPesos) {
+      // will be migrated in getMergedSlots
+    }
   }
-  return all[id];
+  return ms;
 }
 function pointsDelta(cur, start) {
   cur = Number(cur) || 0;
@@ -108,27 +120,9 @@ function getMergedSlots(status) {
   for (const slot of (electronSlots.active || [])) {
     const id = String(slot.id);
     const name = slot.accountName || slot.name || `Slot ${Number(id) + 1}`;
-    // Resolve scanner slot by id/name/legacy — pick freshest (max taskCount/withdrawable) among candidates (always live)
-    // Always show exact web numbers: prefer direct id (live), fallback to name/legacy only if id missing
-    let sc = scannerSlots[id] || scannerSlots[name] || scannerSlots[`Slot ${id}`] || scannerSlots[`Slot ${Number(id) + 1}`] || scannerSlots[String(Number(id)+1)] || null;
-    if (!sc || Object.keys(sc).length === 0) {
-      // No candidate, fallback to best among all
-      const all = Object.entries(scannerSlots);
-      if (all.length === 1) sc = all[0][1];
-      else if (all.length > 1) {
-        let best = null;
-        for (const [k, v] of all) {
-          if (!best) best = v;
-          else {
-            const aTasks = Number(v.taskCount || v.correctCount || 0);
-            const bTasks = Number(best.taskCount || best.correctCount || 0);
-            if (aTasks > bTasks) best = v;
-          }
-        }
-        sc = best || {};
-      } else sc = {};
-    }
-    if (!sc) sc = {};
+    // Strict per-slot personal — no fallback to other slots (prevents history leaking)
+    let sc = scannerSlots[id] || scannerSlots[String(id)] || null;
+    if (!sc || Object.keys(sc).length === 0) sc = {};
     const cred = creds[id] || creds[slot.id] || {};
     // Earnings per-slot only — no shared fallback (prevents 1085 for all slots)
     let hist = slotEarnings[id] || slotEarnings[name] || slotEarnings[`Slot ${id}`] || slotEarnings[`Slot ${Number(id) + 1}`] || null;
@@ -148,9 +142,8 @@ function getMergedSlots(status) {
       displayHist = [];
     }
 
-    // --- Persistent per-slot metrics (pointsDone-based, PH time) ---
-    const metricsAll = loadMetrics();
-    const ms = getSlotMetrics(metricsAll, id);
+    // --- Persistent per-slot metrics — personal file per slot (no leaking) ---
+    let ms = getSlotMetrics(String(id));
     const nowMs = Date.now();
     const currentWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
     // pointsDone is 0-250 cycle; use it for ppm (correctCount stays 0 on Oracle)
@@ -296,7 +289,7 @@ function getMergedSlots(status) {
       etaText = "-";
     }
 
-    if (dirty) saveMetrics(metricsAll);
+    if (dirty) saveMetricsForId(String(id), ms);
 
     const mergedSlot = {
       id, name, accountName: slot.accountName || "",
