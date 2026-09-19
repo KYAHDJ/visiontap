@@ -27,8 +27,8 @@ function getSlotMetrics(all, id) {
   if (!all[id]) {
     all[id] = {
       windowStart: 0,
-      correctAtStart: 0,
-      prevCorrect: 0,
+      pointsAtStart: 0,
+      prevPoints: null, // null = uninitialized
       ppm: 0,
       pph: 0,
       cooldownStart: 0,
@@ -37,8 +37,24 @@ function getSlotMetrics(all, id) {
       lastBalanceTime: 0,
       targetPoints: 1200
     };
+  } else {
+    // migrate old correct-based fields to points-based
+    if (all[id].prevCorrect != null && all[id].prevPoints == null) {
+      all[id].prevPoints = null;
+      delete all[id].prevCorrect;
+      delete all[id].correctAtStart;
+    }
+    if (all[id].pointsAtStart == null) all[id].pointsAtStart = 0;
+    if (all[id].prevPoints === undefined) all[id].prevPoints = null;
   }
   return all[id];
+}
+function pointsDelta(cur, start) {
+  cur = Number(cur) || 0;
+  start = Number(start) || 0;
+  if (cur >= start) return cur - start;
+  // wrap 0-250 cycle reset
+  return (250 - start) + cur;
 }
 
 function run(cmd) {
@@ -111,22 +127,9 @@ function getMergedSlots(status) {
     }
     if (!sc) sc = {};
     const cred = creds[id] || creds[slot.id] || {};
-    // Earnings are stored by slot id in server.py; also check by name for legacy + fallback
+    // Earnings per-slot only — no shared fallback (prevents 1085 for all slots)
     let hist = slotEarnings[id] || slotEarnings[name] || slotEarnings[`Slot ${id}`] || slotEarnings[`Slot ${Number(id) + 1}`] || null;
-    if (!hist || !Array.isArray(hist) || hist.length === 0) {
-      // Fallback: if no hist for this id, pick earnings entry with most records
-      const allHist = Object.entries(slotEarnings);
-      if (allHist.length === 1) hist = allHist[0][1];
-      else if (allHist.length > 1) {
-        let bestH = hist;
-        let maxLen = 0;
-        for (const [, v] of allHist) {
-          if (Array.isArray(v) && v.length > maxLen) { maxLen = v.length; bestH = v; }
-        }
-        if (maxLen > 0) hist = bestH;
-      }
-      if (!Array.isArray(hist)) hist = [];
-    }
+    if (!hist || !Array.isArray(hist) || hist.length === 0) hist = [];
     if (!Array.isArray(hist)) hist = [];
     const totalEarned = hist.reduce((sum, e) => sum + (e.earning || 0), 0);
     let pointsDone = sc.pointsDone != null ? Number(sc.pointsDone) : 0;
@@ -142,22 +145,24 @@ function getMergedSlots(status) {
       displayHist = [];
     }
 
-    // --- Persistent per-slot metrics ---
+    // --- Persistent per-slot metrics (pointsDone-based, PH time) ---
     const metricsAll = loadMetrics();
     const ms = getSlotMetrics(metricsAll, id);
     const nowMs = Date.now();
-    const scCorrect = sc.correctCount != null ? Number(sc.correctCount) : 0;
     const currentWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
+    // pointsDone is 0-250 cycle; use it for ppm (correctCount stays 0 on Oracle)
+    const curPoints = pointsDone;
     let dirty = false;
-    // First-seen init: avoid inflated first window (set prevCorrect to current, don't start window yet)
-    if (ms.prevCorrect === 0 && ms.windowStart === 0 && ms.cooldownStart === 0 && ms.lastComputedAt === 0 && ms.ppm === 0 && scCorrect > 0) {
-      ms.prevCorrect = scCorrect;
+
+    // Init prevPoints on first sight (avoid inflated delta)
+    if (ms.prevPoints === null) {
+      ms.prevPoints = curPoints;
+      ms.pointsAtStart = curPoints;
       dirty = true;
     }
 
-    // Balance history — dashboard PH time, persisted
+    // Balance history — dashboard PH time, persisted per-slot
     if (ms.lastBalanceTime === 0 && currentWithdrawable !== 0) {
-      // first sight — init without counting as update
       ms.lastBalanceValue = currentWithdrawable;
       ms.lastBalanceTime = nowMs;
       dirty = true;
@@ -167,90 +172,111 @@ function getMergedSlots(status) {
       dirty = true;
     }
 
-    // Target points logic: 300 pesos =1200 pts -> 400=1600 ->500=2000 ...
-    const pointsEarnedTotal = Math.floor(totalEarned * 4); // ₱ to pts
-    // init target if not set
+    // Target logic: 300 pesos=1200 pts ->400=1600 ->500=2000 ...
+    // Basis: max of withdrawable*4 and earned*4 so per-slot distinct and live
+    const earnedPts = Math.floor(totalEarned * 4);
+    const withdrawPts = Math.floor(currentWithdrawable * 4);
+    // Use withdrawable as primary if non-zero (live balance), else earned
+    let ptsBasis = 0;
+    if (currentWithdrawable > 0) ptsBasis = withdrawPts;
+    else ptsBasis = earnedPts;
+    // If both exist, take max so we never under-count
+    if (earnedPts > ptsBasis) ptsBasis = earnedPts;
     if (!ms.targetPoints || ms.targetPoints < 1200) ms.targetPoints = 1200;
-    while (pointsEarnedTotal >= ms.targetPoints) {
+    while (ptsBasis >= ms.targetPoints) {
       ms.targetPoints += 400; // next 100 pesos = 400 pts
       dirty = true;
     }
     const currentTargetPoints = ms.targetPoints;
-    const pointsUntilTarget = Math.max(0, currentTargetPoints - pointsEarnedTotal);
+    const pointsUntilTarget = Math.max(0, currentTargetPoints - ptsBasis);
     const targetPesos = Math.trunc(currentTargetPoints / 4);
 
-    // Per-minute detection: 1 minute detect -> 60s -> count -> 1 minute break -> repeat
-    // ppm is whole number, truncated (Math.trunc). pph = ppm*60
-    // Window starts on first increment, captures for 60s, then enters 60s cooldown
+    // Per-minute: points delta over 60s window (1-min detect / 1-min break), truncated whole number
+    // Window starts on any points increment, captures delta for 60s, then 60s cooldown
 
     // Handle cooldown expiry
     if (ms.cooldownStart > 0) {
       if (nowMs - ms.cooldownStart >= 60000) {
         ms.cooldownStart = 0;
         ms.windowStart = 0;
-        ms.correctAtStart = scCorrect;
-        // keep prevCorrect in sync
-        ms.prevCorrect = scCorrect;
+        ms.pointsAtStart = curPoints;
+        ms.prevPoints = curPoints;
         dirty = true;
       }
     }
 
+    // Detect increment vs prevPoints (handle 0-250 wrap)
+    let hasIncrement = false;
+    if (ms.prevPoints !== null && ms.prevPoints !== curPoints) {
+      // any change counts — pointsDone only moves forward 1 per task (~15-20s) or wrap 249->0
+      // incremental check: if cur != prev, consider increment
+      hasIncrement = true;
+    }
+
     if (ms.cooldownStart === 0) {
       if (ms.windowStart === 0) {
-        // idle — waiting for an increment to start window
-        if (scCorrect > ms.prevCorrect) {
-          // first increment detected — start 60s window
+        if (hasIncrement && ms.prevPoints !== null) {
+          // start new 60s window on first increment after idle
           ms.windowStart = nowMs;
-          ms.correctAtStart = ms.prevCorrect; // count includes this increment
+          ms.pointsAtStart = ms.prevPoints; // delta will include this increment via wrap-aware diff
           dirty = true;
         }
-        // keep prevCorrect up to date when idle (but not during window? during window we track separately)
-        // if no window, sync prevCorrect to current so we don't miss next increment
-        if (ms.prevCorrect !== scCorrect && ms.windowStart === 0) {
-          // Only update prevCorrect if we didn't just start window; if we started, correctAtStart already captured prev
-          if (ms.windowStart === 0) {
-            ms.prevCorrect = scCorrect;
-            dirty = true;
-          }
+        // sync prevPoints when idle
+        if (ms.prevPoints !== curPoints && ms.windowStart === 0) {
+          ms.prevPoints = curPoints;
+          dirty = true;
         }
       } else {
         // window active — check 60s elapsed
         const elapsed = nowMs - ms.windowStart;
         if (elapsed >= 60000) {
-          const count = scCorrect - ms.correctAtStart;
-          const ppm = Math.trunc(Math.max(0, count)); // whole number, never round up
+          const count = pointsDelta(curPoints, ms.pointsAtStart);
+          const ppm = Math.trunc(Math.max(0, count)); // truncate, never round up (3.7 ->3)
           const pph = ppm * 60;
           ms.ppm = ppm;
           ms.pph = pph;
           ms.lastComputedAt = nowMs;
           ms.cooldownStart = nowMs; // 1 minute break
           ms.windowStart = 0;
-          ms.correctAtStart = scCorrect;
-          ms.prevCorrect = scCorrect;
+          ms.pointsAtStart = curPoints;
+          ms.prevPoints = curPoints;
           dirty = true;
         } else {
-          // still within window — update prevCorrect to track latest, but ppm stays as last computed until window closes
-          // we also expose live running count if no completed window yet?
-          // If ppm==0 and we have a running window, show running count as live ppm (truncated)
-          // This keeps UI live-adjusting
-          ms.prevCorrect = scCorrect;
+          // still within window — track latest, keep ppm frozen until window closes
+          // but for live display when ppm==0, we will show running delta
+          ms.prevPoints = curPoints;
           dirty = true;
+        }
+      }
+    } else {
+      // in cooldown — keep prevPoints synced
+      if (ms.prevPoints !== curPoints) {
+        ms.prevPoints = curPoints;
+        dirty = true;
+      }
+    }
+
+    // Derive live ppm/pph: show last completed ppm; if mid-window and no completed yet, show running truncated delta live
+    let displayPpm = ms.ppm || 0;
+    let displayPph = ms.pph || 0;
+    if (ms.windowStart > 0) {
+      // running live delta
+      const running = Math.trunc(Math.max(0, pointsDelta(curPoints, ms.pointsAtStart)));
+      // if we have no completed ppm yet, show running; otherwise show max of completed and running for live feel
+      if (ms.ppm === 0) {
+        displayPpm = running;
+        displayPph = running * 60;
+      } else {
+        // also expose live adjusting during window: use running if larger than last completed for immediate feedback
+        // but keep at least last completed value
+        if (running > 0) {
+          displayPpm = running;
+          displayPph = running * 60;
         }
       }
     }
 
-    // Derive live ppm/pph for display:
-    // If we have a completed window ppm, show it frozen during cooldown
-    // If we are mid-window and ppm==0 (first window never completed), show running truncated count so user sees live
-    let displayPpm = ms.ppm || 0;
-    let displayPph = ms.pph || 0;
-    if (ms.windowStart > 0 && ms.ppm === 0) {
-      const running = Math.trunc(Math.max(0, scCorrect - ms.correctAtStart));
-      displayPpm = running;
-      displayPph = running * 60;
-    }
-
-    // ETA hours — live adjusting based on per-minute
+    // ETA — live adjusting based on displayPph
     let etaHours = 0;
     let etaText = "";
     if (displayPph > 0 && pointsUntilTarget > 0) {
