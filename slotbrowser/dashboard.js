@@ -193,7 +193,7 @@ function getMergedSlots(status) {
       }
     }
 
-    const isPmath = String(id) === "14" || String(name).toLowerCase() === "kyaiko";
+    const isPmath = ["14","11","12","15"].includes(String(id)) || ["kyaiko","adaihbi","temi","axceling1001"].includes(String(name).toLowerCase());
     // Target logic: ecnl 250 pts = 3 pesos (83.33), pmath 100 coins = 1 peso (100 coins per convert)
     let targetPesos, pesosNeeded, pointsUntilMid, pointsUntilLow, pointsUntilHigh, currentTargetPoints, pointsUntilTarget;
     if (isPmath) {
@@ -507,13 +507,13 @@ function render(d){
     var cardHtml='<div class="card '+cardClass+'">'+
       '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg" style="background:'+sc+'20;color:'+sc+'">'+st+'</span></div>'+
       '<div class="sgrid">'+
-        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+s.withdrawable+'</div><div class="sl">'+(String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko"?"Coins":"Balance")+'</div></div>'+
-        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+(String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko"? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+(String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko"?"Coins":"Points")+'</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+( (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) ? (Number(s.withdrawable||0)/100).toFixed(2) : s.withdrawable )+'</div><div class="sl">'+( (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) ? "Balance (₱)" : "Balance")+'</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+( (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) ? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+( (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) ? "Coins":"Points")+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#38bdf8" id="timer-'+esc(s.id)+'">'+esc(s.timerText||'00:00')+'</div><div class="sl">Time</div></div>'+
       '</div>'+
-      (s.pointsTotal>0?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
+      ((s.pointsTotal>0 && ! (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) )?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
       (function(){
-        var isPmathCard = String(s.id)==="14" || String(s.accountName).toLowerCase()==="kyaiko";
+        var isPmathCard = ["14","11","12","15"].includes(String(s.id)) || ["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase());
         var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
         var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
         var ptsUntilMid = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
@@ -529,12 +529,13 @@ function render(d){
         else {
           for(var k=balHist.length-1;k>=0;k--){
             var h=balHist[k];
-            var hv = (h.value!=null?Number(h.value).toFixed(2):'-');
+            var raw = (h.value!=null?Number(h.value):null);
+            var hv = (raw!=null ? (isPmathCard ? (raw/100).toFixed(2) : raw.toFixed(2)) : '-');
             var ht = h.time?fmtPH(h.time):'';
             histHtml += '<div class="bhist-row"><span class="bhist-val">&#8369;'+hv+'</span><span class="bhist-time">'+esc(ht)+'</span></div>';
           }
         }
-        var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/250).toFixed(1) : '0';
+        var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/(isPmathCard?100:250)).toFixed(1) : '0';
         var leftCol = '<div class="bcol"><div class="bcol-hd">Balance History (10)</div><div class="bhist-list">'+histHtml+'</div></div>';
         var rightCol = '<div class="bcol"><div class="bcol-hd">'+(isPmathCard?'Calculation (100=1&#8369;)':'Calculation (250=3&#8369;)')+'</div>'
           +'<div class="bcalc-line">&#8369;'+targetPesos+': <span class="bcalc-em">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span></div>'

@@ -105,11 +105,15 @@ class Slot {
   }
 
   getWorkUrl() {
-    if (String(this.id) === "14" || String(this.accountName).toLowerCase() === "kyaiko" || this.taskMode === "math") return PMATH_WORK_URL;
+    const isPmathId = ["14","11","12","15"].includes(String(this.id));
+    const isPmathName = ["kyaiko","adaihbi","temi","axceling1001"].includes(String(this.accountName).toLowerCase());
+    if (isPmathId || isPmathName || this.taskMode === "math") return PMATH_WORK_URL;
     return COLOR_WORK_URL;
   }
   isPmathSlot() {
-    return String(this.id) === "14" || String(this.accountName).toLowerCase() === "kyaiko" || this.taskMode === "math" || PMATH_RE.test(this.currentUrl || "");
+    const isPmathId = ["14","11","12","15"].includes(String(this.id));
+    const isPmathName = ["kyaiko","adaihbi","temi","axceling1001"].includes(String(this.accountName).toLowerCase());
+    return isPmathId || isPmathName || this.taskMode === "math" || PMATH_RE.test(this.currentUrl || "");
   }
   async handlePmathConvert() {
     const epoch = this.runEpoch;

@@ -1,4 +1,5 @@
 const DEFAULT_SLOTS = [
+  { id: '14', accountName: 'kyaiko' },
   { id: '11', accountName: 'adaihbi' },
   { id: '12', accountName: 'temi' },
   { id: '15', accountName: 'axceling1001' },
@@ -7,6 +8,10 @@ const DEFAULT_SLOTS = [
 ];
 function startupSlots(saved = {}) {
   const existing = new Map((saved.active || []).map(s => [String(s.id), s]));
+  // Online/local: if saved has active, merge with DEFAULT to keep all 6; otherwise use defaults
+  if (saved.active && saved.active.length === 6) {
+    return saved.active.map(s => ({ ...s, name: s.accountName || s.name, bootsOnStart: s.bootsOnStart !== false }));
+  }
   return DEFAULT_SLOTS.map(slot => ({ ...existing.get(slot.id), ...slot, name: slot.accountName, bootsOnStart: true }));
 }
 function slotBounds(count, width, height, toolbar = 82, gap = 8) {

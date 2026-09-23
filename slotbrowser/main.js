@@ -109,15 +109,27 @@ function readCreds() {
 let appLogStream = null;
 function appendLog(label, msg) {
   const line = `[${new Date().toISOString()}] ${label} ${msg}`;
-  console.warn(line);
+  try { console.warn(line); } catch (e) { if (e && e.code !== 'EPIPE' && e.errno !== 'EPIPE') {} }
   try {
     if (!appLogStream) {
       appLogStream = fs.createWriteStream(path.join(STATE_DIR, "app.log"), { flags: "a" });
       appLogStream.on('error', () => { appLogStream = null; });
     }
-    appLogStream.write(line + "\n");
-  } catch (e) {}
+    if (appLogStream && !appLogStream.destroyed) {
+      const ok = appLogStream.write(line + "\n");
+      if (!ok) { /* backpressure, ignore */ }
+    }
+  } catch (e) { if (e && e.code !== 'EPIPE') {} }
 }
+// Prevent EPIPE crash when parent pipe closed (hidden launch via pythonw)
+try {
+  process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') return; });
+  process.stderr.on('error', (e) => { if (e && e.code === 'EPIPE') return; });
+} catch (e) {}
+process.on('uncaughtException', (err) => {
+  if (err && err.code === 'EPIPE') return;
+  console.error('[uncaught]', err);
+});
 
 function statePayload() {
   return {

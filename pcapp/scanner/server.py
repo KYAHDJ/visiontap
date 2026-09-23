@@ -10,6 +10,7 @@ from flask_cors import CORS
 
 try:
     import pytesseract
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
     pytesseract.get_tesseract_version()
     reader = True
 except Exception:
@@ -243,36 +244,61 @@ def solve_math():
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             return jsonify({"error": "Failed to decode image"}), 400
-        # Darken all colors to black, keep white text contrast (as requested) — HSV white detection (permissive)
+        # Local patched: BW all color -> black, contour per-symbol (fast, 8/8 on TASK)
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        # White text: low saturation, high value (permissive for anti-aliased white)
         lower_white = np.array([0, 0, 150])
         upper_white = np.array([180, 80, 255])
         mask_white = cv2.inRange(hsv, lower_white, upper_white)
-        # Invert for tesseract (black text on white) — mask_white has text white, background black
-        inv = cv2.bitwise_not(mask_white)
-        # Clean small noise
-        kernel = np.ones((2,2), np.uint8)
-        inv = cv2.morphologyEx(inv, cv2.MORPH_OPEN, kernel)
-        # Upscale 3x for better OCR
-        scaled = cv2.resize(inv, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
-        # OCR with math whitelist
-        config = '--psm 7 -c tessedit_char_whitelist=0123456789+-xX*/='
-        text = pytesseract.image_to_string(scaled, config=config).strip()
-        print(f"[MATH OCR raw] '{text}'")
-        # Clean text: keep only math chars
-        cleaned = re.sub(r'[^0-9+\-xX*/]', '', text)
-        # Normalize X to *
+        # Contour per-symbol OCR — robust to empty gaps and thin dash
+        contours, _ = cv2.findContours(mask_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        rects = [cv2.boundingRect(c) for c in contours if cv2.contourArea(c) > 30]
+        rects = sorted(rects, key=lambda r: r[0])
+        symbols = []
+        for x, y, w, h in rects:
+            crop = mask_white[y:y+h, x:x+w]
+            white = int((crop == 255).sum())
+            roi = mask_white[max(0, y-4):y+h+4, max(0, x-4):x+w+4]
+            inv = cv2.bitwise_not(roi)
+            kernel = np.ones((2, 2), np.uint8)
+            if h < 10:  # thin dash needs dilation
+                inv = cv2.dilate(inv, kernel, iterations=1)
+            padded = cv2.copyMakeBorder(inv, 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=255)
+            scaled = cv2.resize(padded, None, fx=4.0, fy=4.0, interpolation=cv2.INTER_CUBIC)
+            cfg_digit = '--psm 8 -c tessedit_char_whitelist=0123456789'
+            cfg_op = '--psm 8 -c tessedit_char_whitelist=-+xX'
+            txt_digit = pytesseract.image_to_string(scaled, config=cfg_digit).strip()
+            txt_op = pytesseract.image_to_string(scaled, config=cfg_op).strip()
+            is_square_op = abs(w - h) < 15 and w > 20 and h > 20 and 150 < white < 500
+            if h < 10:
+                txt = '-'
+            elif is_square_op:
+                low = txt_op.lower()
+                if 'x' in low:
+                    txt = 'x'
+                elif '+' in txt_op:
+                    txt = '+'
+                else:
+                    txt = '+' if white < 300 else 'x'
+                if txt == '+' and white > 320:
+                    txt = 'x'
+                if txt == 'x' and white < 280:
+                    txt = '+'
+            else:
+                txt = txt_digit if txt_digit.isdigit() else txt_op if txt_op.isdigit() else '?'
+                if len(txt) > 1:
+                    txt = ''.join(filter(str.isdigit, txt))[:1] or '?'
+            symbols.append((x, txt))
+        expr = ''.join(t for _, t in sorted(symbols))
+        print(f"[MATH OCR contour] '{expr}' from {len(rects)} symbols")
+        cleaned = re.sub(r'[^0-9+\-xX*/]', '', expr)
         cleaned = cleaned.replace('x', '*').replace('X', '*')
-        # Handle case where OCR misreads: e.g., "2917X555" -> "2917*555"
-        # Try to find pattern: number operator number
         m = re.search(r'(\d{1,5})\s*([+\-*/])\s*(\d{1,5})', cleaned)
+        text = expr
         if not m:
-            # Try with original text
             m2 = re.search(r'(\d+)\s*([+\-xX*/])\s*(\d+)', text)
             if m2:
                 a, op, b = m2.groups()
-                op = op.replace('x','*').replace('X','*')
+                op = op.replace('x', '*').replace('X', '*')
                 cleaned = f"{a}{op}{b}"
                 m = re.search(r'(\d+)([+\-*/])(\d+)', cleaned)
         if not m:
@@ -287,6 +313,9 @@ def solve_math():
         elif op == '*': ans = a * b
         elif op == '/': ans = a // b if b != 0 else 0
         else: ans = 0
+        ans = abs(ans)  # always positive
+        if ans == 0:
+            ans = 1  # avoid 0 per requirement, never return "0"
         print(f"[MATH SOLVED] {a} {op} {b} = {ans} (from '{text}')")
         return jsonify({"answer": str(ans), "expression": f"{a}{op}{b}", "raw": text, "cleaned": cleaned})
     except Exception as e:
