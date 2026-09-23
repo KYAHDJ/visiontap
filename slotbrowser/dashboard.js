@@ -197,11 +197,11 @@ function getMergedSlots(status) {
     // Target logic: ecnl 250 pts = 3 pesos (83.33), pmath 100 coins = 1 peso → 100 pesos = 10000 coins, 300 pesos = 30000 coins
     let targetPesos, pesosNeeded, pointsUntilMid, pointsUntilLow, pointsUntilHigh, currentTargetPoints, pointsUntilTarget;
     if (isPmath) {
-      // pmath: coins instantly from web (withdrawable = coins), 100 coins =1 peso
+      // pmath: coins instantly from web (withdrawable = coins), 100 coins =1 peso → 300₱ =30,000 coins
       // For instant center display, use currentWithdrawable as coins (same as pointsDone for pmath)
       if (currentWithdrawable > 0) pointsDone = currentWithdrawable;
-      let tp = ms.targetPesos || 100;
-      if (!tp || tp < 100) tp = 100;
+      let tp = ms.targetPesos || 300;
+      if (!tp || tp < 300) tp = 300;
       // target in pesos → coins
       let targetCoins = tp * 100;
       while (currentWithdrawable >= targetCoins) { tp += 100; targetCoins = tp*100; dirty=true; }
