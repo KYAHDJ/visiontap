@@ -194,21 +194,27 @@ function getMergedSlots(status) {
     }
 
     const isPmath = String(id) === "14" || String(name).toLowerCase() === "kyaiko";
-    // Target logic: ecnl 250 pts = 3 pesos (83.33), pmath 100 coins = 1 peso (100 coins per convert)
+    // Target logic: ecnl 250 pts = 3 pesos (83.33), pmath 100 coins = 1 peso → 100 pesos = 10000 coins, 300 pesos = 30000 coins
     let targetPesos, pesosNeeded, pointsUntilMid, pointsUntilLow, pointsUntilHigh, currentTargetPoints, pointsUntilTarget;
     if (isPmath) {
-      // pmath: target 100 coins
-      targetPesos = 100;
-      // For pmath, withdrawable is coins, target is 100 coins
-      pesosNeeded = Math.max(0, 100 - currentWithdrawable);
-      // Points for pmath is coins
-      pointsUntilMid = Math.max(0, Math.trunc(pesosNeeded));
+      // pmath: coins instantly from web (withdrawable = coins), 100 coins =1 peso
+      // For instant center display, use currentWithdrawable as coins (same as pointsDone for pmath)
+      if (currentWithdrawable > 0) pointsDone = currentWithdrawable;
+      let tp = ms.targetPesos || 100;
+      if (!tp || tp < 100) tp = 100;
+      // target in pesos → coins
+      let targetCoins = tp * 100;
+      while (currentWithdrawable >= targetCoins) { tp += 100; targetCoins = tp*100; dirty=true; }
+      ms.targetPesos = tp;
+      if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
+      targetPesos = tp;
+      const targetCoinsFinal = tp * 100;
+      pesosNeeded = Math.max(0, (targetCoinsFinal - currentWithdrawable)/100);
+      pointsUntilMid = Math.max(0, Math.trunc(targetCoinsFinal - currentWithdrawable));
       pointsUntilLow = pointsUntilMid;
       pointsUntilHigh = pointsUntilMid;
-      currentTargetPoints = 100;
+      currentTargetPoints = targetCoinsFinal;
       pointsUntilTarget = pointsUntilMid;
-      ms.targetPesos = 100;
-      if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
     } else {
       const POINTS_PER_CYCLE = 250;
       const PESOS_PER_CYCLE = 3;

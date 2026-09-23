@@ -84,6 +84,21 @@ function ensureStateDir() {
 function readSlotsFile() {
   try { return JSON.parse(fs.readFileSync(SLOTS_FILE, "utf8")); } catch (e) { return {}; }
 }
+function ensureKyaikoMathIntegrity() {
+  try {
+    const data = readSlotsFile();
+    let fixed = false;
+    for (const s of (data.active||[])) {
+      if (String(s.id)==="14" || String(s.accountName||"").toLowerCase()==="kyaiko") {
+        if (s.taskMode !== "math") { s.taskMode="math"; fixed=true; }
+      }
+    }
+    if (fixed) {
+      try { fs.writeFileSync(SLOTS_FILE, JSON.stringify(data, null, 2)); } catch(e){}
+      appendLog("[integrity]", "Auto-fixed kyaiko taskMode=math");
+    }
+  } catch(e){}
+}
 
 function writeSlotsFile() {
   const active = [];
@@ -664,6 +679,7 @@ const BUILD_STAMP = "2026-09-11-colors-only";
 app.whenReady().then(() => {
   appendLog("[boot]", `BUILD ${BUILD_STAMP}`);
   ensureStateDir();
+  ensureKyaikoMathIntegrity();
   ensureScripts(INJECT_PATH);
   initIpc();
   createTray();
@@ -674,7 +690,7 @@ app.whenReady().then(() => {
   const saved = readSlotsFile();
   for (const s of startupSlots(saved)) {
     createSlot(s.id, s.accountName, !!s.stopRequested, {
-      bootsOnStart: true, accountName: s.accountName, paused: !!s.paused
+      bootsOnStart: true, accountName: s.accountName, taskMode: s.taskMode || (String(s.id)==="14"||String(s.accountName||"").toLowerCase()==="kyaiko" ? "math" : "color"), paused: !!s.paused
     });
   }
   slotSeq = Math.max(slotSeq, 17);

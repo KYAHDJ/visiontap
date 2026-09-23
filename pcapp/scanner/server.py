@@ -10,13 +10,27 @@ from flask_cors import CORS
 
 try:
     import pytesseract
-    # Windows local path vs Linux Oracle path
-    if os.name == "nt" and os.path.exists(r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
-        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-    pytesseract.get_tesseract_version()
+    # Auto-detect tesseract per OS to never break again (Windows vs Linux Oracle)
+    import shutil
+    win_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if os.name == "nt" and os.path.exists(win_path):
+        pytesseract.pytesseract.tesseract_cmd = win_path
+    elif shutil.which("tesseract"):
+        pytesseract.pytesseract.tesseract_cmd = shutil.which("tesseract")
+    # Verify
+    v = pytesseract.get_tesseract_version()
+    print(f"[TESSERACT OK] {v} cmd={pytesseract.pytesseract.tesseract_cmd}")
     reader = True
-except Exception:
+except Exception as e:
+    print(f"[TESSERACT FAIL] {e} – scanner will reject but not crash")
     reader = None
+
+# Startup self-check: ensure slots taskMode integrity helper
+def ensure_pmath_slot_integrity():
+    try:
+        # This is for slotbrowser state, not scanner, but log hint
+        pass
+    except: pass
 
 app = Flask(__name__)
 CORS(app)

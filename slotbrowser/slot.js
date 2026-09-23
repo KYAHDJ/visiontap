@@ -1200,7 +1200,7 @@ class Slot {
           this.log(`POINTS-SYNC points=${pd != null ? pd + '/' + (pt || 250) : '?'} bal=${wd || '?'} -> scanner`);
         }
       } catch (e) {}
-    }, 3000);
+    }, this.isPmathSlot() ? 1500 : 3000);
   }
 
   stopPointsSync() {
