@@ -112,51 +112,9 @@ class Slot {
     return String(this.id) === "14" || String(this.accountName).toLowerCase() === "kyaiko" || this.taskMode === "math" || PMATH_RE.test(this.currentUrl || "");
   }
   async handlePmathConvert() {
-    const epoch = this.runEpoch;
-    const active = () => epoch === this.runEpoch && this.canAutomate();
-    if (!active()) return false;
-    try {
-      // Check if on convert page
-      const isConvert = (this.currentUrl || "").includes("/convert-coins");
-      if (!isConvert) {
-        // Navigate to convert page
-        this.log("PMATH: navigating to convert page");
-        await this.wc.loadURL(PMATH_CONVERT_URL).catch(()=>{});
-        await new Promise(r=>setTimeout(r,3000));
-        if (!active()) return false;
-      }
-      if (!active()) return false;
-      // Try to convert via inject
-      const res = await this.api("pmathDoConvert", { amount: 100 });
-      if (res && res.status === "converted") {
-        this.log(`PMATH: converted ${res.converted || 100} coins`);
-        // Report to scanner? Use coins as withdrawable
-        try {
-          const meta = await this.api("pmathGetMeta");
-          if (meta && meta.coins != null) {
-            this.lastPoints.done = String(meta.coins);
-            this.withdrawableCache = String(meta.coins);
-          }
-        } catch(e){}
-        await new Promise(r=>setTimeout(r,2000));
-        if (!active()) return false;
-        await this.wc.loadURL(PMATH_WORK_URL).catch(()=>{});
-        this.touchProgress();
-        return true;
-      }
-      // Fallback: try Convert All button directly
-      const fallback = await this.api("pmathDoConvertAll");
-      if (fallback && fallback.status === "clicked") {
-        await new Promise(r=>setTimeout(r,2000));
-        if (!active()) return false;
-        await this.wc.loadURL(PMATH_WORK_URL).catch(()=>{});
-        return true;
-      }
-      return false;
-    } catch(e) {
-      this.log(`PMATH convert error: ${e.message}`);
-      return false;
-    }
+    // DISABLED: user requested math solving only, no auto-convert
+    this.log("PMATH convert disabled - solving only");
+    return false;
   }
 
   attach() {
@@ -727,13 +685,13 @@ class Slot {
         return;
       }
       this.log(`PAGE DEBUG id=${this.id} url=${page.url || this.currentUrl} isECNL=${page.isECNL} isAuth=${page.isAuth} isWork=${page.isWork} hasBox=${!!page.hasBox} hasBtn=${!!page.hasBtn} ready=${page.ready}`);
-      // PMATH convert page handling
+      // PMATH convert disabled - just redirect back to work, no auto-convert
       if (this.isPmathSlot() && page.url && page.url.includes("/convert-coins")) {
-        this.log("PMATH on convert page, handling convert");
-        const conv = await this.handlePmathConvert();
+        this.log("PMATH on convert page, redirecting to work (convert disabled)");
+        await this.wc.loadURL(PMATH_WORK_URL).catch(()=>{});
         if (!active()) return;
         this.isProcessing = false;
-        this.scheduleNext(conv ? 3000 : 2000);
+        this.scheduleNext(2000);
         return;
       }
       if (!page.isWork) {
@@ -746,30 +704,8 @@ class Slot {
         return;
       }
 
-      // PMATH: check convert at 100 coins before solving
-      if (this.isPmathSlot()) {
-        try {
-          // If on convert page, handle it
-          if ((this.currentUrl || "").includes("/convert-coins")) {
-            const conv = await this.handlePmathConvert();
-            if (!active()) return;
-        this.isProcessing = false;
-            this.scheduleNext(conv ? 3000 : 2000);
-            return;
-          }
-          // Check coins balance via pmath meta
-          const pmeta = await this.api("pmathGetMeta");
-          if (!active()) return;
-          if (pmeta && pmeta.coins != null && Number(pmeta.coins) >= 100) {
-            this.log(`PMATH: coins ${pmeta.coins} >=100, converting`);
-            const conv = await this.handlePmathConvert();
-            if (!active()) return;
-        this.isProcessing = false;
-            this.scheduleNext(3000);
-            return;
-          }
-        } catch(e) {}
-      }
+      // PMATH: convert disabled - solving only, no auto-convert at 100
+      // (left here for future manual convert button if needed)
 
       this.status(`[${this.taskCount + 1}] Task ready. Checking scanner...`);
 
