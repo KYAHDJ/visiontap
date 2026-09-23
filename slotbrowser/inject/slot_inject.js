@@ -921,11 +921,23 @@
     const out = { coins: null, convertible: null };
     try {
       const txt = (document.body ? document.body.innerText : "") || "";
-      // Coins Balance
-      const m1 = txt.match(/Coins Balance\s*([0-9,]+)/i);
-      if (m1) out.coins = m1[1].replace(/,/g,'');
-      else {
-        const m = txt.match(/Convertible now:\s*([0-9,]+)\s*coins/i);
+      // Primary: Coins Balance
+      let m = txt.match(/Coins Balance\s*([0-9,]+)/i);
+      if (m) out.coins = m[1].replace(/,/g,'');
+      if (!out.coins) {
+        m = txt.match(/Balance\s*[:\-]?\s*([0-9,]+)\s*coins?/i);
+        if (m) out.coins = m[1].replace(/,/g,'');
+      }
+      if (!out.coins) {
+        m = txt.match(/([0-9,]+)\s*coins/i);
+        if (m) {
+          // Ensure not convertible, but take first plausible (0-99999)
+          const v = m[1].replace(/,/g,'');
+          if (Number(v) < 100000) out.coins = v;
+        }
+      }
+      if (!out.coins) {
+        m = txt.match(/Coins\D*([0-9,]+)/i);
         if (m) out.coins = m[1].replace(/,/g,'');
       }
       const m2 = txt.match(/Convertible now:\s*([0-9,]+)/i);
@@ -937,8 +949,16 @@
           const t = (el.innerText||'').trim();
           if (/^\d+$/.test(t) && t.length<5) {
             const parent = el.parentElement ? el.parentElement.innerText : "";
-            if (/Coins Balance/i.test(parent)) { out.coins = t; break; }
+            if (/Coins/i.test(parent)) { out.coins = t; break; }
           }
+        }
+      }
+      // Last resort: any standalone number near top bar with coin icon
+      if (!out.coins) {
+        const top = document.querySelector('[class*="coin"],[class*="balance"],header');
+        if (top) {
+          const mm = (top.innerText||'').match(/([0-9,]+)/);
+          if (mm) out.coins = mm[1].replace(/,/g,'');
         }
       }
     } catch(e){}
