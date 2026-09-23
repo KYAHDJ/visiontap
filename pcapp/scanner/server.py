@@ -10,7 +10,9 @@ from flask_cors import CORS
 
 try:
     import pytesseract
-    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    # Windows local path vs Linux Oracle path
+    if os.name == "nt" and os.path.exists(r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
+        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
     pytesseract.get_tesseract_version()
     reader = True
 except Exception:
