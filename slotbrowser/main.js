@@ -88,10 +88,10 @@ function readSlotsFile() {
 function writeSlotsFile() {
   const active = [];
   for (const s of slots.values()) {
-    active.push({ id: s.id, name: s.name, accountName: s.accountName || "", stopRequested: s.loopStopRequested, paused: s.dashboardPaused || s.paused, bootsOnStart: s.bootsOnStart !== false });
+    active.push({ id: s.id, name: s.name, accountName: s.accountName || "", taskMode: s.taskMode || "color", stopRequested: s.loopStopRequested, paused: s.dashboardPaused || s.paused, bootsOnStart: s.bootsOnStart !== false });
   }
   for (const g of ghosts.values()) {
-    active.push({ id: g.id, name: g.name, accountName: g.accountName || "", stopRequested: true, bootsOnStart: false });
+    active.push({ id: g.id, name: g.name, accountName: g.accountName || "", taskMode: g.taskMode || "color", stopRequested: true, bootsOnStart: false });
   }
   const data = { pauseOnHidden, active };
   try { fs.writeFileSync(SLOTS_FILE, JSON.stringify(data, null, 2)); } catch (e) {}
@@ -216,6 +216,7 @@ function createSlot(id, name, stopRequested, opts) {
     }
   });
 
+  const isPmathOpt = opts.taskMode === "math" || String(id) === "14" || String(opts.accountName||"").toLowerCase() === "kyaiko";
   // Block popups and non-solving-colors/math navigation
   view.webContents.setWindowOpenHandler(({ url }) => {
     appendLog(`[${name}]`, `POPUP-DENIED: ${url}`);
@@ -223,7 +224,7 @@ function createSlot(id, name, stopRequested, opts) {
       view.webContents.loadURL(url).catch(() => {});
     } else if (/ecnlmediamarket\.com|pmath100\.com/i.test(url)) {
       appendLog(`[${name}]`, `REDIRECT non-work -> work page: ${url}`);
-      const isPmath = String(id) === "14" || /pmath100\.com/i.test(url);
+      const isPmath = isPmathOpt || /pmath100\.com/i.test(url);
       view.webContents.loadURL(isPmath ? PMATH_WORK_URL : COLOR_WORK_URL).catch(() => {});
     }
     return { action: "deny" };
@@ -234,7 +235,7 @@ function createSlot(id, name, stopRequested, opts) {
     if (url && (/ecnlmediamarket\.com|pmath100\.com/i.test(url)) && !WORK_RE.test(url) && !/(login|signin|auth|convert)/i.test(url)) {
       _e.preventDefault();
       appendLog(`[${name}]`, `NAV-BLOCKED: ${url}`);
-      const isPmath = String(id) === "14" || /pmath100\.com/i.test(url);
+      const isPmath = isPmathOpt || /pmath100\.com/i.test(url);
       view.webContents.loadURL(isPmath ? PMATH_WORK_URL : COLOR_WORK_URL).catch(() => {});
     }
   });
@@ -243,6 +244,7 @@ function createSlot(id, name, stopRequested, opts) {
   slot.bootsOnStart = opts.bootsOnStart !== false;
   slot.accountName = opts.accountName || "";
   if (slot.accountName) slot.name = slot.accountName;
+  slot.taskMode = opts.taskMode || (String(id) === "14" || String(opts.accountName||"").toLowerCase() === "kyaiko" ? "math" : "color");
   // Don't force paused at boot - let window show handler manage it
   slot.pausedByWindow = false;
   slot.dashboardPaused = !!opts.paused;
@@ -296,12 +298,12 @@ function removeSlot(id) {
 function bootSlot(id, name) {
   const g = ghosts.get(id);
   if (g) {
-    createSlot(g.id, g.name || name, g.stopRequested || false, { bootsOnStart: true });
+    createSlot(g.id, g.name || name, g.stopRequested || false, { bootsOnStart: true, taskMode: g.taskMode || "color", accountName: g.accountName });
     writeSlotsFile();
     return;
   }
   if (!slots.has(id)) {
-    createSlot(String(id), name || `Slot ${slots.size + ghosts.size + 1}`, false, { bootsOnStart: true });
+    createSlot(String(id), name || `Slot ${slots.size + ghosts.size + 1}`, false, { bootsOnStart: true, taskMode: "color" });
     writeSlotsFile();
   }
 }
@@ -311,7 +313,21 @@ function initIpc() {
   ipcMain.handle("vt-slot-add", () => {
     const id = String(slotSeq++);
     const n = slots.size + 1;
-    createSlot(id, `Slot ${n}`, false);
+    createSlot(id, `Slot ${n}`, false, { taskMode: "color" });
+    writeSlotsFile();
+    return statePayload();
+  });
+  ipcMain.handle("vt-slot-add-ecnl", () => {
+    const id = String(slotSeq++);
+    const n = slots.size + 1;
+    createSlot(id, `Slot ${n}`, false, { taskMode: "color" });
+    writeSlotsFile();
+    return statePayload();
+  });
+  ipcMain.handle("vt-slot-add-pmath", () => {
+    const id = String(slotSeq++);
+    const n = slots.size + 1;
+    createSlot(id, `Slot ${n}`, false, { taskMode: "math" });
     writeSlotsFile();
     return statePayload();
   });

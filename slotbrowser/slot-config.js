@@ -8,11 +8,11 @@ const DEFAULT_SLOTS = [
 ];
 function startupSlots(saved = {}) {
   const existing = new Map((saved.active || []).map(s => [String(s.id), s]));
-  // Online/local: if saved has active, merge with DEFAULT to keep all 6; otherwise use defaults
-  if (saved.active && saved.active.length === 6) {
-    return saved.active.map(s => ({ ...s, name: s.accountName || s.name, bootsOnStart: s.bootsOnStart !== false }));
+  // Single pmath (kyaiko 14) + 5 ecnl =6; preserve saved including taskMode for hard reset
+  if (saved.active && saved.active.length) {
+    return saved.active.map(s => ({ ...s, name: s.accountName || s.name, taskMode: s.taskMode || (String(s.id)==="14"||String(s.accountName||"").toLowerCase()==="kyaiko" ? "math" : "color"), bootsOnStart: s.bootsOnStart !== false }));
   }
-  return DEFAULT_SLOTS.map(slot => ({ ...existing.get(slot.id), ...slot, name: slot.accountName, bootsOnStart: true }));
+  return DEFAULT_SLOTS.map(slot => ({ ...existing.get(slot.id), ...slot, name: slot.accountName, taskMode: slot.taskMode || (String(slot.id)==="14"||String(slot.accountName||"").toLowerCase()==="kyaiko" ? "math" : "color"), bootsOnStart: true }));
 }
 function slotBounds(count, width, height, toolbar = 82, gap = 8) {
   const columns = Math.min(3, count);

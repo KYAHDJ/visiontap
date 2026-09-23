@@ -321,7 +321,12 @@
     });
   } else {
     gearBtn.addEventListener("click", () => vt.openSettings());
-    addBtn.addEventListener("click", () => vt.addSlot());
+    const addEcnlBtn = document.getElementById("addEcnlBtn");
+    const addPmathBtn = document.getElementById("addPmathBtn");
+    if (addEcnlBtn) addEcnlBtn.addEventListener("click", () => vt.addSlotEcnl());
+    if (addPmathBtn) addPmathBtn.addEventListener("click", () => vt.addSlotPmath());
+    // keep legacy addBtn if present
+    if (addBtn) addBtn.addEventListener("click", () => vt.addSlot());
     minBtn.addEventListener("click", () => vt.minimize());
     closeBtn.addEventListener("click", () => vt.close());
     pauseToggle.addEventListener("change", () => vt.pauseAll(pauseToggle.checked));

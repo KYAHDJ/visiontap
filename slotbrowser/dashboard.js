@@ -193,7 +193,7 @@ function getMergedSlots(status) {
       }
     }
 
-    const isPmath = ["14","11","12","15"].includes(String(id)) || ["kyaiko","adaihbi","temi","axceling1001"].includes(String(name).toLowerCase());
+    const isPmath = String(id) === "14" || String(name).toLowerCase() === "kyaiko";
     // Target logic: ecnl 250 pts = 3 pesos (83.33), pmath 100 coins = 1 peso (100 coins per convert)
     let targetPesos, pesosNeeded, pointsUntilMid, pointsUntilLow, pointsUntilHigh, currentTargetPoints, pointsUntilTarget;
     if (isPmath) {
@@ -507,13 +507,13 @@ function render(d){
     var cardHtml='<div class="card '+cardClass+'">'+
       '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg" style="background:'+sc+'20;color:'+sc+'">'+st+'</span></div>'+
       '<div class="sgrid">'+
-        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+( (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) ? (Number(s.withdrawable||0)/100).toFixed(2) : s.withdrawable )+'</div><div class="sl">'+( (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) ? "Balance (₱)" : "Balance")+'</div></div>'+
-        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+( (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) ? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+( (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) ? "Coins":"Points")+'</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (Number(s.withdrawable||0)/100).toFixed(2) : s.withdrawable )+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Balance (₱)" : "Balance")+'</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Coins":"Points")+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#38bdf8" id="timer-'+esc(s.id)+'">'+esc(s.timerText||'00:00')+'</div><div class="sl">Time</div></div>'+
       '</div>'+
-      ((s.pointsTotal>0 && ! (["14","11","12","15"].includes(String(s.id))||["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase())) )?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
+      ((s.pointsTotal>0 && ! (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") )?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
       (function(){
-        var isPmathCard = ["14","11","12","15"].includes(String(s.id)) || ["kyaiko","adaihbi","temi","axceling1001"].includes(String(s.accountName).toLowerCase());
+        var isPmathCard = String(s.id)==="14" || String(s.accountName).toLowerCase()==="kyaiko";
         var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
         var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
         var ptsUntilMid = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);

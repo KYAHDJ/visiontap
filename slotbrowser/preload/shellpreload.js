@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("visiontap", {
   getState: () => ipcRenderer.invoke("vt-state-get"),
   onState: (cb) => ipcRenderer.on("vt-state", (_e, state) => cb(state)),
   addSlot: () => ipcRenderer.invoke("vt-slot-add"),
+  addSlotEcnl: () => ipcRenderer.invoke("vt-slot-add-ecnl"),
+  addSlotPmath: () => ipcRenderer.invoke("vt-slot-add-pmath"),
   removeSlot: (id) => ipcRenderer.invoke("vt-slot-remove", id),
   toggleLoop: (id) => ipcRenderer.invoke("vt-slot-toggle", id),
   reloadSlot: (id) => ipcRenderer.invoke("vt-slot-reload", id),
