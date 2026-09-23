@@ -19,6 +19,6 @@ test('three top slots and two bottom slots fit and do not overlap', () => {
     for(const r of b) {assert.ok(r.x>=0 && r.y>=82);assert.ok(r.x+r.width<=w && r.y+r.height<=h);}
   }
 });
-test('new accounts use exactly 1 second and 4 seconds', () => {
-  for(const [user,id,ms] of [['axceling1001','15',1000],['nnnikkikim','16',4000]]) assert.equal(Slot.prototype.getSubmitDelayMs.call({id,_creds:{user}}),ms);
+test('new accounts use exactly 0.7s and 3s', () => {
+  for(const [user,id,ms] of [['axceling1001','15',700],['nnnikkikim','16',3000]]) assert.equal(Slot.prototype.getSubmitDelayMs.call({id,_creds:{user}}),ms);
 });

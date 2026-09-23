@@ -36,7 +36,7 @@ function harness(value = 'blue', afterWait = () => {}) {
   return { context, state, writes, clicks, waits, submit: options => context.pasteAndSubmit('blue', { expectedImage: 'task-a', readyAt: 1000, ...options }) };
 }
 
-for (const [user, delayMs] of [['adaihbi', 0], ['temi', 500], ['danicajgb', 4000], ['axceling1001', 1000], ['nnnikkikim', 4000]]) {
+for (const [user, delayMs] of [['adaihbi', 0], ['temi', 400], ['danicajgb', 3000], ['axceling1001', 700], ['nnnikkikim', 3000]]) {
   test(`${user}: one ${delayMs}ms delay, no clearing or retyping existing answer`, async () => {
     const slot = { id: 99, _creds: { user }, accountName: '' };
     assert.equal(Slot.prototype.getSubmitDelayMs.call(slot), delayMs);
@@ -52,7 +52,7 @@ for (const [user, delayMs] of [['adaihbi', 0], ['temi', 500], ['danicajgb', 4000
   });
 }
 test('account setting wins over legacy slot ID', () => {
-  assert.equal(Slot.prototype.getSubmitDelayMs.call({ id: 11, _creds: { user: ' TEMI ' } }), 500);
+  assert.equal(Slot.prototype.getSubmitDelayMs.call({ id: 11, _creds: { user: ' TEMI ' } }), 400);
 });
 test('different answer is replaced once without clearing', async () => {
   const h = harness('red');
