@@ -269,9 +269,9 @@ class Slot {
 
   getSubmitDelayMs() {
     const user = String((this._creds && this._creds.user) || this.accountName || "").trim().toLowerCase();
-    const delays = { adaihbi: 0, temi: 500, danicajgb: 4000, axceling1001: 1000, nnnikkikim: 4500, kyaiko: 0 };
+    const delays = { adaihbi: 0, temi: 500, danicajgb: 4000, axceling1001: 1000, nnnikkikim: 4000, kyaiko: 0 };
     if (Object.prototype.hasOwnProperty.call(delays, user)) return delays[user];
-    return ({ "11": 0, "12": 500, "13": 4000, "14": 0, "15": 1000, "16": 4500 })[String(this.id)] ?? 0;
+    return ({ "11": 0, "12": 500, "13": 4000, "14": 0, "15": 1000, "16": 4000 })[String(this.id)] ?? 0;
   }
 
   async inject() {

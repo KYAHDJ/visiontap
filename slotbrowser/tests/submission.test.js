@@ -36,7 +36,7 @@ function harness(value = 'blue', afterWait = () => {}) {
   return { context, state, writes, clicks, waits, submit: options => context.pasteAndSubmit('blue', { expectedImage: 'task-a', readyAt: 1000, ...options }) };
 }
 
-for (const [user, delayMs] of [['adaihbi', 0], ['temi', 500], ['danicajgb', 4000], ['axceling1001', 1000], ['nnnikkikim', 4500]]) {
+for (const [user, delayMs] of [['adaihbi', 0], ['temi', 500], ['danicajgb', 4000], ['axceling1001', 1000], ['nnnikkikim', 4000]]) {
   test(`${user}: one ${delayMs}ms delay, no clearing or retyping existing answer`, async () => {
     const slot = { id: 99, _creds: { user }, accountName: '' };
     assert.equal(Slot.prototype.getSubmitDelayMs.call(slot), delayMs);
