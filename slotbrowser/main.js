@@ -7,6 +7,8 @@ const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
 
+const { drain } = require('./command-queue');
+const { startupSlots, slotBounds } = require('./slot-config');
 const { Slot, ensureScripts } = require("./slot.js");
 
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
@@ -86,7 +88,7 @@ function readSlotsFile() {
 function writeSlotsFile() {
   const active = [];
   for (const s of slots.values()) {
-    active.push({ id: s.id, name: s.name, accountName: s.accountName || "", stopRequested: s.loopStopRequested, bootsOnStart: s.bootsOnStart !== false });
+    active.push({ id: s.id, name: s.name, accountName: s.accountName || "", stopRequested: s.loopStopRequested, paused: s.dashboardPaused || s.paused, bootsOnStart: s.bootsOnStart !== false });
   }
   for (const g of ghosts.values()) {
     active.push({ id: g.id, name: g.name, accountName: g.accountName || "", stopRequested: true, bootsOnStart: false });
@@ -147,29 +149,9 @@ function layout() {
   const list = Array.from(slots.values());
   if (!list.length) return;
   const [w, h] = win.getContentSize();
-  const ch = h - TOOLBAR_H;
-  const cols = list.length;
-  // Auto-size: fit all slots side by side within window width
-  let slotW = Math.floor((w - GUTTER * (cols + 1)) / cols);
-  let slotH = Math.round(slotW / PHONE_ASPECT);
-  // If height would exceed available space, size down
-  if (slotH > ch) {
-    slotH = ch;
-    slotW = Math.round(slotH * PHONE_ASPECT);
-  }
-  // If total width exceeds window, enable scrolling
-  const totalW = cols * (slotW + GUTTER) + GUTTER;
-  const canScroll = totalW > w;
-  if (!canScroll) scrollOffset = 0;
-  const maxOffset = Math.max(0, totalW - w);
-  scrollOffset = Math.max(0, Math.min(scrollOffset, maxOffset));
-  list.forEach((s, i) => {
-    const x = Math.round(i * (slotW + GUTTER) + GUTTER - (canScroll ? scrollOffset : 0));
-    const visible = (x + slotW > 0 && x < w);
-    try {
-      s.view.setBounds({ x, y: TOOLBAR_H, width: slotW, height: slotH });
-      s.view.setVisible(visible);
-    } catch (e) {}
+  const bounds = slotBounds(list.length, w, h, TOOLBAR_H, GUTTER);
+  list.forEach((slot, i) => {
+    try { slot.view.setBounds(bounds[i]); slot.view.setVisible(true); } catch (e) {}
   });
 }
 
@@ -251,8 +233,8 @@ function createSlot(id, name, stopRequested, opts) {
   if (slot.accountName) slot.name = slot.accountName;
   // Don't force paused at boot - let window show handler manage it
   slot.pausedByWindow = false;
-  slot.dashboardPaused = false;
-  slot.setPaused(false);
+  slot.dashboardPaused = !!opts.paused;
+  slot.paused = !!opts.paused;
   slot.attach();
   view.setVisible(true);
   win.contentView.addChildView(view);
@@ -263,7 +245,7 @@ function createSlot(id, name, stopRequested, opts) {
   slot.setZoom(s.zoom ? Number(s.zoom) : defZoom);
   slot.setHud(s.hud !== false);
   slot.setDelay(s.delayMult ? Number(s.delayMult) : defDelay);
-  slot.taskMode = settings.taskMode || "color";
+  slot.taskMode = "color";
 
   if (stopRequested) {
     slot.loopStopRequested = true;
@@ -437,13 +419,13 @@ function initIpc() {
   });
   ipcMain.handle("vt-server-stop", () => {
     if (win) win.webContents.send("vt-server-action", "stop");
-    for (const [id, slot] of slots) { slot.setPaused(true); }
-    stopRequested = true;
+    for (const [id, slot] of slots) { slot.manualPause(); }
+    writeSlotsFile();
   });
   ipcMain.handle("vt-server-start", () => {
     if (win) win.webContents.send("vt-server-action", "start");
-    stopRequested = false;
-    for (const [id, slot] of slots) { slot.setPaused(false); slot.ensureRunning(); }
+    writeSlotsFile();
+    for (const [id, slot] of slots) { slot.manualResume(); }
   });
   ipcMain.handle("vt-win-minimize-to-tray", () => { if (win) win.hide(); });
   ipcMain.handle("vt-set-task-mode", (_e, mode) => {
@@ -585,62 +567,24 @@ function createWindow() {
       }
     } catch (e) { console.error(`[CREDS] Error:`, e.message); }
   }, 2000);
-  // Poll loop_command.json for dashboard pause/resume
-  const LOOP_CMD_FILE = path.join(STATE_DIR, "loop_command.json");
-  let lastLoopMtime = 0;
+  // Separate command files prevent rapid dashboard clicks from overwriting one another.
+  function applyDashboardCommand(cmd) {
+    const targets = cmd.slot === 'all' ? [...slots.values()] : [slots.get(String(cmd.slot))].filter(Boolean);
+    for (const slot of targets) {
+      if (cmd.action === 'pause') slot.manualPause();
+      else if (cmd.action === 'resume') slot.manualResume();
+      else if (cmd.action === 'restart' || cmd.action === 'refresh') slot.hardRestart();
+      else if (cmd.action === 'remove') removeSlot(String(slot.id));
+    }
+    writeSlotsFile();
+    broadcastState();
+    appendLog('[CMD]', cmd.action + ' slot=' + cmd.slot + ' applied');
+  }
   setInterval(() => {
-    try {
-      const stat = fs.statSync(LOOP_CMD_FILE);
-      const mt = stat.mtimeMs;
-      if (mt !== lastLoopMtime) {
-        lastLoopMtime = mt;
-        const cmd = JSON.parse(fs.readFileSync(LOOP_CMD_FILE, "utf8"));
-        console.log(`[LOOP] Command: ${cmd.action}`);
-        if (cmd.action === "pause") {
-          for (const s of slots.values()) { s.dashboardPaused = true; s.setPaused(true); }
-        } else if (cmd.action === "resume") {
-          stopRequested = false;
-          for (const s of slots.values()) { s.dashboardPaused = false; s.pausedByWindow = false; s.setPaused(false); s.ensureRunning(); }
-        }
-      }
-    } catch (e) { console.error(`[LOOP] Error:`, e.message); }
-  }, 2000);
-  // Poll slot_commands.json for dashboard per-slot commands
-  const SLOT_CMD_FILE = path.join(STATE_DIR, "slot_commands.json");
-  let lastSlotMtime = 0;
-  setInterval(() => {
-    try {
-      const stat = fs.statSync(SLOT_CMD_FILE);
-      const mt = stat.mtimeMs;
-      if (mt !== lastSlotMtime) {
-        lastSlotMtime = mt;
-        const cmds = JSON.parse(fs.readFileSync(SLOT_CMD_FILE, "utf8"));
-        if (!Array.isArray(cmds) || cmds.length === 0) return;
-        console.log(`[CMD] Received ${cmds.length} commands, slot keys: [${[...slots.keys()].join(",")}]`);
-        for (const cmd of cmds) {
-          const slotId = cmd.slot;
-          console.log(`[CMD] action=${cmd.action} slot=${slotId} type=${typeof slotId}`);
-          if (cmd.action === "pause") {
-            if (slotId === "all") { for (const s of slots.values()) { s.dashboardPaused = true; s.setPaused(true); } console.log(`[CMD] Paused all`); }
-            else { const s = slots.get(String(slotId)); console.log(`[CMD] slots.get("${slotId}") = ${s ? "found" : "NOT FOUND"}`); if (s) { s.dashboardPaused = true; s.setPaused(true); } }
-          } else if (cmd.action === "resume") {
-            if (slotId === "all") { stopRequested = false; for (const s of slots.values()) { s.dashboardPaused = false; s.pausedByWindow = false; s.setPaused(false); s.ensureRunning(); } console.log(`[CMD] Resumed all`); }
-            else { const s = slots.get(String(slotId)); if (s) { s.dashboardPaused = false; s.pausedByWindow = false; s.setPaused(false); s.ensureRunning(); } }
-          } else if (cmd.action === "restart") {
-            if (slotId === "all") { for (const s of slots.values()) s.refreshPage("dashboard-restart", true); }
-            else { const s = slots.get(String(slotId)); if (s) s.refreshPage("dashboard-restart", true); }
-          } else if (cmd.action === "refresh") {
-            if (slotId === "all") { for (const s of slots.values()) s.refreshPage("dashboard-refresh", true); }
-            else { const s = slots.get(String(slotId)); if (s) s.refreshPage("dashboard-refresh", true); }
-          } else if (cmd.action === "remove") {
-            if (slotId === "all") { for (const id of [...slots.keys()]) removeSlot(id); }
-            else { removeSlot(String(slotId)); }
-          }
-        }
-        fs.writeFileSync(SLOT_CMD_FILE, "[]");
-      }
-    } catch (e) { console.error(`[CMD] Error:`, e.message); }
-  }, 2000);
+    try { drain(path.join(STATE_DIR, 'commands'), applyDashboardCommand); }
+    catch (e) { appendLog('[CMD]', e.message); }
+  }, 250);
+
 }
 
 function openSettings() {
@@ -700,57 +644,12 @@ app.whenReady().then(() => {
   applyLoginItem();
 
   const saved = readSlotsFile();
-  if (saved.active) {
-    for (const s of saved.active) {
-      const boots = s.bootsOnStart !== false;
-      const displayName = s.accountName || s.name || `Slot ${slotSeq + 1}`;
-      if (boots) {
-        createSlot(s.id, displayName, !!s.stopRequested, { bootsOnStart: true, accountName: s.accountName || "" });
-      } else {
-        ghosts.set(s.id, { id: s.id, name: displayName, accountName: s.accountName || "" });
-      }
-    }
+  for (const s of startupSlots(saved)) {
+    createSlot(s.id, s.accountName, !!s.stopRequested, {
+      bootsOnStart: true, accountName: s.accountName, paused: !!s.paused
+    });
   }
-  if (slots.size === 0 && ghosts.size === 0) {
-    // Auto-ensure 4 persistent slots (11,12,13 ecnl + 14 pmath100 kyaiko)
-    let autoCreds = {};
-    try { autoCreds = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), ".config", "VisionTap Slots", "state", "credentials.json"),"utf8")); } catch(e) {}
-    const s11 = autoCreds["11"]; const s12 = autoCreds["12"]; const s13 = autoCreds["13"]; const s14 = autoCreds["14"];
-    createSlot("11", s11 && s11.user ? s11.user : "adaihbi", false, { bootsOnStart: true, accountName: s11 && s11.user ? s11.user : "adaihbi" });
-    createSlot("12", s12 && s12.user ? s12.user : "temi", false, { bootsOnStart: true, accountName: s12 && s12.user ? s12.user : "temi" });
-    createSlot("13", s13 && s13.user ? s13.user : "danicajgb", false, { bootsOnStart: true, accountName: s13 && s13.user ? s13.user : "danicajgb" });
-    createSlot("14", s14 && s14.user ? s14.user : "kyaiko", false, { bootsOnStart: true, accountName: s14 && s14.user ? s14.user : "kyaiko" });
-
-  } else if (slots.size === 1 && ghosts.size === 0) {
-    const has11 = slots.has("11") || ghosts.has("11");
-    const has12 = slots.has("12") || ghosts.has("12");
-    const has13 = slots.has("13") || ghosts.has("13");
-    const has14 = slots.has("14") || ghosts.has("14");
-    if (!has11) createSlot("11", "adaihbi", false, { bootsOnStart: true, accountName: "adaihbi" });
-    if (!has12) createSlot("12", "temi", false, { bootsOnStart: true, accountName: "temi" });
-    if (!has13) createSlot("13", "danicajgb", false, { bootsOnStart: true, accountName: "danicajgb" });
-    if (!has14) createSlot("14", "kyaiko", false, { bootsOnStart: true, accountName: "kyaiko" });
-  } else if (slots.size === 2 && ghosts.size === 0) {
-    const has11 = slots.has("11") || ghosts.has("11");
-    const has12 = slots.has("12") || ghosts.has("12");
-    const has13 = slots.has("13") || ghosts.has("13");
-    const has14 = slots.has("14") || ghosts.has("14");
-    if (!has11) createSlot("11", "adaihbi", false, { bootsOnStart: true, accountName: "adaihbi" });
-    if (!has12) createSlot("12", "temi", false, { bootsOnStart: true, accountName: "temi" });
-    if (!has13) createSlot("13", "danicajgb", false, { bootsOnStart: true, accountName: "danicajgb" });
-    if (!has14) createSlot("14", "kyaiko", false, { bootsOnStart: true, accountName: "kyaiko" });
-  }
-  // Ensure pmath100 slot 14 (kyaiko) always exists under AIKO — separate instant math
-  {
-    const has14 = slots.has("14") || ghosts.has("14");
-    if (!has14) {
-      let autoCreds14 = {};
-      try { autoCreds14 = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), ".config", "VisionTap Slots", "state", "credentials.json"),"utf8")); } catch(e) {}
-      const s14 = autoCreds14["14"];
-      createSlot("14", s14 && s14.user ? s14.user : "kyaiko", false, { bootsOnStart: true, accountName: s14 && s14.user ? s14.user : "kyaiko" });
-    }
-  }
-  slotSeq = Math.max(slotSeq, 15);
+  slotSeq = Math.max(slotSeq, 17);
   broadcastState();
   writeSlotsFile();
 }).catch((err) => {

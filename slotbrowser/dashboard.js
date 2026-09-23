@@ -4,6 +4,7 @@ const path = require("path");
 const os = require("os");
 const { execSync } = require("child_process");
 
+const { enqueue } = require('./command-queue');
 const PORT = 8080;
 const ELECTRON_STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
 const CREDS_FILE = path.join(ELECTRON_STATE_DIR, "credentials.json");
@@ -93,8 +94,8 @@ function getCreds() { return readJson(CREDS_FILE, {}); }
 function getHistory() { return readJson(HISTORY_FILE, { users: [] }); }
 function getElectronSlots() { return readJson(SLOTS_FILE, { active: [] }); }
 function isLoopPaused() {
-  try { return JSON.parse(fs.readFileSync(LOOP_CMD_FILE, "utf8")).action === "pause"; }
-  catch (e) { return false; }
+  const active = getElectronSlots().active || [];
+  return active.length > 0 && active.every(s => s.paused || s.stopRequested);
 }
 function getStats() {
   try { return JSON.parse(run("curl -s http://127.0.0.1:5566/stats")); }
@@ -312,6 +313,7 @@ function getMergedSlots(status) {
 
     const mergedSlot = {
       id, name, accountName: slot.accountName || "",
+      paused: !!(slot.paused || slot.stopRequested),
       user: cred.user || "", pass: cred.pass || "",
       correctCount: sc.correctCount || 0,
       wrongCount: sc.wrongCount || 0,
@@ -350,7 +352,7 @@ function getMergedSlots(status) {
   return merged;
 }
 function sendCommands(cmds) {
-  writeJson(SLOT_CMD_FILE, cmds);
+  enqueue(path.join(ELECTRON_STATE_DIR, 'commands'), cmds);
   log(`Commands sent: ${JSON.stringify(cmds)}`);
 }
 
@@ -454,9 +456,9 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
   <div class="ggrid">
     <a class="btn bgrn bful" id="lbtn" href="/loop?cmd=resume">Resume Loop</a>
   </div>
-  <div class="stitle section-aiko-title">AIKO — <span id="scnt-aiko">0</span> slots</div>
+  <div class="stitle section-aiko-title">TOP ROW — <span id="scnt-aiko">0</span> slots</div>
   <div id="slots-aiko"></div>
-  <div class="stitle section-danica-title">DANICA — <span id="scnt-danica">0</span> slot</div>
+  <div class="stitle section-danica-title">BOTTOM ROW — <span id="scnt-danica">0</span> slot</div>
   <div id="slots-danica"></div>
   <div class="stitle">Server</div>
   <div class="ggrid">
@@ -472,8 +474,8 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 
 function render(d){
   var slots=d.slots||[];
-  var aikoSlots = slots.filter(s => String(s.id) !== "13" && String(s.accountName).toLowerCase() !== "danicajgb");
-  var danicaSlots = slots.filter(s => String(s.id) === "13" || String(s.accountName).toLowerCase() === "danicajgb");
+  var aikoSlots = slots.filter(s => !["13", "16"].includes(String(s.id)) && !["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()));
+  var danicaSlots = slots.filter(s => ["13", "16"].includes(String(s.id)) || ["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()));
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
   document.getElementById('scnt-danica').textContent=danicaSlots.length;
   document.getElementById('pills').innerHTML=
@@ -486,10 +488,10 @@ function render(d){
   var hAiko='', hDanica='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
-    var isDanica = String(s.id) === "13" || String(s.accountName).toLowerCase() === "danicajgb";
+    var isDanica = ["13", "16"].includes(String(s.id)) || ["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase());
     var sc=isDanica ? '#f472b6' : '#38bdf8';
     var cardClass = isDanica ? 'card-danica' : 'card-aiko';
-    var st=isDanica ? 'DANICA' : 'AIKO';
+    var st=s.paused ? 'PAUSED' : 'RUNNING';
     var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
@@ -653,7 +655,8 @@ const server = http.createServer((req, res) => {
     const action = url.searchParams.get("action");
     const slot = url.searchParams.get("slot");
     log(`CMD: action=${action} slot=${slot}`);
-    sendCommands([{ action, slot: slot || "all" }]);
+    try { sendCommands([{ action, slot: slot || "all" }]); }
+    catch (e) { res.writeHead(400); res.end('Command could not be queued: ' + e.message); return; }
     res.writeHead(302, { "Location": "/" });
     res.end();
     return;
@@ -662,7 +665,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/loop") {
     const cmd = url.searchParams.get("cmd");
     if (cmd === "pause" || cmd === "resume") {
-      writeJson(LOOP_CMD_FILE, { action: cmd });
+      sendCommands([{ action: cmd, slot: "all" }]);
       log(`Loop ${cmd}`);
     }
     res.writeHead(302, { "Location": "/" });

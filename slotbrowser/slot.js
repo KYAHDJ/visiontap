@@ -98,6 +98,10 @@ class Slot {
     this.pendingImage = null;
     this.lastHarshRestart = 0;
     this.consecutiveNoProgress = 0;
+    this.runEpoch = 0;
+    this.lastActivityTs = Date.now();
+    this.activityImage = null;
+    this.guardTimer = null;
   }
 
   getWorkUrl() {
@@ -108,6 +112,9 @@ class Slot {
     return String(this.id) === "14" || String(this.accountName).toLowerCase() === "kyaiko" || this.taskMode === "math" || PMATH_RE.test(this.currentUrl || "");
   }
   async handlePmathConvert() {
+    const epoch = this.runEpoch;
+    const active = () => epoch === this.runEpoch && this.canAutomate();
+    if (!active()) return false;
     try {
       // Check if on convert page
       const isConvert = (this.currentUrl || "").includes("/convert-coins");
@@ -116,7 +123,9 @@ class Slot {
         this.log("PMATH: navigating to convert page");
         await this.wc.loadURL(PMATH_CONVERT_URL).catch(()=>{});
         await new Promise(r=>setTimeout(r,3000));
+        if (!active()) return false;
       }
+      if (!active()) return false;
       // Try to convert via inject
       const res = await this.api("pmathDoConvert", { amount: 100 });
       if (res && res.status === "converted") {
@@ -130,6 +139,7 @@ class Slot {
           }
         } catch(e){}
         await new Promise(r=>setTimeout(r,2000));
+        if (!active()) return false;
         await this.wc.loadURL(PMATH_WORK_URL).catch(()=>{});
         this.touchProgress();
         return true;
@@ -138,6 +148,7 @@ class Slot {
       const fallback = await this.api("pmathDoConvertAll");
       if (fallback && fallback.status === "clicked") {
         await new Promise(r=>setTimeout(r,2000));
+        if (!active()) return false;
         await this.wc.loadURL(PMATH_WORK_URL).catch(()=>{});
         return true;
       }
@@ -195,6 +206,7 @@ class Slot {
     wc.on("ipc-message", (_e, channel, _id, msg) => {
       if (channel !== "vt-slot-msg") return;
       if (msg && msg.type === "stale_refresh") {
+        if (!this.canAutomate()) return;
         this.log(`Page reported stale (src=${msg.src || "?"}). Recovery reload.`);
         this.refreshPage(`page-stale:${msg.src || "?"}`, true);
       } else if (msg && msg.type === "ensure_running") {
@@ -209,9 +221,9 @@ class Slot {
       this.lastGoneTs = Date.now();
       const now = Date.now();
       if (this.reloadCooldownUntil && now < this.reloadCooldownUntil) return;
-      if (this.isLoopRunning && this.lastGoneTs - (this._lastReloadTs || 0) > 10000) {
+      if (this.canAutomate() && this.lastGoneTs - (this._lastReloadTs || 0) > 10000) {
         this._lastReloadTs = this.lastGoneTs;
-        setTimeout(() => { try { this.wc.reload(); } catch (e) {} }, 1500);
+        setTimeout(() => { if (this.canAutomate()) this.hardRestart(); }, 1500);
       }
     });
   }
@@ -220,15 +232,46 @@ class Slot {
     try { return this.wc && !this.wc.isDestroyed(); } catch (e) { return false; }
   }
 
+  canAutomate() {
+    return this.isLoopRunning && !this.paused && !this.dashboardPaused && !this.loopStopRequested;
+  }
+  markActivity(image) {
+    if (image !== undefined && image === this.activityImage) return;
+    if (image !== undefined) this.activityImage = image;
+    this.lastActivityTs = Date.now();
+  }
+  checkInactivity(now = Date.now()) {
+    if (!this.canAutomate() || !this.wcIsAlive()) return;
+    if (now - this.lastActivityTs < 60000) return;
+    this.lastActivityTs = now;
+    this.log('INACTIVITY-GUARD: no task progress for 60 seconds; hard refreshing this slot');
+    this.hardRestart();
+  }
+  cancelPendingWork() {
+    this.runEpoch++;
+    this.isProcessing = false;
+    if (this.nextTimer) clearTimeout(this.nextTimer);
+    this.nextTimer = null;
+    this.api('setAutomationState', { enabled: this.canAutomate(), epoch: this.runEpoch }).catch(() => {});
+  }
+  manualPause() { this.dashboardPaused = true; this.setPaused(true); }
+  manualResume() {
+    this.dashboardPaused = false;
+    this.pausedByWindow = false;
+    this.loopStopRequested = false;
+    this.setPaused(false);
+    this.ensureRunning();
+  }
+
   setZoom(z) { this.zoom = z; try { this.wc.setZoomFactor(z); } catch (e) {} }
   setHud(on) { this.hudEnabled = !!on; }
   setDelay(mult) { this.delayMult = mult > 0 ? mult : 1; }
 
   getSubmitDelayMs() {
     const user = String((this._creds && this._creds.user) || this.accountName || "").trim().toLowerCase();
-    const delays = { adaihbi: 0, temi: 500, danicajgb: 4000, kyaiko: 0 };
+    const delays = { adaihbi: 0, temi: 500, danicajgb: 4000, axceling1001: 1000, nnnikkikim: 4500, kyaiko: 0 };
     if (Object.prototype.hasOwnProperty.call(delays, user)) return delays[user];
-    return ({ "11": 0, "12": 500, "13": 4000, "14": 0 })[String(this.id)] ?? 0;
+    return ({ "11": 0, "12": 500, "13": 4000, "14": 0, "15": 1000, "16": 4500 })[String(this.id)] ?? 0;
   }
 
   async inject() {
@@ -238,7 +281,7 @@ class Slot {
       if (this.currentUrl.includes("ecnlmediamarket.com") || this.currentUrl.includes("pmath100.com")) {
         const credsJson = JSON.stringify(this._creds || null);
         await this.wc.executeJavaScript(
-          `window.__vtCreds = ${credsJson};`
+          `window.__vtCreds = ${credsJson}; window.__vtAutomation = ${JSON.stringify({ enabled: this.canAutomate(), epoch: this.runEpoch })};`
         ).catch(() => {});
         if (AD_BLOCK_JS) {
           await this.wc.executeJavaScript(AD_BLOCK_JS).catch(() => {});
@@ -260,20 +303,25 @@ class Slot {
   }
 
   ensureRunning() {
-    if (!this.isLoopRunning && !this.loopStopRequested) this.startLoop();
+    if (!this.isLoopRunning && !this.loopStopRequested && !this.paused && !this.dashboardPaused) this.startLoop();
   }
 
   toggleLoop() {
-    if (this.isLoopRunning) this.stopLoop("Stopped by user.");
-    else this.startLoop();
+    if (this.canAutomate()) this.manualPause();
+    else this.manualResume();
   }
 
   startLoop() {
+    if (this.paused || this.dashboardPaused) return;
     if (this.isLoopRunning) return;
     if (!this.wcIsAlive()) return;
     this.isLoopRunning = true;
     this.isProcessing = false;
     this.loopStopRequested = false;
+    this.markActivity();
+    this.cancelPendingWork();
+    if (this.guardTimer) clearInterval(this.guardTimer);
+    this.guardTimer = setInterval(() => this.checkInactivity(), 1000);
     this.loopStartTime = Date.now();
     this.taskCount = 0;
     this.correctCount = 0;
@@ -298,6 +346,9 @@ class Slot {
     this.isLoopRunning = false;
     this.isProcessing = false;
     this.loopStopRequested = true;
+    this.cancelPendingWork();
+    if (this.guardTimer) clearInterval(this.guardTimer);
+    this.guardTimer = null;
     this.stopLiveTimer();
     this.stopKeeperClients();
     this.stopPointsSync();
@@ -307,11 +358,14 @@ class Slot {
   }
 
   setPaused(p) {
-    if (this.paused === p) return;
+    if (!p && this.dashboardPaused) return;
+    if (this.paused === p && (p || this.isLoopRunning)) return;
     console.log(`[Slot ${this.id}] setPaused(${p})`);
     this.paused = p;
+    this.cancelPendingWork();
     if (p) this.status("Paused (dashboard)");
     else {
+      this.markActivity();
       this.status("Resuming...");
       if (!this.isLoopRunning && !this.loopStopRequested) this.startLoop();
       else this.startStaggered(1500);
@@ -351,7 +405,7 @@ class Slot {
       correctCount: 0, // removed - time only
       wrongCount: 0, // removed - time only
       errorCount: this.errorCount,
-      isRunning: this.isLoopRunning,
+      isRunning: this.canAutomate(),
       lastTaskCorrect: this.lastTaskCorrect
     };
     this.api("hud", state).catch(() => {});
@@ -388,7 +442,7 @@ class Slot {
       const res = await fetch(KEEPER_COMMAND_URL, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
-      if (data && data.command === "reset" && this.isLoopRunning && !this.isProcessing) {
+      if (data && data.command === "reset" && this.canAutomate() && !this.isProcessing) {
         const now = Date.now();
         const stallProgress = now - (this.lastProgressTs || 0);
         const stallAction = now - (this.lastActionTs || 0);
@@ -496,6 +550,8 @@ class Slot {
 
   // ---- refresh ----
   async refreshPage(reason, navigate) {
+    if (/^(dashboard|manual)(-|$)/.test(reason)) return this.hardRestart();
+    if (!this.canAutomate()) return;
     if (this.isProcessing) {
       const age = Date.now() - (this.taskStartTime || 0);
       if (age > 30000) { this.isProcessing = false; this.log(`Force reset stuck isProcessing for refresh (${reason}) after ${Math.round(age/1000)}s`); }
@@ -512,6 +568,7 @@ class Slot {
   }
 
   async maybeHarshRestart(reason) {
+    if (!this.canAutomate()) return false;
     const now = Date.now();
     if (now - (this.lastHarshRestart||0) < 15000) return false;
     this.lastHarshRestart = now;
@@ -521,40 +578,16 @@ class Slot {
   }
 
   async hardRestart() {
-    const wasRunning = this.isLoopRunning;
-    this.log(`HARD-RESTART wasRunning=${wasRunning}`);
-    this.isLoopRunning = false;
-    this.isProcessing = false;
-    this.stopLiveTimer();
-    this.stopKeeperClients();
     if (!this.wcIsAlive()) return;
-    try { this.wc.reload(); } catch (e) {}
-    if (!wasRunning) return;
-    setTimeout(() => {
-      if (this.loopStopRequested || !wasRunning) return;
-      this.isLoopRunning = true;
-      this.isProcessing = false;
-      this.loopStartTime = Date.now();
-      this.taskCount = 0;
-      this.correctCount = 0;
-      this.wrongCount = 0;
-      this.errorCount = 0;
-      this.lastPoints = { done: null, total: null };
+    this.cancelPendingWork();
     this.pendingAnswer = null;
     this.pendingHash = null;
     this.pendingImage = null;
-    this.lastSubmittedImageHash = null;
-    this.lastSubmittedAnswer = null;
-    this.lastTaskCorrect = false;
-    this.lastPointsDoneBeforeSubmit = null;
-    this.taskStartTime = null;
-      this.touchAction();
-      this.touchProgress();
-      this.startLiveTimer();
-      this.startKeeperClients();
-      this.status("[Failsafe] Restarting loop...");
-      this.runIteration();
-    }, 5000);
+    this._injected = false;
+    this.markActivity();
+    this.log('HARD-RESTART: reload ignoring cache; preserving manual pause and counters');
+    try { this.wc.stop(); this.wc.reloadIgnoringCache(); } catch (e) { this.log(e.message); }
+    if (this.canAutomate()) this.scheduleNext(1000);
   }
 
   async ensureWorkPage() {
@@ -601,26 +634,19 @@ class Slot {
   }
 
   startStaggered(delay) {
+    if (!this.canAutomate()) return;
     if (this.nextTimer) clearTimeout(this.nextTimer);
     const d = delay != null ? delay : (this.id % 4) * 500 + 200;
     this.nextTimer = setTimeout(() => this.runIteration(), d);
   }
 
   scheduleNext(delay) {
+    if (!this.canAutomate()) return;
+    if (this.nextTimer) clearTimeout(this.nextTimer);
+    this.nextTimer = null;
     this.log(`scheduleNext id=${this.id} delay=${delay} loop=${this.isLoopRunning} paused=${this.paused} processing=${this.isProcessing}`);
     if (!this.isLoopRunning) return;
     let d = Math.round((delay || 0) * this.delayMult);
-    if (this.paused) {
-      // While paused, retry every 3s but don't stack timers
-      if (!this.nextTimer) {
-        this.nextTimer = setTimeout(() => {
-          this.nextTimer = null;
-          if (this.paused) this.scheduleNext(3000);
-          else if (this.isLoopRunning) this.runIteration();
-        }, 3000);
-      }
-      return;
-    }
     this.nextTimer = setTimeout(() => {
       this.nextTimer = null;
       if (this.isLoopRunning) this.runIteration();
@@ -629,24 +655,12 @@ class Slot {
 
   // ---- main loop ----
   async runIteration() {
+    const epoch = this.runEpoch;
+    const active = () => epoch === this.runEpoch && this.canAutomate();
+    if (!active()) return;
     this.log(`runIteration ENTRY id=${this.id} loop=${this.isLoopRunning} paused=${this.paused} processing=${this.isProcessing} url=${this.currentUrl || "?"}`);
-    // Auto-reset stuck isProcessing (e.g., previous iteration hung) - schedule retry if still stuck
-    if (this.isProcessing) {
-      const age = Date.now() - (this.taskStartTime || 0);
-      this.log(`runIteration SKIP isProcessing=true age=${Math.round(age/1000)}s paused=${this.paused} loop=${this.isLoopRunning}`);
-      if (age > 45000) { this.isProcessing = false; this.log("Auto-reset stuck isProcessing after "+Math.round(age/1000)+"s"); }
-      else { this.scheduleNext(3000); return; }
-    }
-    if (!this.isLoopRunning || this.paused) {
-      this.log(`runIteration SKIP loop=${this.isLoopRunning} paused=${this.paused} stopReq=${this.loopStopRequested}`);
-      if (!this.isLoopRunning && !this.loopStopRequested) {
-        if (Date.now() - (this.lastHarshRestart||0) > 15000) {
-          this.log("Not looping - harsh restart");
-          await this.maybeHarshRestart("not-looping");
-        }
-      }
-      return;
-    }
+    // A hung iteration is recovered by the independent 60-second guard.
+    if (this.isProcessing) return;
     if (!this.wcIsAlive()) return;
     this.isProcessing = true;
 
@@ -663,9 +677,11 @@ class Slot {
       this.taskStartTime = Date.now();
 
       await this.inject();
+      if (!active()) return;
 
       let page = null;
       try { page = await this.api("pageReady"); } catch (e) {}
+      if (!active()) return;
       const throttle = (tag) => {
         const now = Date.now();
         if (this._pageLogs[tag] && now - this._pageLogs[tag] < 30000) return;
@@ -682,13 +698,15 @@ class Slot {
           // On ECNL but __vtapi not ready yet — retry shortly
           if (throttle("noecnl")) this.log(`PAGE __vtapi not ready on ECNL, retrying url=${curUrl}`);
           this.status("Waiting for page script...");
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           this.scheduleNext(1500);
           return;
         }
         if (throttle("noecnl")) this.log(`PAGE noECNL url=${(page && page.url) || curUrl || "?"}`);
         this.status("Not on ECNL. Loading work page...");
         await this.ensureWorkPage();
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(4000);
         return;
@@ -702,6 +720,7 @@ class Slot {
         } catch(e) { this.log(`TRY-LOGIN error/timeout: ${e.message}`); }
         this.status("Login page. Auto-login running, waiting...");
         this.touchProgress();
+        if (!active()) return;
         this.isProcessing = false;
         this.log(`SCHEDULING next runIteration in 3000ms for auth page id=${this.id}`);
         this.scheduleNext(3000);
@@ -712,6 +731,7 @@ class Slot {
       if (this.isPmathSlot() && page.url && page.url.includes("/convert-coins")) {
         this.log("PMATH on convert page, handling convert");
         const conv = await this.handlePmathConvert();
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(conv ? 3000 : 2000);
         return;
@@ -720,6 +740,7 @@ class Slot {
         if (throttle("other")) this.log(`PAGE other url=${page.url || "?"}`);
         this.status("Not on work page. Redirecting...");
         await this.ensureWorkPage();
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(4000);
         return;
@@ -731,16 +752,19 @@ class Slot {
           // If on convert page, handle it
           if ((this.currentUrl || "").includes("/convert-coins")) {
             const conv = await this.handlePmathConvert();
-            this.isProcessing = false;
+            if (!active()) return;
+        this.isProcessing = false;
             this.scheduleNext(conv ? 3000 : 2000);
             return;
           }
           // Check coins balance via pmath meta
           const pmeta = await this.api("pmathGetMeta");
+          if (!active()) return;
           if (pmeta && pmeta.coins != null && Number(pmeta.coins) >= 100) {
             this.log(`PMATH: coins ${pmeta.coins} >=100, converting`);
             const conv = await this.handlePmathConvert();
-            this.isProcessing = false;
+            if (!active()) return;
+        this.isProcessing = false;
             this.scheduleNext(3000);
             return;
           }
@@ -752,6 +776,7 @@ class Slot {
       // Snapshot points 1:1 from web - exact copy of withdrawable balance area (e.g., 49/250)
       try {
         const meta = await this.api("getTaskMeta");
+        if (!active()) return;
         if (meta) {
           if (meta.pointsDone != null) this.lastPoints.done = String(meta.pointsDone);
           if (meta.pointsTotal != null) this.lastPoints.total = String(meta.pointsTotal);
@@ -764,8 +789,10 @@ class Slot {
       } catch (e) {}
 
       const scannerOnline = await this.scannerEnsure();
+      if (!active()) return;
       if (!scannerOnline) {
         this.status("Scanner OFFLINE. Starting...");
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(5000);
         return;
@@ -775,9 +802,12 @@ class Slot {
       if (this.isPmathSlot()) {
         let pmathImage = null;
         try { const r = await this.api("grabImage", true); pmathImage = r && r.imageData; } catch(e) {}
+        if (!active()) return;
+        if (pmathImage) this.markActivity(hashImage(pmathImage));
         if (!pmathImage) {
           this.status("PMATH No image. Retry");
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           this.scheduleNext(1500);
           return;
         }
@@ -792,24 +822,29 @@ class Slot {
             body: JSON.stringify({ image: pmathImage })
           });
           pResult = await res.json();
+          if (!active()) return;
         } catch(e) {
           this.status("PMATH scanner fail");
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           this.scheduleNext(2000);
           return;
         }
         if (pResult.error || !pResult.answer) {
           this.log(`PMATH solve fail: ${pResult.error || 'no answer'} raw=${pResult.raw || ''}`);
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           this.scheduleNext(1500);
           return;
         }
         pAnswer = String(pResult.answer).trim();
         this.log(`PMATH solved ${pResult.expression || ''} = ${pAnswer} (raw ${pResult.raw})`);
         // Wait for input box (TYPE HERE)
-        const pReady = await this.waitForInputBox();
+        const pReady = await this.waitForInputBox(epoch);
+        if (!active()) return;
         if (!pReady) {
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           this.scheduleNext(1000);
           return;
         }
@@ -817,16 +852,19 @@ class Slot {
         let pPasted = false;
         let pDelay = 0;
         try {
-          const r = await this.api("fill", pAnswer);
+          const r = await this.api("fill", { answer: pAnswer, delayMs: this.getSubmitDelayMs(), epoch });
+        if (!active()) return;
           pPasted = !!(r && r.status === "filled");
           if (r && r.delayMs != null) pDelay = r.delayMs;
         } catch(e) {}
         if (!pPasted) {
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           this.scheduleNext(1000);
           return;
         }
-        this.taskCount++;
+        this.markActivity();
+      this.taskCount++;
         this.lastSubmittedImageHash = pHash;
         // For pmath, report coins via /report
         try {
@@ -841,6 +879,7 @@ class Slot {
           }).catch(()=>{});
         } catch(e) {}
         this.touchAction(); this.touchProgress();
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(800);
         return;
@@ -861,18 +900,22 @@ class Slot {
         this.touchAction();
         if (this.consecutiveDetectFails >= 3) {
           this.log("No image 3x. Harsh reload.");
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           this.consecutiveDetectFails = 0;
           if (!await this.maybeHarshRestart("no-image-x3")) await this.refreshPage("no-image-x3", true);
           this.scheduleNext(4000);
           return;
         }
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(1500);
         return;
       }
 
+      if (!active()) return;
       curHash = hashImage(imageData);
+      this.markActivity(curHash);
       // If same image as pending and we already have answer, reuse (dont re-detect)
       if (this.pendingHash !== null && curHash === this.pendingHash && this.pendingAnswer) {
         answer = this.pendingAnswer;
@@ -899,9 +942,11 @@ class Slot {
             body: JSON.stringify({ image: imageData })
           });
           result = await scanRes.json();
+          if (!active()) return;
         } catch (e) {
           this.status(`[${this.taskCount + 1}] Scanner connection failed.`);
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           this.scheduleNext(3000);
           return;
         }
@@ -911,12 +956,14 @@ class Slot {
         this.status(`[${this.taskCount + 1}] Detection failed: ${result.message || result.error}`);
         if (this.consecutiveDetectFails >= 3) {
           this.log("Detection failed 3x. Recovery reload.");
-          this.isProcessing = false;
+          if (!active()) return;
+        this.isProcessing = false;
           await this.refreshPage("detect-fail-x3", true);
           this.consecutiveDetectFails = 0;
           this.scheduleNext(4000);
           return;
         }
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(1500);
         return;
@@ -936,6 +983,7 @@ class Slot {
         this.pendingAnswer = null;
         this.pendingHash = null;
         this.pendingImage = null;
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(1500);
         return;
@@ -943,15 +991,16 @@ class Slot {
 
       this.status(`[${this.taskCount + 1}] DETECTED: ${answer}. Waiting for input box...`);
       // Wait for inputbox AFTER detection (single-detect flow) - get image detect then wait
-      const inputReadyAfterDetect = await this.waitForInputBox();
+      const inputReadyAfterDetect = await this.waitForInputBox(epoch);
+      if (!active()) return;
       if (!inputReadyAfterDetect) {
         this.status(`[${this.taskCount + 1}] Input not ready after detect, will retry submit (keep cached ${answer})`);
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(1500);
         return;
       }
       this.status(`[${this.taskCount + 1}] Input ready, pasting ${answer}...`);
-      const readyAt = Date.now();
       const submitDelayMs = this.getSubmitDelayMs();
       // Save points before submit - 1:1 exact copy after
       const pointsBeforeSubmit = this.lastPoints.done;
@@ -961,16 +1010,19 @@ class Slot {
       let pasted = false;
       let fillDelay = 0;
       try {
-        const r = await this.api("fill", { answer, delayMs: submitDelayMs, readyAt, expectedImage: imageData });
+        const r = await this.api("fill", { answer, delayMs: submitDelayMs, expectedImage: imageData, epoch });
+        if (!active()) return;
         pasted = !!(r && (r.status === "filled"));
-        if (pasted) this.log(`Submitted after ${r.elapsedMs}ms (configured ${submitDelayMs}ms)`);
+        if (pasted) this.log(`Submitted after ${r.elapsedMs}ms from fill (configured ${submitDelayMs}ms)`);
       } catch (e) {}
       if (!pasted) {
         this.status(`[${this.taskCount + 1}] Fill failed for ${answer}, will retry`);
+        if (!active()) return;
         this.isProcessing = false;
         this.scheduleNext(1500);
         return;
       }
+      this.markActivity();
       this.taskCount++;
       this.lastSubmittedImageHash = curHash;
       this.lastSubmittedAnswer = answer;
@@ -994,6 +1046,7 @@ class Slot {
       // Wait for new image hash to appear (dont re-detect same image)
       for (let w = 0; w < 10; w++) {
         await sleep(600);
+        if (!active()) return;
         try {
           const nd = await this.api("grabImage", true);
           const ndData = nd && nd.imageData;
@@ -1007,27 +1060,31 @@ class Slot {
       }
       this.touchAction();
       this.touchProgress();
-      this.isProcessing = false;
+      if (!active()) return;
+        this.isProcessing = false;
       this.scheduleNext(2000);
       return;
     } catch (err) {
+      if (!active()) return;
       console.error(`[${this.name}] Iteration error:`, err);
       this.errorCount++;
       this.status(`[${this.taskCount + 1}] Error: ${err.message}`);
-      this.isProcessing = false;
+      if (!active()) return;
+        this.isProcessing = false;
       this.scheduleNext(3000);
     }
   }
 
-  async waitForInputBox() {
+  async waitForInputBox(epoch = this.runEpoch) {
     const deadline = Date.now() + 5000;
     let lastInputHud = 0;
     let lastDebugLog = 0;
-    while (this.isLoopRunning && !this.paused && Date.now() < deadline) {
+    while (epoch === this.runEpoch && this.canAutomate() && Date.now() < deadline) {
       let ready = false;
       let checking = false;
       try {
         const r = await this.api("checkInputReady");
+        if (epoch !== this.runEpoch || !this.canAutomate()) return false;
         // 2026 immediate auto-refresh (user: 2026 coming back)
         if (r && r.isBlank2026) {
           this.log("2026 BLANK immediate reload");

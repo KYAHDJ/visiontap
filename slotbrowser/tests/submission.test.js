@@ -23,7 +23,7 @@ function harness(value = 'blue', afterWait = () => {}) {
   const button = { disabled: false, click() { clicks.push(now); }, getBoundingClientRect: box.getBoundingClientRect };
   const state = { image: 'task-a', box, button };
   const context = vm.createContext({
-    vt: {}, Date: { now: () => now }, Number, Math, String, Object,
+    vt: {}, Date: { now: () => now }, performance: { now: () => now }, Number, Math, String, Object,
     window: { HTMLInputElement: Input, location: { href: 'https://ecnlmediamarket.com/solving-colors' }, getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) },
     document: { body: { innerText: 'Task', innerHTML: 'x'.repeat(2500) } },
     Event: class {}, signal() {},
@@ -36,7 +36,7 @@ function harness(value = 'blue', afterWait = () => {}) {
   return { context, state, writes, clicks, waits, submit: options => context.pasteAndSubmit('blue', { expectedImage: 'task-a', readyAt: 1000, ...options }) };
 }
 
-for (const [user, delayMs] of [['adaihbi', 0], ['temi', 500], ['danicajgb', 4000]]) {
+for (const [user, delayMs] of [['adaihbi', 0], ['temi', 500], ['danicajgb', 4000], ['axceling1001', 1000], ['nnnikkikim', 4500]]) {
   test(`${user}: one ${delayMs}ms delay, no clearing or retyping existing answer`, async () => {
     const slot = { id: 99, _creds: { user }, accountName: '' };
     assert.equal(Slot.prototype.getSubmitDelayMs.call(slot), delayMs);
@@ -75,4 +75,26 @@ test('disabled submit button is not counted as a submission', async () => {
   h.state.button.disabled = true;
   assert.equal((await h.submit({ delayMs: 500 })).status, 'not-ready');
   assert.deepEqual(h.clicks, []);
+});
+test('pause during delayed submission cancels the click', async () => {
+  let h;
+  h = harness('blue', () => { h.context.window.__vtAutomation = { enabled: false, epoch: 2 }; });
+  h.context.window.__vtAutomation = { enabled: true, epoch: 1 };
+  assert.equal((await h.submit({ delayMs: 4000, epoch: 1 })).status, 'cancelled');
+  assert.deepEqual(h.clicks, []);
+});
+test('pause then resume cannot revive the previous pending submission', async () => {
+  let h;
+  h = harness('blue', () => { h.context.window.__vtAutomation = { enabled: true, epoch: 3 }; });
+  h.context.window.__vtAutomation = { enabled: true, epoch: 1 };
+  assert.equal((await h.submit({ delayMs: 4000, epoch: 1 })).status, 'cancelled');
+  assert.deepEqual(h.clicks, []);
+});
+
+test('old readiness timestamp cannot shorten the full delay after filling', async () => {
+  const h = harness('red');
+  const result = await h.submit({ delayMs: 4500, readyAt: -9000 });
+  assert.equal(result.elapsedMs, 4500);
+  assert.deepEqual(h.waits, [4500]);
+  assert.deepEqual(h.clicks, [5500]);
 });

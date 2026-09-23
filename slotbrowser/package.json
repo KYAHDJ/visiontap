@@ -23,13 +23,25 @@
       "inject/**/*",
       "shell/**/*",
       "state/credentials.example.json",
-      "package.json"
+      "package.json",
+      "command-queue.js",
+      "slot-config.js"
     ],
     "win": {
       "icon": "build/icon.png",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "requestedExecutionLevel": "asInvoker"
     },

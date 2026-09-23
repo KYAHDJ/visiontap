@@ -5,6 +5,7 @@
   if (window.__vtapi) return;
   const vt = {};
   window.__vtapi = vt;
+  vt.setAutomationState = state => { window.__vtAutomation = state; return { status: 'ok' }; };
 
   const host = (window.__vtHost) || null;
   const signal = (msg) => { if (host && host.signal) { try { host.signal(msg); } catch (e) {} } };
@@ -254,14 +255,17 @@
 
   // ---- EXACT Chrome extension: pasteAndSubmit ----
   async function pasteAndSubmit(answerColor, options = {}) {
+    const epoch = options.epoch ?? (window.__vtAutomation && window.__vtAutomation.epoch);
+    const allowed = () => !window.__vtAutomation || (window.__vtAutomation.enabled && window.__vtAutomation.epoch === epoch);
+    if (!allowed()) return { status: 'cancelled' };
     if (!isUIFullyLoaded()) return { status: "not-loaded" };
-    const readyAt = Number.isFinite(options.readyAt) ? options.readyAt : Date.now();
     const delayMs = Number.isFinite(options.delayMs) ? Math.max(0, options.delayMs) : 0;
     const inputBox = findAnswerInput();
     if (!inputBox) return { status: "no-input" };
     if (options.expectedImage && await grabTaskImage() !== options.expectedImage) {
       return { status: "task-changed" };
     }
+    if (!allowed()) return { status: 'cancelled' };
     // Preserve an existing correct answer; replace a different answer only once.
     if (inputBox.value !== answerColor) {
       const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -269,17 +273,24 @@
       inputBox.dispatchEvent(new Event('input', { bubbles: true }));
       inputBox.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    const remaining = Math.max(0, readyAt + delayMs - Date.now());
-    if (remaining) await sleep(remaining);
+    // Start the full delay only once the verified answer is in the input.
+    const filledAt = performance.now();
+    const deadline = filledAt + delayMs;
+    while (performance.now() < deadline) {
+      if (!allowed()) return { status: 'cancelled' };
+      await sleep(Math.max(1, deadline - performance.now()));
+    }
     if (findAnswerInput() !== inputBox || inputBox.value !== answerColor ||
         !isUIFullyLoaded() || isCheckingState()) return { status: "input-changed" };
     if (options.expectedImage && await grabTaskImage() !== options.expectedImage) {
       return { status: "task-changed" };
     }
+    if (!allowed()) return { status: 'cancelled' };
     const btn = findSubmitButton();
     if (!btn || btn.disabled || inputBox.disabled) return { status: "not-ready" };
+    if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' };
     btn.click();
-    return { status: "filled", delayMs: 0, elapsedMs: Date.now() - readyAt };
+    return { status: "filled", delayMs: 0, elapsedMs: Math.round(performance.now() - filledAt) };
   }
 
   // ---- EXACT Chrome extension: 60-Second Inactivity Reload Watchdog ----
@@ -435,6 +446,7 @@
       }
 
       for (let attempt = 0; attempt < 10; attempt++) {
+        if (window.__vtAutomation && !window.__vtAutomation.enabled) return;
         const user = pickUser();
         const pass = pickPass();
         if (user && pass) {
@@ -444,6 +456,7 @@
           await sleep(500);
           const btn = pickLoginBtn();
           if (btn) {
+            if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' };
             btn.click();
             await sleep(3000);
             const AUTH_HINTS = ['login', 'signin', 'auth', 'account', 'password'];
@@ -499,6 +512,7 @@
       await sleep(300);
       const btn = pickLoginBtn();
       if (btn) {
+        if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' };
         btn.click();
         await sleep(1500);
         return { status: "clicked" };
@@ -948,7 +962,7 @@
       let btn = btns.find(b => (b.textContent||b.value||'').toLowerCase().includes('convert all'));
       if (!btn) btn = btns.find(b => (b.textContent||b.value||'').toLowerCase().includes('convert coins'));
       if (!btn) btn = btns.find(b => (b.textContent||'').toLowerCase().includes('convert'));
-      if (btn) { btn.click(); return { status: "converted", amount }; }
+      if (btn) { if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' }; btn.click(); return { status: "converted", amount }; }
       // fallback Enter
       inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
       return { status: "converted", amount };
@@ -957,7 +971,7 @@
   vt.pmathDoConvertAll = async () => {
     const btns = Array.from(document.querySelectorAll('button, a.btn'));
     let btn = btns.find(b => (b.textContent||'').toLowerCase().includes('convert all'));
-    if (btn) { btn.click(); return { status: "clicked" }; }
+    if (btn) { if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' }; btn.click(); return { status: "clicked" }; }
     return { status: "no-btn" };
   };
 
