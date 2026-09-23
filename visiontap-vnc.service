@@ -1,0 +1,14 @@
+[Unit]
+Description=x11vnc VNC Server
+After=network.target visiontap-xvfb.service
+Requires=visiontap-xvfb.service
+
+[Service]
+Type=simple
+User=opc
+ExecStart=/usr/bin/x11vnc -display :1 -forever -nopw -rfbport 5901 -shared
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

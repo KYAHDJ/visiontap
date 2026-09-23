@@ -1,0 +1,44 @@
+node_modules/
+state/
+*.pid
+*.log
+dist/
+debug/
+# --- Security: never track private keys/credentials (Phase: remove from repo) ---
+cloud_key
+cloud_key.pub
+cloud_rsa_key
+cloud_rsa_key.pub
+oracle_key
+*.pem
+*.key
+*.rsa
+# --- Runtime state (JSON) should not be committed ---
+pcapp/scanner/scanner_stats.json
+pcapp/scanner/earnings_history.json
+pcapp/scanner/debug/
+debug_images/
+slotbrowser/state/
+*.tmp
+__pycache__/
+*.pyc
+*.pyo
+math_test/output/
+test_*.png
+test_*.py
+debug_*.png
+debug_*.js
+# Electron userData is OS-specific, not repo
+**/.config/
+# OS cruft
+Thumbs.db
+.DS_Store
+
+# Private local data and diagnostics
+ssh_verbose.txt
+.env
+.env.*
+!.env.example
+credentials.json
+cred_history.json
+*.tar.gz
