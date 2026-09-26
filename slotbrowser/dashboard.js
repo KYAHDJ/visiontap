@@ -388,9 +388,11 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .stitle{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:14px 0 6px}
 .section-aiko-title{color:#38bdf8; border-left:3px solid #38bdf8; padding-left:8px; background:rgba(56,189,248,0.08); border-radius:4px; padding:4px 8px;}
 .section-danica-title{color:#f472b6; border-left:3px solid #f472b6; padding-left:8px; background:rgba(244,114,182,0.08); border-radius:4px; padding:4px 8px;}
+.section-darlene-title{color:#34d399; border-left:3px solid #34d399; padding-left:8px; background:rgba(52,211,153,0.08); border-radius:4px; padding:4px 8px;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px}
 .card-aiko{background:linear-gradient(135deg, rgba(30,41,59,0.9), rgba(15,30,60,0.9)); border-color:rgba(56,189,248,0.25);}
 .card-danica{background:linear-gradient(135deg, rgba(40,20,35,0.9), rgba(60,20,40,0.9)); border-color:rgba(244,114,182,0.35);}
+.card-darlene{background:linear-gradient(135deg, rgba(20,40,30,0.9), rgba(20,60,40,0.9)); border-color:rgba(52,211,153,0.35);}
 .card-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .card-nm{font-weight:600;font-size:14px}
 .card-bg{font-size:9px;padding:2px 8px;border-radius:10px;font-weight:600}
@@ -466,6 +468,8 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
   <div id="slots-aiko"></div>
   <div class="stitle section-danica-title">BOTTOM ROW — <span id="scnt-danica">0</span> slot</div>
   <div id="slots-danica"></div>
+  <div class="stitle section-darlene-title">DARLENE — <span id="scnt-darlene">0</span> slot</div>
+  <div id="slots-darlene"></div>
   <div class="stitle">Server</div>
   <div class="ggrid">
     <a class="btn bgrn bful" href="/restart" onclick="return confirm('Restart VisionTap?')">Restart VisionTap</a>
@@ -480,10 +484,12 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 
 function render(d){
   var slots=d.slots||[];
-  var aikoSlots = slots.filter(s => !["13", "16"].includes(String(s.id)) && !["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()));
+  var aikoSlots = slots.filter(s => !["13", "16"].includes(String(s.id)) && !["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()) && !["17"].includes(String(s.id)) && !["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
   var danicaSlots = slots.filter(s => ["13", "16"].includes(String(s.id)) || ["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()));
+  var darleneSlots = slots.filter(s => ["17"].includes(String(s.id)) || ["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
   document.getElementById('scnt-danica').textContent=danicaSlots.length;
+  document.getElementById('scnt-darlene').textContent=darleneSlots.length;
   document.getElementById('pills').innerHTML=
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.electronProcs>0?'var(--green)':'var(--red)')+'"></div>Electron '+(d.electronProcs>0?'Running':'Stopped')+'</div>'+
@@ -491,12 +497,13 @@ function render(d){
   var lb=document.getElementById('lbtn');
   if(d.loopPaused){lb.href='/loop?cmd=resume';lb.textContent='Resume Loop';lb.className='btn bgrn bful'}
   else{lb.href='/loop?cmd=pause';lb.textContent='Pause Loop';lb.className='btn bred bful'}
-  var hAiko='', hDanica='';
+  var hAiko='', hDanica='', hDarlene='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
     var isDanica = ["13", "16"].includes(String(s.id)) || ["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase());
-    var sc=isDanica ? '#f472b6' : '#38bdf8';
-    var cardClass = isDanica ? 'card-danica' : 'card-aiko';
+    var isDarlene = ["17"].includes(String(s.id)) || ["darlenejoyce"].includes(String(s.accountName).toLowerCase());
+    var sc=isDarlene ? '#34d399' : (isDanica ? '#f472b6' : '#38bdf8');
+    var cardClass = isDarlene ? 'card-darlene' : (isDanica ? 'card-danica' : 'card-aiko');
     var st=s.paused ? 'PAUSED' : 'RUNNING';
     var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
@@ -564,10 +571,11 @@ function render(d){
         '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh">&#8634;</a>'+
         '<a class="ibtn dng" href="/cmd?action=remove&slot='+sid+'" title="Remove">&#10005;</a>'+
       '</div></div>';
-    if (isDanica) hDanica+=cardHtml; else hAiko+=cardHtml;
+    if (isDarlene) hDarlene+=cardHtml; else if (isDanica) hDanica+=cardHtml; else hAiko+=cardHtml;
   }
   document.getElementById('slots-aiko').innerHTML=hAiko || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No AIKO slots</div>';
   document.getElementById('slots-danica').innerHTML=hDanica || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No DANICA slots</div>';
+  document.getElementById('slots-darlene').innerHTML=hDarlene || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No DARLENE slots</div>';
   window._lastSlots = slots; // for live timer 1:1 - sync live only, no stale lastUpdate
 }
 

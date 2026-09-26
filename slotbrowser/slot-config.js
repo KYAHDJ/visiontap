@@ -4,7 +4,8 @@ const DEFAULT_SLOTS = [
   { id: '12', accountName: 'temi' },
   { id: '15', accountName: 'axceling1001' },
   { id: '13', accountName: 'danicajgb' },
-  { id: '16', accountName: 'nnnikkikim' }
+  { id: '16', accountName: 'nnnikkikim' },
+  { id: '17', accountName: 'darlenejoyce' }
 ];
 function startupSlots(saved = {}) {
   const existing = new Map((saved.active || []).map(s => [String(s.id), s]));
