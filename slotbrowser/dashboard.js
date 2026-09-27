@@ -6,6 +6,7 @@ const { execSync } = require("child_process");
 
 const { enqueue } = require('./command-queue');
 const PORT = 8080;
+const PH_TIME_ZONE = "Asia/Manila";
 const ELECTRON_STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
 const CREDS_FILE = path.join(ELECTRON_STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(ELECTRON_STATE_DIR, "cred_history.json");
@@ -382,6 +383,10 @@ function buildPage() {
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-tap-highlight-color:transparent}
 .wrap{max-width:600px;margin:0 auto;padding:12px 12px 60px}
 h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
+.ph-clock{margin:-4px auto 12px;padding:10px 14px;max-width:330px;text-align:center;background:linear-gradient(135deg,rgba(56,189,248,.12),rgba(167,139,250,.08));border:1px solid rgba(56,189,248,.35);border-radius:10px}
+.ph-clock-time{font-size:22px;line-height:1.15;font-weight:700;color:#f8fafc;font-variant-numeric:tabular-nums;letter-spacing:.4px}
+.ph-clock-date{margin-top:3px;color:var(--muted);font-size:10px}
+.ph-clock-label{margin-top:2px;color:var(--accent);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.8px}
 .pills{display:flex;gap:6px;margin-bottom:12px;justify-content:center;flex-wrap:wrap}
 .pill{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:16px;font-size:10px;font-weight:500;background:var(--card);border:1px solid var(--border);white-space:nowrap}
 .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
@@ -451,6 +456,11 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 <body>
 <div class="wrap">
   <h1>VisionTap Control</h1>
+  <div class="ph-clock" aria-live="off">
+    <div class="ph-clock-time" id="ph-clock-time">--:--:--</div>
+    <div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div>
+    <div class="ph-clock-label">Quezon City · Philippine Time (UTC+8)</div>
+  </div>
   <div class="pills" id="pills"></div>
   <div class="stitle">Global Controls</div>
   <div class="ggrid">
@@ -478,7 +488,22 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 </div>
 <datalist id="hu">${historyOpts}</datalist>
 <script>
-var POLL=2000,LD='';
+var POLL=2000,LD='',PH_TIME_ZONE=${JSON.stringify(PH_TIME_ZONE)};
+
+function formatPHTime(now){
+  return new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}).format(now);
+}
+function formatPHDate(now){
+  return new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,weekday:'long',year:'numeric',month:'long',day:'numeric'}).format(now);
+}
+function updatePHClock(){
+  var now=new Date();
+  var timeEl=document.getElementById('ph-clock-time');
+  var dateEl=document.getElementById('ph-clock-date');
+  if(timeEl) timeEl.textContent=formatPHTime(now);
+  if(dateEl) dateEl.textContent=formatPHDate(now);
+  return now;
+}
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
@@ -588,7 +613,7 @@ function poll(){
   }).catch(function(e){
     console.error('poll error',e);
     var el=document.getElementById('ltxt');
-    if(el) el.textContent='Connection error — '+new Date().toLocaleTimeString();
+    if(el) el.textContent='Connection error — '+formatPHTime(new Date())+' PH';
   });
   setTimeout(poll,POLL);
 }
@@ -614,17 +639,18 @@ setInterval(function(){
 // Global live clock
 setInterval(function(){
   var el=document.getElementById('ltxt');
-  var now=new Date();
+  var now=updatePHClock();
   if(el) {
     var txt=el.textContent||'';
     // Only overwrite if it starts with Live or Connection
     if(txt.indexOf('Live')===0 || txt.indexOf('Connection')===0) {
       // Keep Live prefix but update time
       var base=txt.split('—')[0]||'Live ';
-      el.textContent=base+'— '+now.toLocaleTimeString()+' ('+now.toLocaleDateString()+')';
+      el.textContent=base+'— '+formatPHTime(now)+' PH ('+formatPHDate(now)+')';
     }
   }
 },1000);
+updatePHClock();
 poll();
 console.log('VisionTap dashboard live poll started v'+Date.now());
 </script>

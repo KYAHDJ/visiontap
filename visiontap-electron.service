@@ -7,6 +7,7 @@ Requires=visiontap-xvfb.service
 Type=simple
 User=opc
 Environment=DISPLAY=:1
+Environment=TZ=Asia/Manila
 WorkingDirectory=/home/opc/VisionTap/slotbrowser
 ExecStart=/usr/bin/npx electron . --no-sandbox
 Restart=always

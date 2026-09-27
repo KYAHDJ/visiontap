@@ -5,6 +5,7 @@ After=network.target visiontap-scanner.service
 [Service]
 Type=simple
 User=opc
+Environment=TZ=Asia/Manila
 WorkingDirectory=/home/opc/VisionTap/slotbrowser
 ExecStart=/usr/bin/node dashboard.js
 Restart=always

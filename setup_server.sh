@@ -4,6 +4,10 @@ LOG=/tmp/visiontap_setup.log
 exec > >(tee -a $LOG) 2>&1
 echo "=== VisionTap Setup Started at $(date) ==="
 
+# Keep Oracle synchronized with Philippine Standard Time (Quezon City).
+sudo timedatectl set-timezone Asia/Manila
+sudo timedatectl set-ntp true
+
 # Wait for dnf update to finish
 echo "Waiting for dnf update..."
 while pgrep -x dnf > /dev/null 2>&1; do sleep 5; done
