@@ -150,9 +150,21 @@ function getMergedSlots(status) {
     let ms = getSlotMetrics(String(id));
     const nowMs = Date.now();
     const currentWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
-    // pointsDone is 0-250 cycle; use it for ppm (correctCount stays 0 on Oracle)
-    const curPoints = pointsDone;
+    const isPmath = String(id) === "14" || String(name).toLowerCase() === "kyaiko";
+    // ECNL tracks cycle points; Kyaiko tracks its live cumulative coin balance.
+    const curPoints = isPmath ? currentWithdrawable : pointsDone;
     let dirty = false;
+
+    // Migrate Kyaiko from the old points-based rate source without creating a false spike.
+    if (isPmath && ms.rateUnit !== "coins") {
+      ms.rateUnit = "coins";
+      ms.windowStart = 0;
+      ms.prevPoints = curPoints;
+      ms.pointsAtStart = curPoints;
+      ms.ppm = 0;
+      ms.pph = 0;
+      dirty = true;
+    }
 
     // Init prevPoints on first sight (avoid inflated delta)
     if (ms.prevPoints === null) {
@@ -161,7 +173,7 @@ function getMergedSlots(status) {
       dirty = true;
     }
 
-    // Balance history — 2-min timer, 10 entries scrollable, persisted per-slot
+    // Balance history — 2-min timer, 10 visible entries, persisted per-slot
     if (!Array.isArray(ms.balanceHistory)) ms.balanceHistory = [];
     if (ms.balanceHistory.length === 0 && currentWithdrawable !== 0) {
       ms.balanceHistory.push({ value: currentWithdrawable, time: nowMs });
@@ -195,7 +207,6 @@ function getMergedSlots(status) {
       }
     }
 
-    const isPmath = String(id) === "14" || String(name).toLowerCase() === "kyaiko";
     // Target logic: ecnl 250 pts = 3 pesos (83.33), pmath 100 coins = 1 peso → 100 pesos = 10000 coins, 300 pesos = 30000 coins
     let targetPesos, pesosNeeded, pointsUntilMid, pointsUntilLow, pointsUntilHigh, currentTargetPoints, pointsUntilTarget;
     if (isPmath) {
@@ -263,8 +274,10 @@ function getMergedSlots(status) {
       const elapsed = nowMs - ms.windowStart;
       if (elapsed >= 60000) {
         const count = pointsDelta(curPoints, ms.pointsAtStart, isPmath);
-        const ppm = Math.trunc(Math.max(0, count));
-        const pph = ppm * 60;
+        const ppm = isPmath
+          ? Math.round(Math.max(0, count * 60000 / elapsed) * 100) / 100
+          : Math.trunc(Math.max(0, count));
+        const pph = Math.round(ppm * 60 * 100) / 100;
         ms.ppm = ppm;
         ms.pph = pph;
         ms.lastComputedAt = nowMs;
@@ -284,9 +297,15 @@ function getMergedSlots(status) {
     let displayPpm = ms.ppm || 0;
     let displayPph = ms.pph || 0;
     if (ms.windowStart > 0 && ms.ppm === 0) {
-      const running = Math.trunc(Math.max(0, pointsDelta(curPoints, ms.pointsAtStart, isPmath)));
-      displayPpm = running;
-      displayPph = running * 60;
+      const running = Math.max(0, pointsDelta(curPoints, ms.pointsAtStart, isPmath));
+      if (isPmath) {
+        const runningMs = Math.max(1000, nowMs - ms.windowStart);
+        displayPpm = Math.round(running * 60000 / runningMs * 100) / 100;
+        displayPph = Math.round(displayPpm * 60 * 100) / 100;
+      } else {
+        displayPpm = Math.trunc(running);
+        displayPph = displayPpm * 60;
+      }
     }
 
     // ETA — live adjusting based on displayPph, + days (hours/24)
