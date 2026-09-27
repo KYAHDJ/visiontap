@@ -202,15 +202,12 @@ function getMergedSlots(status) {
       // pmath: coins instantly from web (withdrawable = coins), 100 coins =1 peso → 300₱ =30,000 coins
       // For instant center display, use currentWithdrawable as coins (same as pointsDone for pmath)
       if (currentWithdrawable > 0) pointsDone = currentWithdrawable;
-      let tp = ms.targetPesos || 300;
-      if (!tp || tp < 300) tp = 300;
-      // target in pesos → coins
-      let targetCoins = tp * 100;
-      while (currentWithdrawable >= targetCoins) { tp += 100; targetCoins = tp*100; dirty=true; }
+      const tp = 300;
+      // Fixed goal: 100 coins = ₱1, so ₱300 = 30,000 coins.
       ms.targetPesos = tp;
       if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
       targetPesos = tp;
-      const targetCoinsFinal = tp * 100;
+      const targetCoinsFinal = 30000;
       pesosNeeded = Math.max(0, (targetCoinsFinal - currentWithdrawable)/100);
       pointsUntilMid = Math.max(0, Math.trunc(targetCoinsFinal - currentWithdrawable));
       pointsUntilLow = pointsUntilMid;
@@ -448,7 +445,7 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .bcol{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px;cursor:pointer;min-height:88px;display:flex;flex-direction:column}
 .bcol:hover{border-color:#334155}
 .bcol-hd{font-weight:600;color:var(--text);font-size:9px;margin-bottom:4px;letter-spacing:0.3px}
-.bhist-list{max-height:92px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;scrollbar-width:thin;scrollbar-gutter:stable;padding-right:4px}
+.bhist-list{overflow:visible;flex:1;padding-right:4px}
 .bhist-list::-webkit-scrollbar{width:4px}
 .bhist-list::-webkit-scrollbar-thumb{background:#334155;border-radius:4px}
 .bhist-list::-webkit-scrollbar-track{background:transparent}
@@ -564,10 +561,13 @@ function render(d){
         var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
         var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
         var ptsUntilMid = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
-        var targetPesos = (s.targetPesos != null ? s.targetPesos : (isPmathCard?100:300));
+        var targetPesos = (s.targetPesos != null ? s.targetPesos : 300);
         var pesosNeeded = (s.pesosNeeded != null ? s.pesosNeeded : Math.max(0, targetPesos - Number(s.withdrawable||0)));
-        // For pmath, pesosNeeded is coins needed, target is 100
-        if (isPmathCard) { targetPesos = 100; pesosNeeded = Math.max(0, 100 - Number(s.withdrawable||0)); ptsUntilMid = pesosNeeded; }
+        if (isPmathCard) {
+          targetPesos = 300;
+          ptsUntilMid = Math.max(0, 30000 - Number(s.withdrawable||0));
+          pesosNeeded = ptsUntilMid / 100;
+        }
         var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
         function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
@@ -584,12 +584,22 @@ function render(d){
         }
         var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/(isPmathCard?100:250)).toFixed(1) : '0';
         var leftCol = '<div class="bcol"><div class="bcol-hd">Balance History (10)</div><div class="bhist-list">'+histHtml+'</div></div>';
-        var rightCol = '<div class="bcol"><div class="bcol-hd">'+(isPmathCard?'Calculation (100=1&#8369;)':'Calculation (250=3&#8369;)')+'</div>'
-          +'<div class="bcalc-line">&#8369;'+targetPesos+': <span class="bcalc-em">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span></div>'
-          +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
-          +'<div class="bcalc-line">Getting: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' pts/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
-          +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
-          +'</div>';
+        var avgSecondsPerPoint = ptsPerMin>0 ? (60/ptsPerMin) : 0;
+        var rightCol;
+        if (isPmathCard) {
+          rightCol = '<div class="bcol"><div class="bcol-hd">Kyaiko Goal (100 coins = 1&#8369;)</div>'
+            +'<div class="bcalc-line">Goal: <span class="bcalc-em">&#8369;300 = 30,000 coins</span></div>'
+            +'<div class="bcalc-line">Remaining: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' coins</span> (&#8369;'+Number(pesosNeeded).toFixed(2)+')</div>'
+            +'<div class="bcalc-line">Rate: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' coins/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
+            +'<div class="bcalc-line">Average: <span class="bcalc-em">'+(avgSecondsPerPoint>0?avgSecondsPerPoint.toFixed(2)+' sec/coin':'—')+'</span></div>'
+            +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div></div>';
+        } else {
+          rightCol = '<div class="bcol"><div class="bcol-hd">Calculation (250=3&#8369;)</div>'
+            +'<div class="bcalc-line">&#8369;'+targetPesos+': <span class="bcalc-em">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span></div>'
+            +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
+            +'<div class="bcalc-line">Getting: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' pts/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
+            +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div></div>';
+        }
         var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
         return grid;
       })() +
