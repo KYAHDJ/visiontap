@@ -11,7 +11,7 @@ const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const PMATH_WORK_URL = "https://pmath100.com/games-mathproblem#";
 const PMATH_CONVERT_URL = "https://pmath100.com/convert-coins";
-const WORK_RE = /\/solving-colors|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
+const WORK_RE = /\/solving-colors|\/network-encashment|\/payout-history|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
 const PMATH_RE = /pmath100\.com/;
 
 const STALL_RESET_MS = 15000;
@@ -102,6 +102,8 @@ class Slot {
     this.lastActivityTs = Date.now();
     this.activityImage = null;
     this.guardTimer = null;
+    this.encashmentBusy = false;
+    this.encashment = null;
   }
 
   getWorkUrl() {
@@ -191,7 +193,7 @@ class Slot {
   }
 
   canAutomate() {
-    return this.isLoopRunning && !this.paused && !this.dashboardPaused && !this.loopStopRequested;
+    return this.isLoopRunning && !this.paused && !this.dashboardPaused && !this.loopStopRequested && !this.encashmentBusy;
   }
   markActivity(image) {
     if (image !== undefined && image === this.activityImage) return;
@@ -233,7 +235,7 @@ class Slot {
   }
 
   async inject() {
-    if (!this.wcIsAlive()) return;
+    if (!this.wcIsAlive() || this.encashmentBusy) return;
     if (this._injected) return;
     try {
       if (this.currentUrl.includes("ecnlmediamarket.com") || this.currentUrl.includes("pmath100.com")) {
@@ -333,6 +335,13 @@ class Slot {
         if (age > 30000) { this.isProcessing = false; this.log("Reset stuck isProcessing"); }
       }
     }
+  }
+
+  startEncashmentScheduler(stateDir) {
+    if (this.encashment) return;
+    const { EncashmentController } = require('./encashment');
+    this.encashment = new EncashmentController(this, stateDir);
+    this.encashment.start();
   }
 
   // ---- HUD ----
@@ -1080,7 +1089,8 @@ class Slot {
       stopRequested: this.loopStopRequested,
       timerText: (()=>{ const e=this.loopStartTime?Math.floor((Date.now()-this.loopStartTime)/1000):0; const m=String(Math.floor(e/60)).padStart(2,"0"); const s=String(e%60).padStart(2,"0"); return `${m}:${s}`; })(),
       elapsed: this.loopStartTime?Math.floor((Date.now()-this.loopStartTime)/1000):0,
-      loopStartTime: this.loopStartTime
+      loopStartTime: this.loopStartTime,
+      encashmentBusy: this.encashmentBusy
     };
   }
 

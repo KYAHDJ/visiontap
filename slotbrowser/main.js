@@ -14,7 +14,7 @@ const { Slot, ensureScripts } = require("./slot.js");
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const MATH_WORK_URL = "https://ecnlmediamarket.com/solving-math";
 const PMATH_WORK_URL = "https://pmath100.com/games-mathproblem#";
-const WORK_RE = /\/solving-(colors|math)|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
+const WORK_RE = /\/solving-(colors|math)|\/network-encashment|\/payout-history|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
 
 const STATE_DIR = path.join(app.getPath("userData"), "state");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
@@ -265,6 +265,7 @@ function createSlot(id, name, stopRequested, opts) {
   slot.dashboardPaused = !!opts.paused;
   slot.paused = !!opts.paused;
   slot.attach();
+  slot.startEncashmentScheduler(STATE_DIR);
   view.setVisible(true);
   win.contentView.addChildView(view);
 
@@ -618,6 +619,8 @@ function createWindow() {
       else if (cmd.action === 'resume') slot.manualResume();
       else if (cmd.action === 'restart' || cmd.action === 'refresh') slot.hardRestart();
       else if (cmd.action === 'remove') removeSlot(String(slot.id));
+      else if (cmd.action === 'encash-inspect' && slot.encashment) slot.encashment.inspect().catch(e => appendLog('[ENCASH]', e.message));
+      else if (cmd.action === 'encash-check' && slot.encashment) slot.encashment.checkHistory(true).catch(e => appendLog('[ENCASH]', e.message));
     }
     writeSlotsFile();
     broadcastState();

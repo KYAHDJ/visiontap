@@ -13,6 +13,7 @@ const HISTORY_FILE = path.join(ELECTRON_STATE_DIR, "cred_history.json");
 const LOOP_CMD_FILE = path.join(ELECTRON_STATE_DIR, "loop_command.json");
 const SLOTS_FILE = path.join(ELECTRON_STATE_DIR, "slots.json");
 const SLOT_CMD_FILE = path.join(ELECTRON_STATE_DIR, "slot_commands.json");
+const ENCASHMENT_STATE_FILE = path.join(ELECTRON_STATE_DIR, "encashment_adaihbi.json");
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
@@ -352,7 +353,8 @@ function getMergedSlots(status) {
       lastBalanceValue: ms.lastBalanceValue != null ? ms.lastBalanceValue : 0,
       balanceHistory: Array.isArray(ms.balanceHistory) ? ms.balanceHistory.slice(-10) : [],
       _windowActive: ms.windowStart > 0,
-      _cooldownActive: ms.cooldownStart > 0
+      _cooldownActive: ms.cooldownStart > 0,
+      encashment: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? readJson(ENCASHMENT_STATE_FILE, null) : null
     };
     merged.push(mergedSlot);
   }
@@ -435,6 +437,12 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .ftr{text-align:center;padding:12px 0;font-size:10px;color:#334155}
 .livedot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.encbtn{background:#0c4a6e;color:#7dd3fc;width:auto;padding:0 9px;font-size:10px}
+.encmodal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.88);z-index:50;padding:18px;overflow:auto}
+.encmodal.show{display:block}.encpanel{max-width:720px;margin:0 auto;background:#111827;border:1px solid #334155;border-radius:12px;padding:12px}
+.enchd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.enctitle{color:#38bdf8;font-weight:700}.encclose{background:#1e293b;color:#fff;border:0;border-radius:6px;padding:6px 10px}
+.encmeta{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}.encitem{background:#0f172a;padding:7px;border-radius:6px;font-size:10px}.encitem b{display:block;color:#64748b;font-size:8px;text-transform:uppercase;margin-bottom:2px}
+.encmsg{background:#0f172a;border-radius:6px;padding:8px;font-size:10px;line-height:1.4;word-break:break-word;margin-bottom:10px}.enclog{font-size:9px;color:#94a3b8;margin-top:8px;line-height:1.5}
 @media(max-width:380px){.wrap{padding:8px 8px 60px}.crow{flex-direction:column}.crow input{width:100%}.bsm{width:100%}}
 .b2col{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0 8px}
 .bcol{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px;cursor:pointer;min-height:88px;display:flex;flex-direction:column}
@@ -485,6 +493,7 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
     <a class="btn bgrn bful" href="/restart" onclick="return confirm('Restart VisionTap?')">Restart VisionTap</a>
   </div>
   <div class="ftr"><span class="livedot"></span><span id="ltxt">Connecting...</span></div>
+  <div class="encmodal" id="encmodal" onclick="if(event.target===this)closeEncash()"><div class="encpanel"><div class="enchd"><div class="enctitle">adaihbi Cash-out Monitor</div><button class="encclose" onclick="closeEncash()">Close</button></div><div id="encbody"></div></div></div>
 </div>
 <datalist id="hu">${historyOpts}</datalist>
 <script>
@@ -594,6 +603,7 @@ function render(d){
         '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume">&#9654;</a>'+
         '<a class="ibtn" href="/cmd?action=restart&slot='+sid+'" title="Restart">&#8635;</a>'+
         '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh">&#8634;</a>'+
+        (String(s.accountName).toLowerCase()==='adaihbi'?'<button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button>':'')+
         '<a class="ibtn dng" href="/cmd?action=remove&slot='+sid+'" title="Remove">&#10005;</a>'+
       '</div></div>';
     if (isDarlene) hDarlene+=cardHtml; else if (isDanica) hDanica+=cardHtml; else hAiko+=cardHtml;
@@ -603,6 +613,19 @@ function render(d){
   document.getElementById('slots-darlene').innerHTML=hDarlene || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No DARLENE slots</div>';
   window._lastSlots = slots; // for live timer 1:1 - sync live only, no stale lastUpdate
 }
+
+function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
+function showEncash(id){
+  var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{};
+  var logs=(e.eventLog||[]).slice().reverse().map(function(x){return '<div>'+esc(fmtWhen(x.at))+' — '+esc(x.text)+'</div>'}).join('');
+  document.getElementById('encbody').innerHTML='<div class="encmeta">'+
+    '<div class="encitem"><b>Status</b>'+esc(e.payoutStatus||e.status||'Scheduled')+'</div><div class="encitem"><b>Attempts</b>'+esc(e.attempts||0)+'</div>'+
+    '<div class="encitem"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encitem"><b>Amount</b>'+esc(e.amount||'—')+'</div>'+
+    '<div class="encitem"><b>Last attempt</b>'+esc(fmtWhen(e.lastAttemptAt))+'</div><div class="encitem"><b>Next attempt/check</b>'+esc(fmtWhen(e.nextAttemptAt||e.nextCheckAt))+'</div></div>'+
+    '<div class="encmsg">'+esc(e.message||'Waiting for Monday 8:00 AM PH.')+'</div><div class="enclog">'+logs+'</div>';
+  document.getElementById('encmodal').classList.add('show');
+}
+function closeEncash(){document.getElementById('encmodal').classList.remove('show')}
 
 function openModal(id){ var m=document.getElementById('modal-'+id); if(m) m.classList.add('show'); }
 function closeModal(id){ var m=document.getElementById('modal-'+id); if(m) m.classList.remove('show'); }
