@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
-const ACTIONS = new Set(['pause', 'resume', 'restart', 'refresh', 'remove', 'encash-inspect', 'encash-check']);
+const ACTIONS = new Set(['pause', 'resume', 'restart', 'refresh', 'remove', 'encash-inspect', 'encash-check', 'encash-inspect-task']);
 let sequence = 0;
 function enqueue(dir, commands) {
   fs.mkdirSync(dir, { recursive: true });

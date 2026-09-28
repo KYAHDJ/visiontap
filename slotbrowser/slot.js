@@ -11,7 +11,7 @@ const KEEPER_COMMAND_URL = "http://127.0.0.1:8177/command";
 const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
 const PMATH_WORK_URL = "https://pmath100.com/games-mathproblem#";
 const PMATH_CONVERT_URL = "https://pmath100.com/convert-coins";
-const WORK_RE = /\/solving-colors|\/network-encashment|\/payout-history|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
+const WORK_RE = /\/solving-colors|\/network-encashment|\/task-encashment|\/payout-history|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
 const PMATH_RE = /pmath100\.com/;
 
 const STALL_RESET_MS = 15000;

@@ -3,6 +3,7 @@ const path = require('path');
 const PH_TIME_ZONE = 'Asia/Manila';
 const ENCASH_URL = 'https://ecnlmediamarket.com/network-encashment';
 const HISTORY_URL = 'https://ecnlmediamarket.com/payout-history';
+const TASK_ENCASH_URL = 'https://ecnlmediamarket.com/task-encashment';
 const FIVE_MINUTES = 300000;
 const ONE_HOUR = 3600000;
 
@@ -49,6 +50,15 @@ class EncashmentController {
       const s=this.state();await this.navigate(ENCASH_URL);
       const info=await this.slot.wc.executeJavaScript(`(()=>{const label=e=>{const d=e.id&&document.querySelector('label[for="'+CSS.escape(e.id)+'"]');return((d&&d.innerText)||(e.closest('label')&&e.closest('label').innerText)||'').trim();};return{url:location.href,title:document.title,fields:[...document.querySelectorAll('input,select,textarea')].map(e=>({tag:e.tagName,type:e.type||'',name:e.name||'',id:e.id||'',placeholder:e.placeholder||'',label:label(e),required:!!e.required,max:e.max||'',options:e.tagName==='SELECT'?[...e.options].map(o=>({text:o.text.trim(),value:o.value,disabled:o.disabled,selected:o.selected})).slice(0,20):[]})),buttons:[...document.querySelectorAll('button,input[type=submit],a')].map(e=>(e.innerText||e.value||'').trim()).filter(Boolean).slice(0,80),text:(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').slice(0,5000)};})()`);
       s.lastUrl=info&&info.url||this.slot.wc.getURL();s.message='Inspection captured: '+(info&&info.fields?info.fields.length:0)+' fields';s.inspection=info;await this.capture(s);this.save(s,s.message);
+    });
+  }
+
+  async inspectTask(){
+    if(!this.enabledForSlot)return;
+    await this.withColorResume('Inspecting task encashment form...',async()=>{
+      const s=this.state();await this.navigate(TASK_ENCASH_URL);
+      const info=await this.slot.wc.executeJavaScript(`(()=>{const label=e=>{const d=e.id&&document.querySelector('label[for="'+CSS.escape(e.id)+'"]');return((d&&d.innerText)||(e.closest('label')&&e.closest('label').innerText)||'').trim();};return{url:location.href,title:document.title,fields:[...document.querySelectorAll('input,select,textarea')].map(e=>({tag:e.tagName,type:e.type||'',name:e.name||'',id:e.id||'',placeholder:e.placeholder||'',label:label(e),required:!!e.required,readOnly:!!e.readOnly,valuePresent:!!e.value,options:e.tagName==='SELECT'?[...e.options].map(o=>({text:o.text.trim(),value:o.value,disabled:o.disabled,selected:o.selected})).slice(0,20):[]})),buttons:[...document.querySelectorAll('button,input[type=submit],a')].map(e=>({text:(e.innerText||e.value||'').trim(),type:e.type||'',name:e.name||'',id:e.id||''})).filter(x=>x.text).slice(0,80),text:(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').slice(0,5000)};})()`);
+      s.taskInspection=info;s.taskInspectionAt=Date.now();this.save(s,'Read-only task encashment inspection captured');
     });
   }
 
