@@ -118,7 +118,7 @@ class EncashmentController {
           const success=(/success(?:ful|fully)?|submitted|pending|processing|request received/i.test(combined)||zeroWallet||formGone)&&!failed;
           return{submitted:success,failed,reference:ref,url:location.href,text:combined.slice(0,1800)};
         })()`);        s.lastUrl=result&&result.url||this.slot.wc.getURL();s.reference=result&&result.reference||s.reference||'';s.message=compact(result&&(result.error||result.text)||'No result returned');
-        if(result&&result.submitted){s.status='submitted';s.payoutStatus='Pending';s.nextAttemptAt=0;}else{s.status='failed';s.nextAttemptAt=Date.now()+FIVE_MINUTES;}
+        if(result&&result.submitted){s.status='submitted';s.payoutStatus='Pending';s.receivedDecision='';s.receivedDecisionAt=0;s.nextAttemptAt=0;}else{s.status='failed';s.nextAttemptAt=Date.now()+FIVE_MINUTES;}
         await this.capture(s);this.save(s,result&&result.submitted?'Withdrawal submitted; retries stopped':'Attempt failed; retry after five minutes');
       }catch(e){s.status='failed';s.message=compact(e.message);s.nextAttemptAt=Date.now()+FIVE_MINUTES;this.save(s,'Attempt error: '+e.message);}
     });

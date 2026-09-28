@@ -651,7 +651,7 @@ function render(d){
 
 function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
 function showEncash(id){
-  var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{},status=e.payoutStatus||e.status||'Scheduled';
+  var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{},status=e.receivedDecision==='yes'?'Received':e.receivedDecision==='no'?'Not received':'Awaiting your answer';
   var mask=function(v){v=String(v||'');return v.length>4?'•••• '+v.slice(-4):(v||'—')};
   var money=function(v){v=String(v||'—');return v==='—'?v:(/[₱P]/.test(v)?v:'₱'+v)};
   var kind=String(e.kind||'network').toLowerCase(),upcoming=(q.type||'task').toLowerCase(),day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Wednesday');
