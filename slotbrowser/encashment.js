@@ -47,7 +47,7 @@ class EncashmentController {
     if(!this.enabledForSlot)return;
     await this.withColorResume('Inspecting encashment form...',async()=>{
       const s=this.state();await this.navigate(ENCASH_URL);
-      const info=await this.slot.wc.executeJavaScript(`(()=>{const label=e=>{const d=e.id&&document.querySelector('label[for="'+CSS.escape(e.id)+'"]');return((d&&d.innerText)||(e.closest('label')&&e.closest('label').innerText)||'').trim();};return{url:location.href,title:document.title,fields:[...document.querySelectorAll('input,select,textarea')].map(e=>({tag:e.tagName,type:e.type||'',name:e.name||'',id:e.id||'',placeholder:e.placeholder||'',label:label(e),required:!!e.required,max:e.max||'',options:e.tagName==='SELECT'?[...e.options].map(o=>o.text.trim()).slice(0,20):[]})),buttons:[...document.querySelectorAll('button,input[type=submit],a')].map(e=>(e.innerText||e.value||'').trim()).filter(Boolean).slice(0,80),text:(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').slice(0,5000)};})()`);
+      const info=await this.slot.wc.executeJavaScript(`(()=>{const label=e=>{const d=e.id&&document.querySelector('label[for="'+CSS.escape(e.id)+'"]');return((d&&d.innerText)||(e.closest('label')&&e.closest('label').innerText)||'').trim();};return{url:location.href,title:document.title,fields:[...document.querySelectorAll('input,select,textarea')].map(e=>({tag:e.tagName,type:e.type||'',name:e.name||'',id:e.id||'',placeholder:e.placeholder||'',label:label(e),required:!!e.required,max:e.max||'',options:e.tagName==='SELECT'?[...e.options].map(o=>({text:o.text.trim(),value:o.value,disabled:o.disabled,selected:o.selected})).slice(0,20):[]})),buttons:[...document.querySelectorAll('button,input[type=submit],a')].map(e=>(e.innerText||e.value||'').trim()).filter(Boolean).slice(0,80),text:(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').slice(0,5000)};})()`);
       s.lastUrl=info&&info.url||this.slot.wc.getURL();s.message='Inspection captured: '+(info&&info.fields?info.fields.length:0)+' fields';s.inspection=info;await this.capture(s);this.save(s,s.message);
     });
   }
@@ -59,24 +59,56 @@ class EncashmentController {
       try{
         await this.navigate(ENCASH_URL);
         const payload={receiverName:cfg.receiverName||'',email:cfg.email||'',mobile:cfg.mobile||'',payment:cfg.payment||'GCash'};
-        const result=await this.slot.wc.executeJavaScript(`(async()=>{
-          const data=${JSON.stringify(payload)},sleep=ms=>new Promise(r=>setTimeout(r,ms));
-          const all=()=>[...document.querySelectorAll('input,select,textarea')];
-          const key=e=>((e.name||'')+' '+(e.id||'')+' '+(e.placeholder||'')+' '+(e.getAttribute('aria-label')||'')+' '+((e.closest('.form-group,.mb-3,.row')||{}).innerText||'')).toLowerCase();
-          const field=words=>all().find(e=>words.some(w=>key(e).includes(w)));
-          const set=(e,v)=>{if(!e||!v)return false;const p=Object.getPrototypeOf(e),d=Object.getOwnPropertyDescriptor(p,'value');if(d&&d.set)d.set.call(e,v);else e.value=v;for(const t of['input','change','blur'])e.dispatchEvent(new Event(t,{bubbles:true}));return true;};
-          const receiver=field(['receiver name','receiver','recipient','fullname','full name']),email=field(['email']),mobile=field(['mobile','phone','ewallet','e-wallet','account number']);
-          const payment=all().find(e=>e.tagName==='SELECT'&&(/payment|method|channel/.test(key(e))||[...e.options].some(o=>/gcash/i.test(o.text))));
-          set(receiver,data.receiverName);set(email,data.email);set(mobile,data.mobile);if(payment){const o=[...payment.options].find(o=>/gcash/i.test(o.text));if(o)set(payment,o.value);}
-          const amount=field(['amount','cashout','encash']);if(amount&&!amount.value){const max=Number(amount.max||0),page=(document.body&&document.body.innerText||'').replace(/\\s+/g,' '),matches=[...page.matchAll(/(?:network wallet|available(?: balance)?|wallet balance)[^0-9₱P]{0,60}[₱P]?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)/ig)].map(m=>Number(m[1].replace(/,/g,''))).filter(n=>n>=300),v=max>=300?max:(matches.length?Math.max(...matches):0);if(v>0)set(amount,String(v));}
-          const missing=[];if(!receiver)missing.push('receiver');if(!email)missing.push('email');if(!mobile)missing.push('mobile');if(!payment)missing.push('payment');if(amount&&!amount.value)missing.push('amount');if(missing.length)return{submitted:false,error:'Missing fields: '+missing.join(', '),url:location.href,text:(document.body.innerText||'').slice(0,1800)};
-          const submit=[...document.querySelectorAll('button,input[type=submit],a')].find(e=>/request encashment|submit|cash ?out|withdraw|encash/i.test((e.innerText||e.value||'').trim())&&!/history/i.test(e.innerText||e.value||''));
-          if(!submit)return{submitted:false,error:'Submit button not found',url:location.href,text:(document.body.innerText||'').slice(0,1800)};
-          submit.click();await sleep(1800);for(let i=0;i<3;i++){const c=[...document.querySelectorAll('button,[role=button],input[type=submit]')].find(e=>/^(yes|confirm|continue|submit|ok|request|proceed)$/i.test((e.innerText||e.value||'').trim())&&!e.disabled);if(!c)break;c.click();await sleep(1800);}await sleep(3000);
-          const text=(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').trim(),ref=(text.match(/(?:reference|ref(?:erence)?\\s*(?:no|number|#)?)[^A-Z0-9-]*([A-Z0-9-]{5,})/i)||[])[1]||'',failed=/failed|error|invalid|unable|try again|insufficient/i.test(text),zeroWallet=/(?:network|task)\\s+wallet.{0,80}[₱P]\\s*0(?:\\.0+)?\\b/i.test(text),success=(/success(?:ful|fully)?|submitted|pending|request received/i.test(text)||zeroWallet)&&!failed;
-          return{submitted:success,failed,reference:ref,url:location.href,text:text.slice(0,1800)};
+        const prepared=await this.slot.wc.executeJavaScript(`(()=>{
+          const data=${JSON.stringify(payload)};
+          const receiver=document.querySelector('[name="recipient_name"]');
+          const email=document.querySelector('[name="email_address"]');
+          const mobile=document.querySelector('[name="wallet_address"]');
+          const amount=document.querySelector('[name="amount"]');
+          const payment=document.querySelector('[name="payment_gateway"]');
+          const submit=document.querySelector('#btnSubmit,[name="encash"]');
+          const set=(e,v)=>{if(!e)return false;const p=Object.getPrototypeOf(e),d=Object.getOwnPropertyDescriptor(p,'value');if(d&&d.set)d.set.call(e,String(v));else e.value=String(v);for(const type of ['input','change','blur'])e.dispatchEvent(new Event(type,{bubbles:true}));return true;};
+          set(receiver,data.receiverName);set(email,data.email);set(mobile,data.mobile);
+          if(payment){const options=[...payment.options],index=options.findIndex(o=>/^gcash$/i.test(o.text.trim()));if(index>=0){for(const option of options)option.selected=false;options[index].selected=true;payment.selectedIndex=index;}}
+          const missing=[];
+          if(!receiver||receiver.value.trim()!==data.receiverName.trim())missing.push('receiver_name');
+          if(!email||email.value.trim()!==data.email.trim())missing.push('email_address');
+          if(!mobile||String(mobile.value).replace(/\\D/g,'')!==String(data.mobile).replace(/\\D/g,''))missing.push('wallet_address');
+          if(!amount||!(Number(amount.value)>0))missing.push('amount');
+          if(!payment||!/gcash/i.test(payment.options[payment.selectedIndex]&&payment.options[payment.selectedIndex].text||''))missing.push('payment_gateway');
+          if(!submit)missing.push('submit_button');
+          const form=submit&&submit.form;
+          if(form&&!form.checkValidity())missing.push('form_validation');
+          return {ready:missing.length===0,missing,amount:amount&&amount.value||'',gateway:payment&&payment.options[payment.selectedIndex]&&payment.options[payment.selectedIndex].text||'',url:location.href};
         })()`);
-        s.lastUrl=result&&result.url||this.slot.wc.getURL();s.reference=result&&result.reference||s.reference||'';s.message=compact(result&&(result.error||result.text)||'No result returned');
+        if(!prepared||!prepared.ready){
+          const missing=prepared&&prepared.missing||['form'];
+          throw new Error('Form not ready: '+missing.join(', '));
+        }
+        let clicked=false;
+        try{
+          clicked=await this.slot.wc.executeJavaScript(`(()=>{
+            window.__vtConfirmMessages=[];window.confirm=m=>{window.__vtConfirmMessages.push(String(m||''));return true;};window.alert=m=>{window.__vtAlert=String(m||'');};
+            const submit=document.querySelector('#btnSubmit,[name="encash"]');if(!submit)return false;
+            if(submit.form&&submit.form.requestSubmit)submit.form.requestSubmit(submit);else submit.click();return true;
+          })()`);
+        }catch(e){if(/loading|destroyed|navigat/i.test(String(e&&e.message||e)))clicked=true;else throw e;}
+        if(!clicked)throw new Error('Request Encashment button was not activated');
+        await new Promise(r=>setTimeout(r,1200));
+        for(let i=0;i<3;i++){
+          try{await this.slot.wc.executeJavaScript(`(()=>{const b=[...document.querySelectorAll('.swal2-confirm,.modal button,button,[role="button"],input[type="submit"]')].find(e=>/^(yes|confirm|continue|submit|ok|request|proceed)$/i.test((e.innerText||e.value||'').trim())&&!e.disabled);if(b){b.click();return true;}return false;})()`);}catch(_){}
+          await new Promise(r=>setTimeout(r,1200));
+        }
+        await new Promise(r=>setTimeout(r,2500));
+        const result=await this.slot.wc.executeJavaScript(`(()=>{
+          const text=(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').trim(),alertText=String(window.__vtAlert||''),combined=(alertText+' '+text).trim();
+          const ref=(combined.match(/(?:reference(?: number| no\\.?| #)?|ref no\\.?)\\s*[:#-]\\s*([A-Z0-9-]{5,})/i)||[])[1]||'';
+          const failed=/failed|error|invalid|unable|try again|insufficient|required field/i.test(combined);
+          const zeroWallet=/(?:network|task)\\s+wallet.{0,80}[₱P]\\s*0(?:\\.0+)?\\b/i.test(combined);
+          const formGone=!document.querySelector('[name="recipient_name"]');
+          const success=(/success(?:ful|fully)?|submitted|pending|processing|request received/i.test(combined)||zeroWallet||formGone)&&!failed;
+          return{submitted:success,failed,reference:ref,url:location.href,text:combined.slice(0,1800)};
+        })()`);        s.lastUrl=result&&result.url||this.slot.wc.getURL();s.reference=result&&result.reference||s.reference||'';s.message=compact(result&&(result.error||result.text)||'No result returned');
         if(result&&result.submitted){s.status='submitted';s.payoutStatus='Pending';s.nextAttemptAt=0;}else{s.status='failed';s.nextAttemptAt=Date.now()+FIVE_MINUTES;}
         await this.capture(s);this.save(s,result&&result.submitted?'Withdrawal submitted; retries stopped':'Attempt failed; retry after five minutes');
       }catch(e){s.status='failed';s.message=compact(e.message);s.nextAttemptAt=Date.now()+FIVE_MINUTES;this.save(s,'Attempt error: '+e.message);}
@@ -88,8 +120,17 @@ class EncashmentController {
     await this.withColorResume('Checking payout status...',async()=>{
       try{
         await this.navigate(HISTORY_URL);
-        const result=await this.slot.wc.executeJavaScript(`(()=>{const rows=[...document.querySelectorAll('tr,.card,.list-group-item')].map(e=>(e.innerText||'').replace(/\\s+/g,' ').trim()).filter(Boolean),recent=rows.find(t=>/pending|approved|paid|transferred|failed|declined/i.test(t))||rows[0]||'',status=(recent.match(/approved|paid|transferred|pending|failed|declined/i)||[])[0]||'',ref=(recent.match(/(?:reference|ref(?:erence)?\\s*(?:no|number|#)?)[^A-Z0-9-]*([A-Z0-9-]{5,})/i)||[])[1]||'',amount=(recent.match(/[₱P]\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)/i)||[])[1]||'';return{url:location.href,recent:recent.slice(0,1800),status,reference:ref,amount};})()`);
-        s.lastUrl=result&&result.url||this.slot.wc.getURL();s.payoutStatus=result&&result.status||s.payoutStatus||'Pending';s.reference=result&&result.reference||s.reference||'';s.amount=result&&result.amount||s.amount||'';s.message=compact(result&&result.recent||'No payout row found');
+        const targetDate=s.date||phParts().key;
+        const result=await this.slot.wc.executeJavaScript(`(()=>{
+          const targetDate=${JSON.stringify(targetDate)};
+          const elements=[...document.querySelectorAll('tbody tr')];
+          const rows=(elements.length?elements:[...document.querySelectorAll('tr')]).map(e=>(e.innerText||'').replace(/\\s+/g,' ').trim()).filter(Boolean);
+          const recent=rows.find(t=>t.includes(targetDate)&&/processing|pending|approved|paid|transferred|failed|declined/i.test(t))||[...rows].reverse().find(t=>/processing|pending|approved|paid|transferred|failed|declined/i.test(t))||'';
+          const status=(recent.match(/processing|pending|approved|paid|transferred|failed|declined/i)||[])[0]||'';
+          const ref=(recent.match(/\\b(ECL[A-Z]-[A-Z0-9]+)\\b/i)||[])[1]||'';
+          const amount=(recent.match(/[₱P]\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)/i)||[])[1]||'';
+          return{url:location.href,recent:recent.slice(0,1800),status,reference:ref,amount};
+        })()`);        s.lastUrl=result&&result.url||this.slot.wc.getURL();s.payoutStatus=result&&result.status||s.payoutStatus||'Pending';s.reference=result&&result.reference||s.reference||'';s.amount=result&&result.amount||s.amount||'';s.message=compact(result&&result.recent||'No payout row found');
         if(/approved|paid|transferred/i.test(s.payoutStatus)){s.status='approved';s.nextCheckAt=0;}else if(/failed|declined/i.test(s.payoutStatus)){s.status='failed';s.nextCheckAt=0;}else s.status='pending';
         await this.capture(s);this.save(s,'Payout status: '+(s.payoutStatus||'unknown'));
       }catch(e){s.message=compact(e.message);this.save(s,'History check error: '+e.message);}
