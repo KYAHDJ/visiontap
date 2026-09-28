@@ -30,10 +30,7 @@ class EncashmentController {
     if(!this.enabledForSlot||this.busy||!this.slot.wcIsAlive())return;
     const cfg=this.config();if(!cfg.enabled)return;const ph=phParts(now),start=Number(cfg.startHour||8),end=Number(cfg.endHour||10),withdrawDay=ph.weekday===(cfg.weekday||'Wed'),kind=cfg.type==='task'?'task':'network';
     let s=this.state();
-    if(/submitted|pending|processing/i.test(s.status+' '+s.payoutStatus)&&s.date===ph.key){
-      if(ph.hour>=12&&(!s.lastCheckAt||Date.now()-s.lastCheckAt>=ONE_HOUR))await this.checkHistory(false);
-      return;
-    }
+    if(/submitted|pending|processing/i.test(s.status+' '+s.payoutStatus)&&s.date===ph.key)return;
     if(!withdrawDay)return;
     if(s.date!==ph.key||s.kind!==kind){const previous=s.reference?{date:s.date,kind:s.kind||'network',status:s.payoutStatus||s.status,reference:s.reference,netAmount:s.netAmount||s.amount}:null;s=defaultState();s.date=ph.key;s.kind=kind;s.previousPayout=previous;this.save(s,(kind==='task'?'Task':'Network')+' schedule opened for '+ph.key);}
     if(/approved|paid|transferred/i.test(s.status+' '+s.payoutStatus))return;
@@ -92,6 +89,7 @@ class EncashmentController {
           if(form&&!form.checkValidity())missing.push('form_validation');
           return {ready:missing.length===0,missing,amount:amount&&amount.value||'',gateway:payment&&payment.options[payment.selectedIndex]&&payment.options[payment.selectedIndex].text||'',url:location.href};
         })()`);
+        s.amount=prepared&&prepared.amount||s.amount||'';s.gateway=prepared&&prepared.gateway||cfg.payment||'GCash';s.payoutNumber=cfg.mobile||s.payoutNumber||'';s.requestedAt=new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,dateStyle:'medium',timeStyle:'medium'}).format(new Date());
         if(!prepared||!prepared.ready){
           const missing=prepared&&prepared.missing||['form'];
           throw new Error('Form not ready: '+missing.join(', '));

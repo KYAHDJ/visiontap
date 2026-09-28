@@ -460,7 +460,7 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .encmodal.show{display:block}.encpanel{max-width:760px;margin:0 auto;background:linear-gradient(145deg,#111827,#0b1220);border:1px solid #334155;border-radius:16px;padding:16px;box-shadow:0 24px 70px #0009}
 .enchd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.enctitle{color:#38bdf8;font-weight:700}.encclose{background:#1e293b;color:#fff;border:0;border-radius:6px;padding:6px 10px}
 .encschedule{background:#082f49;border:1px solid #075985;border-radius:10px;padding:10px 12px;margin-bottom:10px;color:#bae6fd;font-size:10px}.encstatus{display:inline-block;border-radius:999px;padding:4px 9px;margin-bottom:10px;background:#422006;color:#fbbf24;font-size:9px;font-weight:700;text-transform:uppercase}.encmeta{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}.encitem{background:#0f172a;border:1px solid #1e293b;padding:9px;border-radius:9px;font-size:10px;word-break:break-word}.encitem b{display:block;color:#64748b;font-size:8px;text-transform:uppercase;margin-bottom:3px}
-.encmsg{background:#0f172a;border-left:3px solid #38bdf8;border-radius:6px;padding:9px;font-size:10px;line-height:1.4;word-break:break-word;margin-bottom:10px}.enclog{font-size:9px;color:#94a3b8;margin-top:8px;line-height:1.5;display:grid;gap:4px}.enclog div{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px}@media(max-width:600px){.encmeta{grid-template-columns:1fr 1fr}}
+.encmsg{background:#0f172a;border-left:3px solid #38bdf8;border-radius:6px;padding:9px;font-size:10px;line-height:1.4;word-break:break-word;margin-bottom:10px}.enclog{font-size:9px;color:#94a3b8;margin-top:8px;line-height:1.5;display:grid;gap:4px}.enclog div{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px}.encreceived{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.encreceived button{padding:10px;border-radius:8px;border:1px solid #334155;background:#172033;color:#cbd5e1;font-weight:700;cursor:pointer}.encreceived button.yes.active{background:#064e3b;border-color:#10b981;color:#6ee7b7}.encreceived button.no.active{background:#450a0a;border-color:#ef4444;color:#fca5a5}@media(max-width:600px){.encmeta{grid-template-columns:1fr 1fr}}
 @media(max-width:380px){.wrap{padding:8px 8px 60px}.crow{flex-direction:column}.crow input{width:100%}.bsm{width:100%}}
 .b2col{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0 8px}
 .bcol{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px;cursor:pointer;min-height:88px;display:flex;flex-direction:column}
@@ -655,10 +655,12 @@ function showEncash(id){
     '<div class="encitem"><b>Payout type</b>'+esc(e.kind||kind)+'</div><div class="encitem"><b>Gateway</b>'+esc(e.gateway||'GCash')+'</div><div class="encitem"><b>Attempts</b>'+esc(e.attempts||0)+'</div>'+
     '<div class="encitem"><b>Gross</b>'+esc(e.amount||'—')+'</div><div class="encitem"><b>Tax</b>'+esc(e.tax||'—')+'</div><div class="encitem"><b>Expected net</b>'+esc(e.netAmount||'—')+'</div>'+
     '<div class="encitem"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encitem"><b>Payout number</b>'+esc(mask(e.payoutNumber))+'</div><div class="encitem"><b>Transaction</b>'+esc(e.transactionId||'—')+'</div>'+
-    '<div class="encitem"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encitem"><b>Last checked</b>'+esc(fmtWhen(e.lastCheckAt))+'</div><div class="encitem"><b>Next check</b>'+esc(fmtWhen(e.nextCheckAt||e.nextAttemptAt))+'</div></div>'+
+    '<div class="encitem"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encitem"><b>Cash-out date</b>'+esc(e.date||'—')+'</div><div class="encitem"><b>Received</b>'+esc(e.receivedDecision==='yes'?'Yes — received':e.receivedDecision==='no'?'No — not received':'Not marked yet')+'</div></div>'+
+    '<div class="encreceived"><button class="yes '+(e.receivedDecision==='yes'?'active':'')+'" onclick="setPayoutReceived(&quot;yes&quot;)">✓ Yes, I received it</button><button class="no '+(e.receivedDecision==='no'?'active':'')+'" onclick="setPayoutReceived(&quot;no&quot;)">✕ No, not received</button></div>'+
     '<div class="encmsg">'+esc(e.message||('Waiting for '+day+' at 8:00 AM PH.'))+'</div><div class="enclog">'+logs+'</div>';
   document.getElementById('encmodal').classList.add('show');
 }
+function setPayoutReceived(value){fetch('/payout-received?value='+encodeURIComponent(value),{method:'POST'}).then(function(r){if(!r.ok)throw new Error('Save failed');return r.json()}).then(function(){var slot=(window._lastSlots||[]).find(function(x){return String(x.accountName||'').toLowerCase()==='adaihbi'});if(slot&&slot.encashment)slot.encashment.receivedDecision=value;if(slot)showEncash(slot.id)}).catch(function(){alert('Could not save your choice. Please try again.')})}
 function closeEncash(){document.getElementById('encmodal').classList.remove('show')}
 
 function openModal(id){ var m=document.getElementById('modal-'+id); if(m) m.classList.add('show'); }
@@ -749,6 +751,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (url.pathname === "/payout-received" && req.method === "POST") {
+    const value = url.searchParams.get("value");
+    if (value !== "yes" && value !== "no") { res.writeHead(400); res.end("Invalid choice"); return; }
+    const state = readJson(ENCASHMENT_STATE_FILE, {});
+    state.receivedDecision = value;
+    state.receivedDecisionAt = Date.now();
+    writeJson(ENCASHMENT_STATE_FILE, state);
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ok:true,value}));
+    return;
+  }
   if (url.pathname === "/cmd") {
     const action = url.searchParams.get("action");
     const slot = url.searchParams.get("slot");
