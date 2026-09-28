@@ -16,7 +16,7 @@ function phParts(now = new Date()) {
 function readJson(f,d){try{return JSON.parse(fs.readFileSync(f,'utf8'));}catch(_){return d;}}
 function writeJson(f,d){fs.mkdirSync(path.dirname(f),{recursive:true});const t=f+'.tmp';fs.writeFileSync(t,JSON.stringify(d,null,2));fs.renameSync(t,f);}
 function compact(v,n=1600){return String(v||'').replace(/\s+/g,' ').trim().slice(0,n);}
-function defaultState(){return {date:'',status:'scheduled',attempts:0,lastAttemptAt:0,nextAttemptAt:0,lastCheckAt:0,nextCheckAt:0,reference:'',amount:'',payoutStatus:'',message:'',lastUrl:'',screenshot:'',eventLog:[]};}
+function defaultState(){return {date:'',kind:'',status:'scheduled',attempts:0,lastAttemptAt:0,nextAttemptAt:0,lastCheckAt:0,nextCheckAt:0,reference:'',amount:'',tax:'',netAmount:'',gateway:'',payoutNumber:'',requestedAt:'',transactionId:'',payoutStatus:'',message:'',lastUrl:'',screenshot:'',eventLog:[]};}
 
 class EncashmentController {
   constructor(slot,stateDir){this.slot=slot;this.stateDir=stateDir;this.configFile=path.join(stateDir,'encashment_config.json');this.stateFile=path.join(stateDir,'encashment_adaihbi.json');this.imageFile=path.join(stateDir,'encashment_adaihbi.png');this.timer=null;this.busy=false;}
@@ -28,14 +28,14 @@ class EncashmentController {
   stop(){if(this.timer)clearInterval(this.timer);this.timer=null;}
   async tick(now=new Date()){
     if(!this.enabledForSlot||this.busy||!this.slot.wcIsAlive())return;
-    const cfg=this.config();if(!cfg.enabled)return;const ph=phParts(now),start=Number(cfg.startHour||8),end=Number(cfg.endHour||10),withdrawDay=ph.weekday===(cfg.weekday||'Mon');
+    const cfg=this.config();if(!cfg.enabled)return;const ph=phParts(now),start=Number(cfg.startHour||8),end=Number(cfg.endHour||10),withdrawDay=ph.weekday===(cfg.weekday||'Wed'),kind=cfg.type==='task'?'task':'network';
     let s=this.state();
-    if(/submitted|pending/i.test(s.status+' '+s.payoutStatus)){
+    if(/submitted|pending|processing/i.test(s.status+' '+s.payoutStatus)&&s.date===ph.key){
       if(ph.hour>=12&&(!s.lastCheckAt||Date.now()-s.lastCheckAt>=ONE_HOUR))await this.checkHistory(false);
       return;
     }
     if(!withdrawDay)return;
-    if(s.date!==ph.key){s=defaultState();s.date=ph.key;this.save(s,'Schedule opened for '+ph.key);}
+    if(s.date!==ph.key||s.kind!==kind){const previous=s.reference?{date:s.date,kind:s.kind||'network',status:s.payoutStatus||s.status,reference:s.reference,netAmount:s.netAmount||s.amount}:null;s=defaultState();s.date=ph.key;s.kind=kind;s.previousPayout=previous;this.save(s,(kind==='task'?'Task':'Network')+' schedule opened for '+ph.key);}
     if(/approved|paid|transferred/i.test(s.status+' '+s.payoutStatus))return;
     if(ph.hour>=start&&ph.hour<end){if(!s.lastAttemptAt||Date.now()-s.lastAttemptAt>=FIVE_MINUTES)await this.attempt(false);return;}
     if(ph.hour>=end&&!s.lastAttemptAt&&s.status==='scheduled'){s.status='window_closed';s.message='No withdrawal was submitted before 10:00 AM PH.';this.save(s,s.message);}
@@ -67,7 +67,8 @@ class EncashmentController {
     s.lastAttemptAt=Date.now();s.nextAttemptAt=s.lastAttemptAt+FIVE_MINUTES;s.attempts=Number(s.attempts||0)+1;s.status='attempting';this.save(s,'Attempt '+s.attempts+' started');
     await this.withColorResume('Withdrawal attempt in progress...',async()=>{
       try{
-        await this.navigate(ENCASH_URL);
+        const kind=cfg.type==='task'?'task':'network';s.kind=kind;
+        await this.navigate(kind==='task'?TASK_ENCASH_URL:ENCASH_URL);
         const payload={receiverName:cfg.receiverName||'',email:cfg.email||'',mobile:cfg.mobile||'',payment:cfg.payment||'GCash'};
         const prepared=await this.slot.wc.executeJavaScript(`(()=>{
           const data=${JSON.stringify(payload)};

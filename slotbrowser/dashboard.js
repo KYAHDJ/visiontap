@@ -14,6 +14,7 @@ const LOOP_CMD_FILE = path.join(ELECTRON_STATE_DIR, "loop_command.json");
 const SLOTS_FILE = path.join(ELECTRON_STATE_DIR, "slots.json");
 const SLOT_CMD_FILE = path.join(ELECTRON_STATE_DIR, "slot_commands.json");
 const ENCASHMENT_STATE_FILE = path.join(ELECTRON_STATE_DIR, "encashment_adaihbi.json");
+const ENCASHMENT_CONFIG_FILE = path.join(ELECTRON_STATE_DIR, "encashment_config.json");
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
@@ -370,7 +371,8 @@ function getMergedSlots(status) {
       balanceHistory: Array.isArray(ms.balanceHistory) ? ms.balanceHistory.slice(-10) : [],
       _windowActive: ms.windowStart > 0,
       _cooldownActive: ms.cooldownStart > 0,
-      encashment: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? readJson(ENCASHMENT_STATE_FILE, null) : null
+      encashment: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? readJson(ENCASHMENT_STATE_FILE, null) : null,
+      encashmentSchedule: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? (()=>{const c=readJson(ENCASHMENT_CONFIG_FILE,{});return {type:c.type==='task'?'task':'network',weekday:c.weekday||'Wed',startHour:Number(c.startHour||8),endHour:Number(c.endHour||10),retryMinutes:5};})() : null
     };
     merged.push(mergedSlot);
   }
@@ -455,10 +457,10 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .encbtn{background:#0c4a6e;color:#7dd3fc;width:auto;padding:0 9px;font-size:10px}
 .encmodal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.88);z-index:50;padding:18px;overflow:auto}
-.encmodal.show{display:block}.encpanel{max-width:720px;margin:0 auto;background:#111827;border:1px solid #334155;border-radius:12px;padding:12px}
+.encmodal.show{display:block}.encpanel{max-width:760px;margin:0 auto;background:linear-gradient(145deg,#111827,#0b1220);border:1px solid #334155;border-radius:16px;padding:16px;box-shadow:0 24px 70px #0009}
 .enchd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.enctitle{color:#38bdf8;font-weight:700}.encclose{background:#1e293b;color:#fff;border:0;border-radius:6px;padding:6px 10px}
-.encmeta{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}.encitem{background:#0f172a;padding:7px;border-radius:6px;font-size:10px}.encitem b{display:block;color:#64748b;font-size:8px;text-transform:uppercase;margin-bottom:2px}
-.encmsg{background:#0f172a;border-radius:6px;padding:8px;font-size:10px;line-height:1.4;word-break:break-word;margin-bottom:10px}.enclog{font-size:9px;color:#94a3b8;margin-top:8px;line-height:1.5}
+.encschedule{background:#082f49;border:1px solid #075985;border-radius:10px;padding:10px 12px;margin-bottom:10px;color:#bae6fd;font-size:10px}.encstatus{display:inline-block;border-radius:999px;padding:4px 9px;margin-bottom:10px;background:#422006;color:#fbbf24;font-size:9px;font-weight:700;text-transform:uppercase}.encmeta{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}.encitem{background:#0f172a;border:1px solid #1e293b;padding:9px;border-radius:9px;font-size:10px;word-break:break-word}.encitem b{display:block;color:#64748b;font-size:8px;text-transform:uppercase;margin-bottom:3px}
+.encmsg{background:#0f172a;border-left:3px solid #38bdf8;border-radius:6px;padding:9px;font-size:10px;line-height:1.4;word-break:break-word;margin-bottom:10px}.enclog{font-size:9px;color:#94a3b8;margin-top:8px;line-height:1.5;display:grid;gap:4px}.enclog div{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px}@media(max-width:600px){.encmeta{grid-template-columns:1fr 1fr}}
 @media(max-width:380px){.wrap{padding:8px 8px 60px}.crow{flex-direction:column}.crow input{width:100%}.bsm{width:100%}}
 .b2col{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0 8px}
 .bcol{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px;cursor:pointer;min-height:88px;display:flex;flex-direction:column}
@@ -645,13 +647,16 @@ function render(d){
 
 function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
 function showEncash(id){
-  var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{};
-  var logs=(e.eventLog||[]).slice().reverse().map(function(x){return '<div>'+esc(fmtWhen(x.at))+' — '+esc(x.text)+'</div>'}).join('');
-  document.getElementById('encbody').innerHTML='<div class="encmeta">'+
-    '<div class="encitem"><b>Status</b>'+esc(e.payoutStatus||e.status||'Scheduled')+'</div><div class="encitem"><b>Attempts</b>'+esc(e.attempts||0)+'</div>'+
-    '<div class="encitem"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encitem"><b>Amount</b>'+esc(e.amount||'—')+'</div>'+
-    '<div class="encitem"><b>Last attempt</b>'+esc(fmtWhen(e.lastAttemptAt))+'</div><div class="encitem"><b>Next attempt/check</b>'+esc(fmtWhen(e.nextAttemptAt||e.nextCheckAt))+'</div></div>'+
-    '<div class="encmsg">'+esc(e.message||'Waiting for Monday 8:00 AM PH.')+'</div><div class="enclog">'+logs+'</div>';
+  var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{},status=e.payoutStatus||e.status||'Scheduled';
+  var mask=function(v){v=String(v||'');return v.length>4?'•••• '+v.slice(-4):(v||'—')};
+  var logs=(e.eventLog||[]).slice(-8).reverse().map(function(x){return '<div>'+esc(fmtWhen(x.at))+' — '+esc(x.text)+'</div>'}).join('')||'<div>No recent activity.</div>';
+  var kind=(q.type||e.kind||'task').toLowerCase(),day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Wednesday');
+  document.getElementById('encbody').innerHTML='<div class="encschedule"><b>'+esc(kind==='task'?'Task Encashment':'Network Encashment')+'</b><br>Every '+esc(day)+' • '+esc(q.startHour||8)+':00–'+esc(q.endHour||10)+':00 AM PH • 5-minute retry cooldown</div><span class="encstatus">'+esc(status)+'</span><div class="encmeta">'+
+    '<div class="encitem"><b>Payout type</b>'+esc(e.kind||kind)+'</div><div class="encitem"><b>Gateway</b>'+esc(e.gateway||'GCash')+'</div><div class="encitem"><b>Attempts</b>'+esc(e.attempts||0)+'</div>'+
+    '<div class="encitem"><b>Gross</b>'+esc(e.amount||'—')+'</div><div class="encitem"><b>Tax</b>'+esc(e.tax||'—')+'</div><div class="encitem"><b>Expected net</b>'+esc(e.netAmount||'—')+'</div>'+
+    '<div class="encitem"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encitem"><b>Payout number</b>'+esc(mask(e.payoutNumber))+'</div><div class="encitem"><b>Transaction</b>'+esc(e.transactionId||'—')+'</div>'+
+    '<div class="encitem"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encitem"><b>Last checked</b>'+esc(fmtWhen(e.lastCheckAt))+'</div><div class="encitem"><b>Next check</b>'+esc(fmtWhen(e.nextCheckAt||e.nextAttemptAt))+'</div></div>'+
+    '<div class="encmsg">'+esc(e.message||('Waiting for '+day+' at 8:00 AM PH.'))+'</div><div class="enclog">'+logs+'</div>';
   document.getElementById('encmodal').classList.add('show');
 }
 function closeEncash(){document.getElementById('encmodal').classList.remove('show')}
