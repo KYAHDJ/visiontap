@@ -15,6 +15,7 @@ const SLOTS_FILE = path.join(ELECTRON_STATE_DIR, "slots.json");
 const SLOT_CMD_FILE = path.join(ELECTRON_STATE_DIR, "slot_commands.json");
 const ENCASHMENT_STATE_FILE = path.join(ELECTRON_STATE_DIR, "encashment_adaihbi.json");
 const ENCASHMENT_CONFIG_FILE = path.join(ELECTRON_STATE_DIR, "encashment_config.json");
+const THEME_PREF_FILE = path.join(ELECTRON_STATE_DIR, "dashboard_theme.json");
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
@@ -374,7 +375,7 @@ function getMergedSlots(status) {
       _windowActive: ms.windowStart > 0,
       _cooldownActive: ms.cooldownStart > 0,
       encashment: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? readJson(ENCASHMENT_STATE_FILE, null) : null,
-      encashmentSchedule: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? (()=>{const c=readJson(ENCASHMENT_CONFIG_FILE,{});return {type:c.type==='task'?'task':'network',weekday:c.weekday||'Wed',startHour:Number(c.startHour||8),endHour:Number(c.endHour||10),retryMinutes:5};})() : null
+      encashmentSchedule: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? (()=>{const c=readJson(ENCASHMENT_CONFIG_FILE,{});return {type:c.type||'',weekday:c.weekday||'',startHour:c.startHour==null?null:Number(c.startHour),endHour:c.endHour==null?null:Number(c.endHour),retryMinutes:5};})() : null
     };
     merged.push(mergedSlot);
   }
@@ -483,17 +484,120 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .bcalc-em{color:var(--text);font-weight:600}
 .bcol{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:6px;min-height:88px;display:flex;flex-direction:column}
 .bcol-hd{font-weight:600;color:var(--text);font-size:9px;margin-bottom:4px;letter-spacing:0.3px}
+/* Figma-inspired production theme */
+:root{--bg:#f2f2ff;--card:#fff;--border:#e4e2f2;--text:#050020;--muted:#77768f;--accent:#2d1cf5;--green:#18a875;--red:#d94a67;--yellow:#fa914b;--purple:#c2bffa;--midnight:#050020;--coral:#f47a91;--shadow:0 10px 28px rgba(25,17,77,.06)}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text)}
+.appbar{height:64px;background:rgba(255,255,255,.88);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 max(22px,calc((100vw - 1320px)/2));position:sticky;top:0;z-index:20;backdrop-filter:blur(14px)}
+.brand{display:flex;align-items:center;gap:11px}.brandmark{width:31px;height:31px;display:grid;grid-template-columns:1fr 1fr;gap:3px;transform:rotate(-10deg)}.brandmark i{display:block;border-radius:4px;background:var(--accent)}.brandmark i:nth-child(2){background:var(--coral)}.brandmark i:nth-child(3){background:var(--yellow)}.brandmark i:nth-child(4){background:var(--purple)}.brandcopy strong{display:block;font-size:17px;letter-spacing:-.04em}.brandcopy span{display:block;font-size:7px;letter-spacing:.18em;color:var(--muted);font-weight:800;margin-top:1px}.appstate{display:flex;align-items:center;gap:8px;font-size:10px;font-weight:700;color:#4b4a68}.appstate .livedot{margin:0}
+.wrap{max-width:1320px;margin:0 auto;padding:34px 24px 64px}
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:24px}.hero-copy h1{text-align:left;font-size:34px;line-height:1;color:var(--midnight);letter-spacing:-.055em;margin:7px 0 8px}.hero-copy h1 em{font-style:normal;color:var(--accent)}.hero-copy p{font-size:12px;color:var(--muted)}.eyebrow{font-size:9px;letter-spacing:.16em;color:var(--accent);font-weight:850;text-transform:uppercase}
+.ph-clock{margin:0;padding:11px 14px;min-width:285px;max-width:none;text-align:left;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;column-gap:16px}.ph-clock-time{font-size:16px;color:var(--midnight);grid-column:1}.ph-clock-date{font-size:9px;grid-column:1;margin-top:2px}.ph-clock-label{grid-column:2;grid-row:1/3;align-self:center;background:#eceaff;color:var(--accent);border-radius:6px;padding:5px 7px;font-size:8px}
+.overview{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}.ov{min-height:110px;background:#fff;border:1px solid var(--border);border-radius:17px;padding:16px;box-shadow:var(--shadow);display:flex;flex-direction:column}.ov.primary{background:var(--accent);border-color:var(--accent);color:#fff}.ov small{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}.ov.primary small{color:#dcd8ff}.ov strong{font-size:26px;letter-spacing:-.05em;margin-top:auto}.ov span{font-size:9px;color:var(--muted);margin-top:3px}.ov.primary span{color:#d7d3ff}.ov.next strong{font-size:18px}.ovicon{width:29px;height:29px;border-radius:9px;background:#eceaff;color:var(--accent);display:grid;place-items:center;font-size:14px;margin-bottom:12px}.primary .ovicon{background:rgba(255,255,255,.16);color:#fff}.ov.health .ovicon{background:#e7f7ef;color:var(--green)}.ov.next .ovicon{background:#fff0e5;color:#d96f2e}
+.pills{justify-content:flex-start;margin:0 0 12px}.pill{background:#fff;border-color:var(--border);box-shadow:0 3px 10px rgba(25,17,77,.03);color:#4b4a68;padding:6px 10px;border-radius:8px}
+.stitle{font-size:11px;color:var(--midnight);margin:30px 0 11px;letter-spacing:.08em}.section-aiko-title,.section-danica-title,.section-darlene-title{color:var(--midnight);background:transparent;border:0;border-bottom:1px solid #dcdaeb;border-radius:0;padding:0 0 10px}.section-aiko-title:before,.section-danica-title:before,.section-darlene-title:before{content:'';display:inline-block;width:3px;height:14px;border-radius:4px;background:var(--accent);margin-right:8px;vertical-align:-2px}.section-danica-title:before{background:var(--coral)}.section-darlene-title:before{background:var(--green)}
+#slots-aiko,#slots-danica,#slots-darlene{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.card,.card-aiko,.card-danica,.card-darlene{background:#fff;border:1px solid #e8e6f3;border-radius:18px;padding:18px;margin:0;box-shadow:var(--shadow);transition:transform .2s,box-shadow .2s,border-color .2s}.card:hover{transform:translateY(-2px);border-color:#d5d1f4;box-shadow:0 16px 34px rgba(25,17,77,.09)}
+.card-hd{margin-bottom:15px}.card-nm{font-size:15px;letter-spacing:-.02em}.card-bg{font-size:8px;border-radius:7px;padding:5px 8px;text-transform:capitalize}.card-bg.state-running{background:#e8f7ef;color:#168763}.card-bg.state-paused{background:#fff0e5;color:#b85a1c}
+.sgrid{gap:0;margin-bottom:14px;padding:13px 0;border-top:1px solid #efedf7;border-bottom:1px solid #efedf7}.sbox{background:transparent;border-radius:0;padding:4px 12px;border-left:1px solid #eceaf5}.sbox:first-child{border-left:0}.sv{font-size:19px;color:var(--midnight)!important;letter-spacing:-.035em}.sbox:first-child .sv{color:var(--accent)!important}.sl{font-size:9px;color:#9290a8;margin-top:4px}
+.pbar{background:#e9e6fc;height:7px;margin-bottom:14px}.pfill{background:linear-gradient(90deg,#5547ff,var(--accent))}
+.b2col{gap:9px;margin:8px 0 13px}.bcol{background:#f8f7ff;border:1px solid #eceafb;border-radius:12px;padding:12px;min-height:112px}.bcol:hover{border-color:#d8d4f7}.bcol-hd{font-size:10px;color:var(--midnight);margin-bottom:8px}.bhist-row{border-bottom-color:#eceaf5;padding:3px 0}.bhist-val{color:var(--accent)}.bhist-time,.bcalc-line{color:#85839d}.bcalc-em{color:var(--midnight)}
+.crow{gap:7px;margin:4px 0 9px}.crow input{padding:8px 10px;background:#fafaff;border:1px solid #e4e2f0;color:var(--midnight);border-radius:8px;font-size:11px}.crow input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(45,28,245,.1)}.bsm{border-radius:8px;padding:7px 13px}.bsv{background:#eeeaff;color:var(--accent)}
+.ehd{color:#85839d}.erow{border-bottom-color:#f0eff7}.eamt{color:var(--green)}
+.sacts{border-top:1px solid #efedf7;padding-top:12px;margin-top:12px;align-items:center}.ibtn{background:#f5f4fb;color:#77758e;border-radius:8px}.ibtn:hover{background:#ebe8ff;color:var(--accent)}.ibtn.dng:hover{background:#fff0f3;color:#bc3d5e}
+.encbtn{background:var(--midnight);color:#fff;height:32px}.encbtn:hover{background:var(--accent);color:#fff}.encoutstatus{background:#eceaff;border-color:#ded9ff;color:#4d42aa}
+.ggrid{display:flex;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid var(--border);border-radius:15px;padding:11px;box-shadow:var(--shadow);margin-bottom:10px}.btn{width:auto;min-width:120px;padding:10px 14px;border-radius:9px;font-size:10px}.bgrn{background:var(--accent);color:#fff}.bred{background:#fff0f3;color:#b63b5a}.byel{background:#fff0e5;color:#b85a1c}.bpur{background:#eeeaff;color:var(--accent)}.bful{flex:1}.ftr{color:#77768f}
+.encmodal{background:rgba(5,0,32,.62);align-items:center}.encpanel{max-width:560px;background:#fff;border:0;border-radius:20px;padding:0;overflow:hidden;box-shadow:0 35px 90px rgba(5,0,32,.35)}.enchd{padding:18px 22px;margin:0;border-bottom:1px solid var(--border)}.enctitle{color:var(--midnight);font-size:18px}.encclose{background:#f3f2fa;color:#6d6a87;border:0}.encbody{padding:18px}.enchero{margin:18px 18px 10px;background:var(--midnight);border:0;border-radius:14px;padding:18px}.enchero small{color:#b1aacb}.encstatus.answer{background:#eceaff;color:#4d42aa}.encsummary,.encdetails,.encreceived,.encschedule,.encactivity{margin-left:18px;margin-right:18px}.encsum{background:#f6f5fc;border-color:#efedf7}.encsum b,.encdetail b{color:#85839d}.encsum span{color:var(--midnight)}.encdetails{background:#fff;border-color:var(--border)}.encdetail{border-color:var(--border);color:var(--midnight)}.encreceived button{background:#f6f5fa;border-color:#e6e4f0;color:#625f78}.encschedule{background:#f7f6fc;border-color:#efedf7;color:#67647f;margin-bottom:18px}.encschedule b{color:var(--midnight)}.encactivity{color:#85839d;margin-bottom:18px}.encactivity div{border-color:#efedf7}
+@media(max-width:980px){.overview{grid-template-columns:repeat(2,1fr)}#slots-aiko,#slots-danica,#slots-darlene{grid-template-columns:1fr}}
+@media(max-width:620px){.appbar{height:56px;padding:0 14px}.wrap{padding:24px 12px 52px}.hero{align-items:stretch;flex-direction:column}.hero-copy h1{font-size:29px}.ph-clock{width:100%;min-width:0}.overview{gap:8px}.ov{min-height:96px;padding:12px}.ov strong{font-size:22px}.ggrid{display:grid;grid-template-columns:1fr 1fr}.btn{min-width:0;width:100%}.bful{grid-column:1/-1}.card{padding:14px}.b2col{grid-template-columns:1fr}.encoutstatus{overflow:hidden;text-overflow:ellipsis}.encmodal{padding:8px}.encsummary{grid-template-columns:repeat(3,1fr)}}
+/* High-contrast dark preview */
+:root{--bg:#080817;--card:#111126;--border:#292844;--text:#f7f5ff;--muted:#aaa7c3;--accent:#6857ff;--green:#39d49a;--red:#ff6f8c;--yellow:#ff9b55;--purple:#c7c1ff;--midnight:#05000f;--coral:#ff7892;--shadow:0 14px 34px rgba(0,0,0,.28)}
+body{background:radial-gradient(circle at 78% 0,rgba(72,49,255,.12),transparent 34%),var(--bg);color:var(--text)}
+.appbar{background:rgba(12,12,29,.9);border-color:#26253f}.brandcopy strong{color:#fff}.brandcopy span,.appstate{color:#bbb7d1}
+.hero-copy h1{color:#fff}.hero-copy p{color:#b7b3ca}.eyebrow{color:#9b90ff}
+.ph-clock,.ov,.ggrid,.card,.card-aiko,.card-danica,.card-darlene{background:#111126;border-color:#292844;box-shadow:var(--shadow)}
+.ph-clock-time{color:#fff}.ph-clock-date{color:#aaa7c3}.ph-clock-label{background:#282250;color:#c7c1ff}
+.ov small,.ov span{color:#aaa7c3}.ov.primary{background:linear-gradient(145deg,#4634f5,#2d1cf5);border-color:#6253ff}.ovicon{background:#282250;color:#bdb6ff}.ov.health .ovicon{background:#123c31;color:#55e5af}.ov.next .ovicon{background:#492818;color:#ffad72}
+.pill{background:#14142b;border-color:#302f4b;color:#d1cee0}
+.stitle,.section-aiko-title,.section-danica-title,.section-darlene-title{color:#f5f3ff;border-color:#302f49}
+.card:hover{border-color:#51497d;box-shadow:0 18px 40px rgba(0,0,0,.38)}.card-nm{color:#fff}
+.card-bg.state-running{background:#123c31;color:#6ce8b8}.card-bg.state-paused{background:#4a2a18;color:#ffb47d}
+.sgrid{border-color:#2a2943}.sbox{border-color:#302f49}.sv{color:#f8f7ff!important}.sbox:first-child .sv{color:#9e92ff!important}.sl{color:#aaa7c3}
+.pbar{background:#2a2848}.pfill{background:linear-gradient(90deg,#9b75ff,#5542ff)}
+.bcol{background:#0d0d20;border-color:#2a2944}.bcol:hover{border-color:#51497d}.bcol-hd,.bcalc-em{color:#f1efff}.bhist-row{border-color:#24233b}.bhist-val{color:#a89cff}.bhist-time,.bcalc-line{color:#aaa7c3}
+.crow input{background:#0d0d20;border-color:#33314e;color:#f7f5ff}.crow input::placeholder{color:#77748f}.crow input:focus{border-color:#7667ff;box-shadow:0 0 0 3px rgba(104,87,255,.18)}.bsv{background:#30275e;color:#d2cdff}
+.erow{border-color:#24233b}.ehd,.etsk{color:#aaa7c3}.eclr,.ets{color:#817e99}
+.sacts{border-color:#2a2943}.ibtn{background:#19182f;color:#aaa7c3}.ibtn:hover{background:#30295d;color:#d8d4ff}.ibtn.dng:hover{background:#481827;color:#ff8ba2}
+.encbtn{background:#4234d8;color:#fff}.encbtn:hover{background:#6857ff}.encoutstatus{background:#27224c;border-color:#443b78;color:#c7c1ff}.encoutstatus.yes{background:#123c31;border-color:#277d62;color:#6ce8b8}.encoutstatus.waiting{background:#4a2a18;border-color:#a75a2c;color:#ffb47d}.encoutstatus.no{background:#481827;border-color:#a63856;color:#ff9aae}.encoutstatus.answer{background:#282250;border-color:#5f50b8;color:#c7c1ff}
+.ggrid{border-color:#292844}.bgrn{background:#5542ef}.bred{background:#3e1825;color:#ff91a8}.byel{background:#452716;color:#ffad72}.bpur{background:#29234e;color:#c7c1ff}.ftr{color:#aaa7c3}
+.encmodal{background:rgba(2,0,12,.8)}.encpanel{background:#101023;box-shadow:0 35px 90px rgba(0,0,0,.58)}.enchd{border-color:#292844}.enctitle{color:#fff}.encclose{background:#1b1a33;color:#c0bdd2}.enchero{background:linear-gradient(145deg,#0a061c,#17102f)}.encstatus.answer{background:#30275e;color:#d2cdff}.encsum{background:#17162e;border-color:#302e49}.encsum b,.encdetail b{color:#aaa7c3}.encsum span,.encdetail{color:#f5f3ff}.encdetails{background:#121126;border-color:#302e49}.encdetail{border-color:#302e49}.encreceived button{background:#19182f;border-color:#34324e;color:#bbb8cf}.encschedule{background:#17162e;border-color:#302e49;color:#b5b1c8}.encschedule b{color:#f5f3ff}.encactivity{color:#aaa7c3}.encactivity div{border-color:#292844}
+/* Production responsive system */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}.appbar,.wrap,.card,.ov,.ggrid,.encpanel{min-width:0}.wrap{width:100%}
+.card *,.encpanel *{min-width:0}.card-nm,.sv,.bhist-val,.bcalc-em,.encsum span{overflow-wrap:anywhere}
+@media(min-width:1500px){.wrap{max-width:1420px}.appbar{padding-left:max(28px,calc((100vw - 1420px)/2));padding-right:max(28px,calc((100vw - 1420px)/2))}#slots-aiko,#slots-danica,#slots-darlene{gap:20px}.card{padding:20px}}
+@media(max-width:1100px){.wrap{padding-left:20px;padding-right:20px}.overview{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-copy h1{font-size:31px}.ggrid{align-items:stretch}.btn{flex:1}.b2col{grid-template-columns:1fr}.card{padding:16px}.credentials-row{min-width:0}}
+@media(max-width:860px){.appbar{padding:0 20px}.wrap{padding-top:28px}.hero{align-items:stretch;flex-direction:column}.hero-copy{max-width:620px}.ph-clock{width:100%;max-width:420px}.overview{margin-bottom:22px}#slots-aiko,#slots-danica,#slots-darlene{grid-template-columns:1fr}.card{max-width:760px;width:100%;justify-self:center}.ggrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.btn{width:100%;min-width:0}.bful{grid-column:1/-1}.pills{gap:7px}.encpanel{max-width:590px}}
+@media(max-width:620px){.appbar{height:58px;padding:0 14px}.brandmark{width:27px;height:27px}.brandcopy strong{font-size:15px}.appstate{font-size:9px}.wrap{padding:22px 10px 46px}.hero{gap:15px;margin-bottom:18px}.hero-copy h1{font-size:28px;margin-top:6px}.hero-copy p{font-size:11px;line-height:1.45}.ph-clock{max-width:none;padding:10px 12px}.ph-clock-time{font-size:15px}.overview{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:20px}.ov{min-height:104px;padding:12px;border-radius:14px}.ovicon{width:27px;height:27px;margin-bottom:9px}.ov strong{font-size:22px}.ov.next strong{font-size:16px}.ov small{font-size:8px}.pills{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}.pill{justify-content:center;padding:6px 4px;font-size:8px}.stitle{margin-top:24px}.card{padding:14px;border-radius:15px}.sgrid{margin-bottom:12px}.sbox{padding:4px 7px}.sv{font-size:clamp(15px,4.8vw,19px)}.sl{font-size:8px}.b2col{grid-template-columns:1fr}.bcol{min-height:auto}.crow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}.crow input{width:100%}.sacts{flex-wrap:wrap}.encbtn{order:0}.encoutstatus{order:1;flex:1;margin-right:0}.sacts>.ibtn:not(.encbtn){order:2}.ibtn{width:38px;height:38px}.encbtn{height:38px}.ggrid{padding:9px;gap:7px}.btn{min-height:42px;display:flex;align-items:center;justify-content:center}.encmodal{padding:10px;align-items:center}.encpanel{max-height:calc(100dvh - 20px);overflow:auto;border-radius:16px}.enchd{position:sticky;top:0;z-index:2;background:#101023;padding:15px 16px}.enchero{margin:14px 14px 9px;padding:15px}.enchero strong{font-size:23px}.encsummary,.encdetails,.encreceived,.encschedule,.encactivity{margin-left:14px;margin-right:14px}.encsummary{gap:5px}.encsum{padding:9px 7px}.encsum span{font-size:10px}.encdetails{grid-template-columns:1fr 1fr}.encdetail{padding:10px}.encreceived{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px}.encreceived button{padding:10px 5px;font-size:9px}.encschedule{flex-direction:column;gap:3px}.encactivity{margin-bottom:14px}}
+@media(max-width:440px){.appbar{padding:0 10px}.appstate span:last-child{max-width:116px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wrap{padding-left:8px;padding-right:8px}.overview{grid-template-columns:1fr 1fr}.ov{min-height:98px;padding:10px}.ov strong{font-size:20px}.ov span{font-size:8px}.hero-copy h1{font-size:26px}.ph-clock{grid-template-columns:minmax(0,1fr) auto}.pills{gap:4px}.pill{font-size:7.5px}.card{padding:12px}.card-hd{margin-bottom:12px}.card-nm{font-size:14px}.sgrid{padding:11px 0}.sv{font-size:15px}.bcol{padding:10px}.bhist-row{align-items:flex-start}.bhist-time{white-space:normal;text-align:right;line-height:1.25}.crow{grid-template-columns:1fr}.crow .bsm{width:100%;min-height:38px}.sacts{gap:5px}.encoutstatus{width:calc(100% - 84px);font-size:8px;padding:0 8px;white-space:normal;line-height:1.2}.sacts>.ibtn:not(.encbtn){flex:1;min-width:38px}.ggrid{grid-template-columns:1fr 1fr}.encdetails{grid-template-columns:1fr}.encdetail:nth-child(odd){border-right:0}.encdetail:nth-last-child(2){border-bottom:1px solid #302e49}.encreceived{grid-template-columns:1fr!important}.encreceived button{min-height:42px;font-size:10px}.encsummary{grid-template-columns:1fr 1fr}.encsum.net{grid-column:1/-1}.enchero{align-items:center}.encstatus{white-space:nowrap}}
+@media(max-width:340px){.brandcopy span{display:none}.appstate span:last-child{display:none}.overview{grid-template-columns:1fr}.ov{min-height:88px}.ovicon{margin-bottom:6px}.pills{grid-template-columns:1fr}.pill{font-size:9px}.ggrid{grid-template-columns:1fr}.bful{grid-column:auto}.sgrid{grid-template-columns:1fr}.sbox{border-left:0;border-top:1px solid #302f49;padding:8px}.sbox:first-child{border-top:0}.encbtn{width:100%;justify-content:center}.encoutstatus{width:100%;justify-content:center}.sacts>.ibtn:not(.encbtn){flex:1}.encsummary{grid-template-columns:1fr}.encsum.net{grid-column:auto}}
+@media(max-height:560px) and (orientation:landscape){.encmodal{align-items:flex-start}.encpanel{max-height:calc(100dvh - 12px)}.appbar{position:relative}.wrap{padding-top:18px}.hero{flex-direction:row}.overview{grid-template-columns:repeat(4,minmax(0,1fr))}.ov{min-height:90px}}
+@media(hover:none){.card:hover{transform:none}.ibtn,.btn,.encreceived button,.encclose{min-height:40px}.ibtn{min-width:40px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+.encstatus-short,.action-break{display:none}
+@media(max-width:620px){.sacts{display:flex}.encbtn{flex:0 0 auto}.encoutstatus{flex:1;justify-content:flex-start;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.action-break{display:block;flex-basis:100%;height:0}.sacts>.ibtn:not(.encbtn){flex:1;max-width:none}.encstatus-full{display:none}.encstatus-short{display:inline;overflow:hidden;text-overflow:ellipsis}}
+@media(max-width:360px){.encstatus-short{font-size:8px}.encbtn{padding-left:8px;padding-right:8px}.sacts{gap:4px}}
+.payout-control{display:flex;align-items:stretch;gap:5px;min-width:0;margin-right:auto}.payout-control .encbtn{margin:0;flex:none}.payout-control .encoutstatus{margin:0;min-width:0}
+@media(max-width:620px){.payout-control{display:grid;grid-template-columns:72px minmax(0,1fr);width:100%;flex-basis:100%;order:0;margin:0}.payout-control .encbtn{width:100%;height:40px;justify-content:center}.payout-control .encoutstatus{width:100%;height:40px;justify-content:flex-start;padding:0 10px}.action-break{display:none}.sacts>.ibtn:not(.encbtn){order:2;flex:1;max-width:none}.sacts{align-items:stretch}}
+@media(max-width:340px){.payout-control{grid-template-columns:68px minmax(0,1fr)}.payout-control .encbtn{width:100%}.payout-control .encoutstatus{width:100%;font-size:8px}.sacts>.ibtn:not(.encbtn){min-width:36px}}
+/* Simplified account controls and group identity */
+.crow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:7px}.crow input{width:100%}.bsv{display:none}
+.card-aiko{border-top:2px solid #6857ff;background:linear-gradient(180deg,rgba(104,87,255,.055),#111126 82px)}
+.card-danica{border-top:2px solid #ff7892;background:linear-gradient(180deg,rgba(255,120,146,.06),#111126 82px)}
+.card-darlene{border-top:2px solid #39d49a;background:linear-gradient(180deg,rgba(57,212,154,.055),#111126 82px)}
+.card-aiko .sbox:first-child .sv{color:#9e92ff!important}.card-danica .sbox:first-child .sv{color:#ff8fa5!important}.card-darlene .sbox:first-child .sv{color:#62dfae!important}
+.section-aiko-title:before{background:#6857ff}.section-danica-title:before{background:#ff7892}.section-darlene-title:before{background:#39d49a}
+@media(max-width:440px){.crow{grid-template-columns:1fr}.sacts>.ibtn:not(.encbtn){min-width:48px}}
+/* Clear saturated semantic palette */
+:root{--green:#28d99b;--red:#ff4d6d;--yellow:#ff943d;--coral:#ff5f7a}
+.ov.next .ovicon{background:rgba(255,148,61,.16);color:#ffad70}.ov.health .ovicon{background:rgba(40,217,155,.14);color:#55e8b2}
+.card-bg.state-running{background:rgba(40,217,155,.15);color:#67edbc}.card-bg.state-paused{background:rgba(255,148,61,.16);color:#ffb477}
+.card-danica{border-top-color:#ff5f7a;background:linear-gradient(180deg,rgba(255,95,122,.085),#111126 82px)}.card-danica .sbox:first-child .sv{color:#ff7890!important}.section-danica-title:before{background:#ff5f7a}
+.encoutstatus.yes{background:rgba(40,217,155,.14);border-color:rgba(40,217,155,.5);color:#67edbc}.encoutstatus.waiting{background:rgba(255,148,61,.16);border-color:rgba(255,148,61,.52);color:#ffb477}.encoutstatus.no{background:rgba(255,77,109,.15);border-color:rgba(255,77,109,.5);color:#ff8da2}
+.encstatus.yes{background:#137456;color:#8af2ca}.encstatus.waiting{background:#a74d16;color:#fff0df}.encstatus.no{background:#a92846;color:#ffe5ea}
+.encreceived button.yes.active{background:#168562;border-color:#28d99b;color:#fff}.encreceived button.waiting.active{background:#d66520;border-color:#ff943d;color:#fff}.encreceived button.no.active{background:#c93152;border-color:#ff4d6d;color:#fff}
+.bred{background:rgba(255,77,109,.14);color:#ff8da2;border:1px solid rgba(255,77,109,.2)}.byel{background:rgba(255,148,61,.15);color:#ffb477;border:1px solid rgba(255,148,61,.2)}.ibtn.dng:hover{background:rgba(255,77,109,.15);color:#ff7892}
+/* Vivid theme and user-controlled global slot accent */
+:root{--slot-accent:#725cff;--slot-accent-soft:rgba(114,92,255,.12);--green:#00d68f;--red:#ff3b61;--yellow:#ffad0a;--coral:#ff4f78}
+.theme-picker{display:grid;grid-template-columns:minmax(150px,1fr) 42px 104px auto;align-items:center;gap:8px;background:#121225;border:1px solid #2d2b48;border-radius:14px;padding:10px 12px;margin-bottom:12px}.theme-picker>div strong{display:block;color:#fff;font-size:10px}.theme-picker>div span{display:block;color:#aaa7c3;font-size:8px;margin-top:2px}.theme-picker input[type=color]{width:42px;height:34px;padding:2px;border:1px solid #3a3757;border-radius:8px;background:#0b0b18;cursor:pointer}.theme-picker input[type=text]{height:34px;border:1px solid #3a3757;border-radius:8px;background:#0b0b18;color:#fff;padding:0 9px;font:700 10px ui-monospace,SFMono-Regular,monospace;text-transform:uppercase;outline:0}.theme-picker input[type=text]:focus{border-color:var(--slot-accent);box-shadow:0 0 0 3px var(--slot-accent-soft)}.theme-picker button{height:34px;border:0;border-radius:8px;background:var(--slot-accent);color:#fff;padding:0 13px;font-size:9px;font-weight:800;cursor:pointer}
+.card-aiko,.card-danica,.card-darlene{border-top-color:var(--slot-accent);background:linear-gradient(180deg,var(--slot-accent-soft),#111126 84px)}.card-aiko .sbox:first-child .sv,.card-danica .sbox:first-child .sv,.card-darlene .sbox:first-child .sv{color:var(--slot-accent)!important}.pfill{background:linear-gradient(90deg,color-mix(in srgb,var(--slot-accent) 72%,white),var(--slot-accent))}.crow input:focus{border-color:var(--slot-accent)}.bsv,.encbtn{background:var(--slot-accent)}
+.card-bg.state-running{background:#00b87a;color:#fff}.card-bg.state-paused{background:#ff9f0a;color:#160b00}.encoutstatus.yes{background:#00a96f;border-color:#00d68f;color:#fff}.encoutstatus.waiting{background:#ff9f0a;border-color:#ffbd45;color:#160b00}.encoutstatus.no{background:#e92f55;border-color:#ff5f7e;color:#fff}.encoutstatus.answer{background:#5c52e8;border-color:#8178ff;color:#fff}
+.encstatus.yes{background:#00a96f;color:#fff}.encstatus.waiting{background:#ff9f0a;color:#160b00}.encstatus.no{background:#e92f55;color:#fff}.encstatus.answer{background:#5c52e8;color:#fff}
+.encreceived button.yes.active{background:#00a96f;border-color:#00d68f}.encreceived button.waiting.active{background:#ff9f0a;border-color:#ffbd45;color:#160b00}.encreceived button.no.active{background:#e92f55;border-color:#ff5f7e}
+.bred{background:#e92f55;color:#fff;border-color:#ff5f7e}.byel{background:#ff9f0a;color:#160b00;border-color:#ffbd45}
+@media(max-width:620px){.theme-picker{grid-template-columns:1fr 40px 92px}.theme-picker button{grid-column:1/-1;width:100%}}
+@media(max-width:390px){.theme-picker{grid-template-columns:1fr 40px}.theme-picker input[type=text]{grid-column:1}.theme-picker input[type=color]{grid-column:2;grid-row:2}.theme-picker button{grid-column:1/-1}}
+/* Independent full-card section themes */
+:root{--aiko-accent:#725cff;--aiko-soft:rgba(114,92,255,.14);--aiko-glow:rgba(114,92,255,.22);--danica-accent:#ff4f78;--danica-soft:rgba(255,79,120,.14);--danica-glow:rgba(255,79,120,.22);--darlene-accent:#00d68f;--darlene-soft:rgba(0,214,143,.14);--darlene-glow:rgba(0,214,143,.22)}
+.card-aiko{--section-accent:var(--aiko-accent);--section-soft:var(--aiko-soft);--section-glow:var(--aiko-glow)}.card-danica{--section-accent:var(--danica-accent);--section-soft:var(--danica-soft);--section-glow:var(--danica-glow)}.card-darlene{--section-accent:var(--darlene-accent);--section-soft:var(--darlene-soft);--section-glow:var(--darlene-glow)}
+.card-aiko,.card-danica,.card-darlene{border:1px solid color-mix(in srgb,var(--section-accent) 62%,#292844);border-top:3px solid var(--section-accent);background:linear-gradient(145deg,var(--section-soft),#111126 46%,#0e0e20);box-shadow:0 14px 34px rgba(0,0,0,.28),0 0 24px var(--section-glow)}
+.card-aiko:hover,.card-danica:hover,.card-darlene:hover{border-color:var(--section-accent);box-shadow:0 18px 42px rgba(0,0,0,.4),0 0 32px var(--section-glow)}
+.card-aiko .sbox:first-child .sv,.card-danica .sbox:first-child .sv,.card-darlene .sbox:first-child .sv,.card-aiko .bhist-val,.card-danica .bhist-val,.card-darlene .bhist-val{color:var(--section-accent)!important}
+.card-aiko .pfill,.card-danica .pfill,.card-darlene .pfill{background:linear-gradient(90deg,color-mix(in srgb,var(--section-accent) 58%,white),var(--section-accent))}
+.card-aiko .bcol,.card-danica .bcol,.card-darlene .bcol{background:linear-gradient(135deg,var(--section-soft),#0d0d20 68%);border-color:color-mix(in srgb,var(--section-accent) 38%,#2a2944)}
+.card-aiko .crow input:focus,.card-danica .crow input:focus,.card-darlene .crow input:focus{border-color:var(--section-accent);box-shadow:0 0 0 3px var(--section-soft)}
+.card-aiko .encbtn{background:var(--section-accent)}.card-aiko .ibtn:hover,.card-danica .ibtn:hover,.card-darlene .ibtn:hover{color:var(--section-accent);background:var(--section-soft)}
+.section-aiko-title{--heading-accent:var(--aiko-accent)}.section-danica-title{--heading-accent:var(--danica-accent)}.section-darlene-title{--heading-accent:var(--darlene-accent)}.section-aiko-title:before,.section-danica-title:before,.section-darlene-title:before{background:var(--heading-accent)}
+.stitle.section-aiko-title,.stitle.section-danica-title,.stitle.section-darlene-title{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.section-theme{display:flex;align-items:center;gap:5px}.section-theme input[type=color]{width:34px;height:28px;padding:2px;border:1px solid #3a3757;border-radius:7px;background:#0b0b18;cursor:pointer}.section-theme input:not([type=color]){width:78px;height:28px;padding:0 7px;border:1px solid #3a3757;border-radius:7px;background:#0b0b18;color:#fff;font:700 9px ui-monospace,SFMono-Regular,monospace;text-transform:uppercase;outline:0}.section-theme input:not([type=color]):focus{border-color:var(--heading-accent)}.section-theme button{height:28px;padding:0 9px;border:0;border-radius:7px;background:var(--heading-accent);color:#fff;font-size:8px;font-weight:800;cursor:pointer}
+@media(max-width:520px){.stitle.section-aiko-title,.stitle.section-danica-title,.stitle.section-darlene-title{align-items:flex-start;flex-direction:column}.section-theme{width:100%;display:grid;grid-template-columns:36px minmax(0,1fr) auto}.section-theme input:not([type=color]){width:100%}.section-theme button{min-width:58px}}
 </style>
 </head>
 <body>
+<header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span></div></header>
 <div class="wrap">
-  <h1>VisionTap Control</h1>
-  <div class="ph-clock" aria-live="off">
-    <div class="ph-clock-time" id="ph-clock-time">--:--:--</div>
-    <div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div>
-    <div class="ph-clock-label">Quezon City · Philippine Time (UTC+8)</div>
-  </div>
+  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div></section>
+  <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · electron · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
+  <div class="theme-picker"><div><strong>Slot color</strong><span>Applies to every account card</span></div><input id="slot-color-wheel" type="color" value="#725CFF" oninput="previewSlotColor(this.value)"><input id="slot-color-hex" type="text" value="#725CFF" maxlength="7" spellcheck="false" aria-label="Slot color hex code"><button type="button" onclick="applySlotColor()">Apply</button></div>
   <div class="stitle">Global Controls</div>
   <div class="ggrid">
     <a class="btn bgrn" href="/cmd?action=resume&slot=all">Resume All</a>
@@ -506,11 +610,11 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
   <div class="ggrid">
     <a class="btn bgrn bful" id="lbtn" href="/loop?cmd=resume">Resume Loop</a>
   </div>
-  <div class="stitle section-aiko-title">TOP ROW — <span id="scnt-aiko">0</span> slots</div>
+  <div class="stitle section-aiko-title"><span>AIKO — <span id="scnt-aiko">0</span> slots</span><span class="section-theme"><input id="aiko-wheel" type="color" value="#725CFF" oninput="previewSectionColor(&quot;aiko&quot;,this.value)"><input id="aiko-hex" value="#725CFF" maxlength="7" aria-label="AIKO color hex"><button type="button" onclick="applySectionColor(&quot;aiko&quot;)">Apply</button></span></div>
   <div id="slots-aiko"></div>
-  <div class="stitle section-danica-title">BOTTOM ROW — <span id="scnt-danica">0</span> slot</div>
+  <div class="stitle section-danica-title"><span>DANICA — <span id="scnt-danica">0</span> slots</span><span class="section-theme"><input id="danica-wheel" type="color" value="#FF4F78" oninput="previewSectionColor(&quot;danica&quot;,this.value)"><input id="danica-hex" value="#FF4F78" maxlength="7" aria-label="DANICA color hex"><button type="button" onclick="applySectionColor(&quot;danica&quot;)">Apply</button></span></div>
   <div id="slots-danica"></div>
-  <div class="stitle section-darlene-title">DARLENE — <span id="scnt-darlene">0</span> slot</div>
+  <div class="stitle section-darlene-title"><span>DARLENE — <span id="scnt-darlene">0</span> slots</span><span class="section-theme"><input id="darlene-wheel" type="color" value="#00D68F" oninput="previewSectionColor(&quot;darlene&quot;,this.value)"><input id="darlene-hex" value="#00D68F" maxlength="7" aria-label="DARLENE color hex"><button type="button" onclick="applySectionColor(&quot;darlene&quot;)">Apply</button></span></div>
   <div id="slots-darlene"></div>
   <div class="stitle">Server</div>
   <div class="ggrid">
@@ -540,14 +644,49 @@ function updatePHClock(){
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
+function setSectionAccent(section,value){
+  if(!/^(aiko|danica|darlene)$/.test(section)||!/^#[0-9A-F]{6}$/i.test(value))return false;
+  var r=parseInt(value.slice(1,3),16),g=parseInt(value.slice(3,5),16),b=parseInt(value.slice(5,7),16),root=document.documentElement;
+  root.style.setProperty('--'+section+'-accent',value.toUpperCase());
+  root.style.setProperty('--'+section+'-soft','rgba('+r+','+g+','+b+',.14)');
+  root.style.setProperty('--'+section+'-glow','rgba('+r+','+g+','+b+',.22)');
+  return true;
+}
+function previewSectionColor(section,value){
+  if(!setSectionAccent(section,value))return;
+  var hex=document.getElementById(section+'-hex');if(hex)hex.value=value.toUpperCase();
+  window._sectionThemeDirty=window._sectionThemeDirty||{};window._sectionThemeDirty[section]=true;
+}
+function applySectionColor(section){
+  var input=document.getElementById(section+'-hex'),value=String(input&&input.value||'').trim().toUpperCase();
+  if(value.charAt(0)!=='#')value='#'+value;
+  if(!setSectionAccent(section,value)){alert('Enter a valid 6-digit hex color, for example #725CFF.');return;}
+  input.value=value;var wheel=document.getElementById(section+'-wheel');if(wheel)wheel.value=value;
+  fetch('/theme-color?section='+encodeURIComponent(section)+'&value='+encodeURIComponent(value),{method:'POST'}).then(function(r){if(!r.ok)throw new Error('Save failed');return r.json()}).then(function(){window._sectionThemeDirty=window._sectionThemeDirty||{};window._sectionThemeDirty[section]=false}).catch(function(){alert('Could not save this section color. Please try again.')});
+}
+function syncSectionThemes(theme){
+  var defaults={aiko:'#725CFF',danica:'#FF4F78',darlene:'#00D68F'},dirty=window._sectionThemeDirty||{};
+  ['aiko','danica','darlene'].forEach(function(section){var value=theme&&theme[section+'Color']||defaults[section];if(dirty[section]||!setSectionAccent(section,value))return;var wheel=document.getElementById(section+'-wheel'),hex=document.getElementById(section+'-hex');if(wheel)wheel.value=value;if(hex)hex.value=value;});
+}
 function render(d){
   var slots=d.slots||[];
+  syncSectionThemes(d.theme||{});
   var aikoSlots = slots.filter(s => !["13", "16"].includes(String(s.id)) && !["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()) && !["17"].includes(String(s.id)) && !["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
   var danicaSlots = slots.filter(s => ["13", "16"].includes(String(s.id)) || ["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()));
   var darleneSlots = slots.filter(s => ["17"].includes(String(s.id)) || ["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
   document.getElementById('scnt-danica').textContent=danicaSlots.length;
   document.getElementById('scnt-darlene').textContent=darleneSlots.length;
+  var activeCount=slots.filter(function(x){return !x.paused}).length,healthy=d.scannerUp&&d.electronProcs>0&&!d.loopPaused;
+  document.getElementById('ov-total').textContent=String(slots.length).padStart(2,'0');
+  document.getElementById('ov-active').textContent=String(activeCount).padStart(2,'0');
+  document.getElementById('ov-active-note').textContent=activeCount+' of '+slots.length+' running';
+  document.getElementById('ov-health').textContent=healthy?'Healthy':'Attention';
+  document.getElementById('app-state-text').textContent=healthy?'System Online':'System Needs Attention';
+  document.getElementById('app-live-dot').style.background=healthy?'var(--green)':'var(--red)';
+  var encSlot=slots.find(function(x){return String(x.accountName||'').toLowerCase()==='adaihbi'}),schedule=encSlot&&encSlot.encashmentSchedule||{},dayNames={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'},scheduleDay=dayNames[schedule.weekday]||schedule.weekday||'Not scheduled';
+  document.getElementById('ov-next-day').textContent=scheduleDay;
+  document.getElementById('ov-next-time').textContent=schedule.startHour!=null&&schedule.endHour!=null?schedule.startHour+':00–'+schedule.endHour+':00 AM PH':'Schedule not configured';
   document.getElementById('pills').innerHTML=
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.electronProcs>0?'var(--green)':'var(--red)')+'"></div>Electron '+(d.electronProcs>0?'Running':'Stopped')+'</div>'+
@@ -576,7 +715,7 @@ function render(d){
       eh+='</div>';
     }
     var cardHtml='<div class="card '+cardClass+'">'+
-      '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg" style="background:'+sc+'20;color:'+sc+'">'+st+'</span></div>'+
+      '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg state-'+(s.paused?'paused':'running')+'">'+st+'</span></div>'+
       '<div class="sgrid">'+
         '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (Number(s.withdrawable||0)/100).toFixed(2) : s.withdrawable )+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Balance (₱)" : "Balance")+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#a78bfa">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Coins":"Points")+'</div></div>'+
@@ -630,18 +769,18 @@ function render(d){
         var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
         return grid;
       })() +
-      '<form class="crow" method="GET" action="/save-creds"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
+      '<form class="crow" method="GET" action="/save-creds" onchange="this.submit()"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
       '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
-      '<button type="submit" class="bsm bsv">Save</button></form>'+
+      '</form>'+
       eh+
-      '<div class="sacts">'+        (function(){if(String(s.accountName).toLowerCase()!=='adaihbi')return '';var e=s.encashment||{},q=s.encashmentSchedule||{},d=e.receivedDecision||'',day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Wednesday'),cls=d==='yes'?'yes':d==='waiting'?'waiting':d==='no'?'no':'answer',txt=d==='yes'?'Received · Next cash-out '+day:d==='waiting'?'Waiting for payment':d==='no'?'Payment not received':'Answer whether payment arrived';return '<button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button><span class="encoutstatus '+cls+'">'+esc(txt)+'</span>'})()+
+      '<div class="sacts">'+        (function(){if(String(s.accountName).toLowerCase()!=='adaihbi')return '';var e=s.encashment||{},q=s.encashmentSchedule||{},d=e.receivedDecision||'',day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Wednesday'),cls=d==='yes'?'yes':d==='waiting'?'waiting':d==='no'?'no':'answer',txt=d==='yes'?'Payment received · Next withdrawal '+day:d==='waiting'?'Waiting for payment':d==='no'?'Payment not received':'Answer whether payment arrived',shortTxt=d==='yes'?'Received · Next withdrawal '+day:d==='waiting'?'Waiting for payment':d==='no'?'Not received':'Answer needed';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button><span class="encoutstatus '+cls+'"><span class="encstatus-full">'+esc(txt)+'</span><span class="encstatus-short">'+esc(shortTxt)+'</span></span></span><span class="action-break"></span>'})()+
         '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause">&#9646;&#9646;</a>'+
         '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume">&#9654;</a>'+
-        '<a class="ibtn" href="/cmd?action=restart&slot='+sid+'" title="Restart">&#8635;</a>'+
+
         '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh">&#8634;</a>'+
 
-        '<a class="ibtn dng" href="/cmd?action=remove&slot='+sid+'" title="Remove">&#10005;</a>'+
+
       '</div></div>';
     if (isDarlene) hDarlene+=cardHtml; else if (isDanica) hDanica+=cardHtml; else hAiko+=cardHtml;
   }
@@ -658,13 +797,13 @@ function showEncash(id){
   var decision=e.receivedDecision||'',status=decision==='yes'?'Received':decision==='no'?'Not received':decision==='waiting'?'Waiting':'Answer needed',statusClass=decision==='yes'?'yes':decision==='no'?'no':decision==='waiting'?'waiting':'answer';
   var mask=function(v){v=String(v||'');return v.length>4?'•••• '+v.slice(-4):(v||'—')};
   var money=function(v){v=String(v||'—');return v==='—'?v:(/[₱P]/.test(v)?v:'₱'+v)};
-  var kind=String(e.kind||'network').toLowerCase(),upcoming=(q.type||'task').toLowerCase(),day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Wednesday');
+  var kind=String(e.kind||'unknown').toLowerCase(),upcoming=String(q.type||'').toLowerCase(),day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Not scheduled');
   var logs=(e.eventLog||[]).filter(function(x){return !/history check|payout status/i.test(x.text||'')}).slice(-3).reverse().map(function(x){return '<div>'+esc(fmtWhen(x.at))+' · '+esc(x.text)+'</div>'}).join('');
   document.getElementById('encbody').innerHTML='<div class="enchero"><div><small>'+esc(kind==='task'?'Task payout':'Network payout')+'</small><strong>'+esc(money(e.netAmount||e.amount))+'</strong></div><span class="encstatus '+statusClass+'">'+esc(status)+'</span></div>'+
     '<div class="encsummary"><div class="encsum"><b>Gross</b><span>'+esc(money(e.amount))+'</span></div><div class="encsum"><b>Fee / tax</b><span>'+esc(money(e.tax))+'</span></div><div class="encsum net"><b>You receive</b><span>'+esc(money(e.netAmount||e.amount))+'</span></div></div>'+
     '<div class="encdetails"><div class="encdetail"><b>GCash account</b>'+esc(mask(e.payoutNumber))+'</div><div class="encdetail"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encdetail"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encdetail"><b>Transaction ID</b>'+esc(e.transactionId||'—')+'</div></div>'+
     '<div class="encreceived" style="grid-template-columns:1fr 1fr 1fr"><button class="yes '+(decision==='yes'?'active':'')+'" onclick="setPayoutReceived(&quot;yes&quot;)">✓ Received</button><button class="waiting '+(decision==='waiting'?'active':'')+'" onclick="setPayoutReceived(&quot;waiting&quot;)">Waiting</button><button class="no '+(decision==='no'?'active':'')+'" onclick="setPayoutReceived(&quot;no&quot;)">Not received</button></div>'+
-    '<div class="encschedule"><b>Next: '+esc(upcoming==='task'?'Task Encashment':'Network Encashment')+'</b><span>'+esc(day)+' · '+esc(q.startHour||8)+':00–'+esc(q.endHour||10)+':00 AM PH</span></div>'+
+    '<div class="encschedule"><b>Next: '+esc(upcoming==='task'?'Task Encashment':upcoming==='network'?'Network Encashment':'Not configured')+'</b><span>'+esc(day)+(q.startHour!=null&&q.endHour!=null?' · '+esc(q.startHour)+':00–'+esc(q.endHour)+':00 AM PH':'')+'</span></div>'+
     (logs?'<div class="encactivity">'+logs+'</div>':'');
   document.getElementById('encmodal').classList.add('show');
 }
@@ -755,10 +894,24 @@ const server = http.createServer((req, res) => {
     const slots = getMergedSlots(status);
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    res.end(JSON.stringify({ scannerUp: status.scannerUp, electronProcs: status.electronProcs, loopPaused: status.loopPaused, slots }));
+    res.end(JSON.stringify({ scannerUp: status.scannerUp, electronProcs: status.electronProcs, loopPaused: status.loopPaused, slots, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78", darleneColor: "#00D68F" }) }));
     return;
   }
 
+  if (url.pathname === "/theme-color" && req.method === "POST") {
+    const value = String(url.searchParams.get("value") || "").trim().toUpperCase();
+    const section = String(url.searchParams.get("section") || "").toLowerCase();
+    if (!["aiko","danica","darlene"].includes(section)) { res.writeHead(400); res.end("Invalid section"); return; }
+    if (!/^#[0-9A-F]{6}$/.test(value)) { res.writeHead(400); res.end("Invalid hex color"); return; }
+    const theme = readJson(THEME_PREF_FILE, {});
+    theme[section + "Color"] = value;
+    theme.updatedAt = Date.now();
+    delete theme.slotColor;
+    writeJson(THEME_PREF_FILE, theme);
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ok:true,section,color:value}));
+    return;
+  }
   if (url.pathname === "/payout-received" && req.method === "POST") {
     const value = url.searchParams.get("value");
     if (value !== "yes" && value !== "waiting" && value !== "no") { res.writeHead(400); res.end("Invalid choice"); return; }
