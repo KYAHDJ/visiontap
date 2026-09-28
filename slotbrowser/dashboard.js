@@ -567,14 +567,11 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 .bred{background:rgba(255,77,109,.14);color:#ff8da2;border:1px solid rgba(255,77,109,.2)}.byel{background:rgba(255,148,61,.15);color:#ffb477;border:1px solid rgba(255,148,61,.2)}.ibtn.dng:hover{background:rgba(255,77,109,.15);color:#ff7892}
 /* Vivid theme and user-controlled global slot accent */
 :root{--slot-accent:#725cff;--slot-accent-soft:rgba(114,92,255,.12);--green:#00d68f;--red:#ff3b61;--yellow:#ffad0a;--coral:#ff4f78}
-.theme-picker{display:grid;grid-template-columns:minmax(150px,1fr) 42px 104px auto;align-items:center;gap:8px;background:#121225;border:1px solid #2d2b48;border-radius:14px;padding:10px 12px;margin-bottom:12px}.theme-picker>div strong{display:block;color:#fff;font-size:10px}.theme-picker>div span{display:block;color:#aaa7c3;font-size:8px;margin-top:2px}.theme-picker input[type=color]{width:42px;height:34px;padding:2px;border:1px solid #3a3757;border-radius:8px;background:#0b0b18;cursor:pointer}.theme-picker input[type=text]{height:34px;border:1px solid #3a3757;border-radius:8px;background:#0b0b18;color:#fff;padding:0 9px;font:700 10px ui-monospace,SFMono-Regular,monospace;text-transform:uppercase;outline:0}.theme-picker input[type=text]:focus{border-color:var(--slot-accent);box-shadow:0 0 0 3px var(--slot-accent-soft)}.theme-picker button{height:34px;border:0;border-radius:8px;background:var(--slot-accent);color:#fff;padding:0 13px;font-size:9px;font-weight:800;cursor:pointer}
 .card-aiko,.card-danica,.card-darlene{border-top-color:var(--slot-accent);background:linear-gradient(180deg,var(--slot-accent-soft),#111126 84px)}.card-aiko .sbox:first-child .sv,.card-danica .sbox:first-child .sv,.card-darlene .sbox:first-child .sv{color:var(--slot-accent)!important}.pfill{background:linear-gradient(90deg,color-mix(in srgb,var(--slot-accent) 72%,white),var(--slot-accent))}.crow input:focus{border-color:var(--slot-accent)}.bsv,.encbtn{background:var(--slot-accent)}
 .card-bg.state-running{background:#00b87a;color:#fff}.card-bg.state-paused{background:#ff9f0a;color:#160b00}.encoutstatus.yes{background:#00a96f;border-color:#00d68f;color:#fff}.encoutstatus.waiting{background:#ff9f0a;border-color:#ffbd45;color:#160b00}.encoutstatus.no{background:#e92f55;border-color:#ff5f7e;color:#fff}.encoutstatus.answer{background:#5c52e8;border-color:#8178ff;color:#fff}
 .encstatus.yes{background:#00a96f;color:#fff}.encstatus.waiting{background:#ff9f0a;color:#160b00}.encstatus.no{background:#e92f55;color:#fff}.encstatus.answer{background:#5c52e8;color:#fff}
 .encreceived button.yes.active{background:#00a96f;border-color:#00d68f}.encreceived button.waiting.active{background:#ff9f0a;border-color:#ffbd45;color:#160b00}.encreceived button.no.active{background:#e92f55;border-color:#ff5f7e}
 .bred{background:#e92f55;color:#fff;border-color:#ff5f7e}.byel{background:#ff9f0a;color:#160b00;border-color:#ffbd45}
-@media(max-width:620px){.theme-picker{grid-template-columns:1fr 40px 92px}.theme-picker button{grid-column:1/-1;width:100%}}
-@media(max-width:390px){.theme-picker{grid-template-columns:1fr 40px}.theme-picker input[type=text]{grid-column:1}.theme-picker input[type=color]{grid-column:2;grid-row:2}.theme-picker button{grid-column:1/-1}}
 /* Independent full-card section themes */
 :root{--aiko-accent:#725cff;--aiko-soft:rgba(114,92,255,.14);--aiko-glow:rgba(114,92,255,.22);--danica-accent:#ff4f78;--danica-soft:rgba(255,79,120,.14);--danica-glow:rgba(255,79,120,.22);--darlene-accent:#00d68f;--darlene-soft:rgba(0,214,143,.14);--darlene-glow:rgba(0,214,143,.22)}
 .card-aiko{--section-accent:var(--aiko-accent);--section-soft:var(--aiko-soft);--section-glow:var(--aiko-glow)}.card-danica{--section-accent:var(--danica-accent);--section-soft:var(--danica-soft);--section-glow:var(--danica-glow)}.card-darlene{--section-accent:var(--darlene-accent);--section-soft:var(--darlene-soft);--section-glow:var(--darlene-glow)}
@@ -589,6 +586,13 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 .stitle.section-aiko-title,.stitle.section-danica-title,.stitle.section-darlene-title{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .section-theme{display:flex;align-items:center;gap:5px}.section-theme input[type=color]{width:34px;height:28px;padding:2px;border:1px solid #3a3757;border-radius:7px;background:#0b0b18;cursor:pointer}.section-theme input:not([type=color]){width:78px;height:28px;padding:0 7px;border:1px solid #3a3757;border-radius:7px;background:#0b0b18;color:#fff;font:700 9px ui-monospace,SFMono-Regular,monospace;text-transform:uppercase;outline:0}.section-theme input:not([type=color]):focus{border-color:var(--heading-accent)}.section-theme button{height:28px;padding:0 9px;border:0;border-radius:7px;background:var(--heading-accent);color:#fff;font-size:8px;font-weight:800;cursor:pointer}
 @media(max-width:520px){.stitle.section-aiko-title,.stitle.section-danica-title,.stitle.section-darlene-title{align-items:flex-start;flex-direction:column}.section-theme{width:100%;display:grid;grid-template-columns:36px minmax(0,1fr) auto}.section-theme input:not([type=color]){width:100%}.section-theme button{min-width:58px}}
+/* Theme-independent cash-out action */
+.card .encbtn,.card-aiko .encbtn,.card-danica .encbtn,.card-darlene .encbtn{background:#f8f7ff!important;color:#15112f!important;border:1px solid #fff!important;box-shadow:0 5px 14px rgba(0,0,0,.24);font-weight:850}.card .encbtn:hover,.card .encbtn:focus-visible{background:#dcd7ff!important;color:#2418a8!important;border-color:#bdb5ff!important;outline:0}.card .encbtn:active{transform:translateY(1px)}
+/* Always-visible touch-friendly mobile section color controls */
+.section-theme input[type=color]{-webkit-appearance:none;appearance:none;overflow:hidden}.section-theme input[type=color]::-webkit-color-swatch-wrapper{padding:2px}.section-theme input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}
+@media(max-width:620px){.section-theme{display:grid!important;grid-template-columns:44px minmax(0,1fr) 68px!important;gap:7px!important;width:100%!important}.section-theme input[type=color]{display:block!important;width:44px!important;height:40px!important;min-width:44px!important;padding:2px!important}.section-theme input:not([type=color]){display:block!important;width:100%!important;height:40px!important;font-size:11px!important}.section-theme button{display:block!important;width:68px!important;height:40px!important;font-size:9px!important}.stitle.section-aiko-title,.stitle.section-danica-title,.stitle.section-darlene-title{align-items:flex-start!important;flex-direction:column!important}}
+@media(max-width:340px){.section-theme{grid-template-columns:42px minmax(0,1fr)!important}.section-theme button{grid-column:1/-1;width:100%!important}.section-theme input[type=color]{width:42px!important;min-width:42px!important}}
+.confirmmodal{display:none;position:fixed;inset:0;z-index:80;background:rgba(2,0,12,.82);padding:16px;align-items:center;justify-content:center;backdrop-filter:blur(8px)}.confirmmodal.show{display:flex}.confirmpanel{width:min(100%,390px);background:linear-gradient(145deg,#18172e,#0f0f21);border:1px solid #353251;border-radius:18px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.62);text-align:center;animation:confirm-in .18s ease}.confirmicon{width:42px;height:42px;margin:0 auto 13px;border-radius:13px;display:grid;place-items:center;background:#2e285a;color:#d8d3ff;font-size:20px;font-weight:900}.confirmpanel h2{font-size:17px;color:#fff;margin:0}.confirmpanel p{font-size:11px;line-height:1.55;color:#b7b3ca;margin:9px 0 19px}.confirmactions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.confirmactions button{height:42px;border-radius:9px;font-size:10px;font-weight:850;cursor:pointer}.confirmcancel{border:1px solid #3b3857;background:#1a192e;color:#c4c0d4}.confirmaccept{border:0;background:#6857ff;color:#fff}.confirmaccept.danger{background:#ff3b61}.confirmaccept.warning{background:#ff9f0a;color:#160b00}@keyframes confirm-in{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}@media(max-width:390px){.confirmpanel{padding:18px}.confirmactions{grid-template-columns:1fr}.confirmactions button{height:44px}}
 </style>
 </head>
 <body>
@@ -597,31 +601,30 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
   <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · electron · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
-  <div class="theme-picker"><div><strong>Slot color</strong><span>Applies to every account card</span></div><input id="slot-color-wheel" type="color" value="#725CFF" oninput="previewSlotColor(this.value)"><input id="slot-color-hex" type="text" value="#725CFF" maxlength="7" spellcheck="false" aria-label="Slot color hex code"><button type="button" onclick="applySlotColor()">Apply</button></div>
   <div class="stitle">Global Controls</div>
   <div class="ggrid">
-    <a class="btn bgrn" href="/cmd?action=resume&slot=all">Resume All</a>
-    <a class="btn bred" href="/cmd?action=pause&slot=all">Pause All</a>
-    <a class="btn byel" href="/cmd?action=restart&slot=all">Restart All</a>
-    <a class="btn bpur" href="/cmd?action=refresh&slot=all">Refresh All</a>
-    <a class="btn bred bful" href="/cmd?action=remove&slot=all" onclick="return confirm('Remove ALL slots?')">Remove All Slots</a>
+    <a class="btn bgrn" href="/cmd?action=resume&slot=all" onclick="return confirmLink(event,this,&quot;Resume every account?&quot;,&quot;All paused accounts will resume automation.&quot;,&quot;Resume all&quot;)">Resume All</a>
+    <a class="btn bred" href="/cmd?action=pause&slot=all" onclick="return confirmLink(event,this,&quot;Pause every account?&quot;,&quot;All account automation will pause until resumed.&quot;,&quot;Pause all&quot;)">Pause All</a>
+    <a class="btn byel" href="/cmd?action=restart&slot=all" onclick="return confirmLink(event,this,&quot;Restart every account?&quot;,&quot;All account windows will restart.&quot;,&quot;Restart all&quot;)">Restart All</a>
+    <a class="btn bpur" href="/cmd?action=refresh&slot=all" onclick="return confirmLink(event,this,&quot;Refresh every account?&quot;,&quot;All account pages will reload.&quot;,&quot;Refresh all&quot;)">Refresh All</a>
   </div>
   <div class="stitle">Loop</div>
   <div class="ggrid">
-    <a class="btn bgrn bful" id="lbtn" href="/loop?cmd=resume">Resume Loop</a>
+    <a class="btn bgrn bful" id="lbtn" href="/loop?cmd=resume" onclick="return confirmLink(event,this,&quot;Change loop state?&quot;,&quot;This will change automation for every account.&quot;,this.textContent)">Resume Loop</a>
   </div>
-  <div class="stitle section-aiko-title"><span>AIKO — <span id="scnt-aiko">0</span> slots</span><span class="section-theme"><input id="aiko-wheel" type="color" value="#725CFF" oninput="previewSectionColor(&quot;aiko&quot;,this.value)"><input id="aiko-hex" value="#725CFF" maxlength="7" aria-label="AIKO color hex"><button type="button" onclick="applySectionColor(&quot;aiko&quot;)">Apply</button></span></div>
+  <div class="stitle section-aiko-title"><span>AIKO — <span id="scnt-aiko">0</span> slots</span><span class="section-theme"><input id="aiko-wheel" type="color" value="#725CFF" oninput="previewSectionColor(&quot;aiko&quot;,this.value)"><input id="aiko-hex" value="#725CFF" maxlength="7" aria-label="AIKO color hex"><button type="button" onclick="confirmSectionColor(&quot;aiko&quot;)">Apply</button></span></div>
   <div id="slots-aiko"></div>
-  <div class="stitle section-danica-title"><span>DANICA — <span id="scnt-danica">0</span> slots</span><span class="section-theme"><input id="danica-wheel" type="color" value="#FF4F78" oninput="previewSectionColor(&quot;danica&quot;,this.value)"><input id="danica-hex" value="#FF4F78" maxlength="7" aria-label="DANICA color hex"><button type="button" onclick="applySectionColor(&quot;danica&quot;)">Apply</button></span></div>
+  <div class="stitle section-danica-title"><span>DANICA — <span id="scnt-danica">0</span> slots</span><span class="section-theme"><input id="danica-wheel" type="color" value="#FF4F78" oninput="previewSectionColor(&quot;danica&quot;,this.value)"><input id="danica-hex" value="#FF4F78" maxlength="7" aria-label="DANICA color hex"><button type="button" onclick="confirmSectionColor(&quot;danica&quot;)">Apply</button></span></div>
   <div id="slots-danica"></div>
-  <div class="stitle section-darlene-title"><span>DARLENE — <span id="scnt-darlene">0</span> slots</span><span class="section-theme"><input id="darlene-wheel" type="color" value="#00D68F" oninput="previewSectionColor(&quot;darlene&quot;,this.value)"><input id="darlene-hex" value="#00D68F" maxlength="7" aria-label="DARLENE color hex"><button type="button" onclick="applySectionColor(&quot;darlene&quot;)">Apply</button></span></div>
+  <div class="stitle section-darlene-title"><span>DARLENE — <span id="scnt-darlene">0</span> slots</span><span class="section-theme"><input id="darlene-wheel" type="color" value="#00D68F" oninput="previewSectionColor(&quot;darlene&quot;,this.value)"><input id="darlene-hex" value="#00D68F" maxlength="7" aria-label="DARLENE color hex"><button type="button" onclick="confirmSectionColor(&quot;darlene&quot;)">Apply</button></span></div>
   <div id="slots-darlene"></div>
   <div class="stitle">Server</div>
   <div class="ggrid">
-    <a class="btn bgrn bful" href="/restart" onclick="return confirm('Restart VisionTap?')">Restart VisionTap</a>
+    <a class="btn bgrn bful" href="/restart" onclick="return confirmLink(event,this,&quot;Restart VisionTap?&quot;,&quot;The dashboard and automation services may be briefly unavailable.&quot;,&quot;Restart VisionTap&quot;)">Restart VisionTap</a>
   </div>
   <div class="ftr"><span class="livedot"></span><span id="ltxt">Connecting...</span></div>
   <div class="encmodal" id="encmodal" onclick="if(event.target===this)closeEncash()"><div class="encpanel"><div class="enchd"><div class="enctitle">adaihbi Payout</div><button class="encclose" onclick="closeEncash()">Close</button></div><div id="encbody"></div></div></div>
+  <div class="confirmmodal" id="confirmmodal" onclick="if(event.target===this)closeConfirm()"><div class="confirmpanel" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><div class="confirmicon">!</div><h2 id="confirm-title">Confirm action</h2><p id="confirm-message"></p><div class="confirmactions"><button type="button" class="confirmcancel" onclick="closeConfirm()">Cancel</button><button type="button" class="confirmaccept" id="confirm-accept" onclick="acceptConfirm()">Confirm</button></div></div></div>
 </div>
 <datalist id="hu">${historyOpts}</datalist>
 <script>
@@ -644,6 +647,19 @@ function updatePHClock(){
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
+var pendingConfirmAction=null;
+function askConfirm(title,message,label,action,tone){
+  pendingConfirmAction=action;
+  document.getElementById('confirm-title').textContent=title||'Confirm action';
+  document.getElementById('confirm-message').textContent=message||'Are you sure you want to continue?';
+  var accept=document.getElementById('confirm-accept');accept.textContent=label||'Confirm';accept.className='confirmaccept'+(tone?' '+tone:'');
+  document.getElementById('confirmmodal').classList.add('show');
+}
+function closeConfirm(){document.getElementById('confirmmodal').classList.remove('show');pendingConfirmAction=null}
+function acceptConfirm(){var action=pendingConfirmAction;document.getElementById('confirmmodal').classList.remove('show');pendingConfirmAction=null;if(action)action()}
+function confirmLink(event,element,title,message,label,tone){if(event)event.preventDefault();var href=element&&element.href;askConfirm(title,message,label,function(){if(href)window.location.href=href},tone);return false}
+function confirmSectionColor(section){var label=section.charAt(0).toUpperCase()+section.slice(1);askConfirm('Apply '+label+' theme?','This color will update every slot card in the '+label+' section.','Apply color',function(){applySectionColor(section)})}
+function confirmReceipt(value){var labels={yes:'Received',waiting:'Waiting',no:'Not received'},tones={yes:'',waiting:'warning',no:'danger'};askConfirm('Set payout as '+labels[value]+'?','This will replace the current payout answer and remain saved after refresh.',labels[value],function(){setPayoutReceived(value)},tones[value])}
 function setSectionAccent(section,value){
   if(!/^(aiko|danica|darlene)$/.test(section)||!/^#[0-9A-F]{6}$/i.test(value))return false;
   var r=parseInt(value.slice(1,3),16),g=parseInt(value.slice(3,5),16),b=parseInt(value.slice(5,7),16),root=document.documentElement;
@@ -775,10 +791,10 @@ function render(d){
       '</form>'+
       eh+
       '<div class="sacts">'+        (function(){if(String(s.accountName).toLowerCase()!=='adaihbi')return '';var e=s.encashment||{},q=s.encashmentSchedule||{},d=e.receivedDecision||'',day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Wednesday'),cls=d==='yes'?'yes':d==='waiting'?'waiting':d==='no'?'no':'answer',txt=d==='yes'?'Payment received · Next withdrawal '+day:d==='waiting'?'Waiting for payment':d==='no'?'Payment not received':'Answer whether payment arrived',shortTxt=d==='yes'?'Received · Next withdrawal '+day:d==='waiting'?'Waiting for payment':d==='no'?'Not received':'Answer needed';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button><span class="encoutstatus '+cls+'"><span class="encstatus-full">'+esc(txt)+'</span><span class="encstatus-short">'+esc(shortTxt)+'</span></span></span><span class="action-break"></span>'})()+
-        '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause">&#9646;&#9646;</a>'+
-        '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume">&#9654;</a>'+
+        '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmLink(event,this,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
+        '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume" onclick="return confirmLink(event,this,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
 
-        '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh">&#8634;</a>'+
+        '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh" onclick="return confirmLink(event,this,&quot;Refresh this account?&quot;,&quot;The account page will reload.&quot;,&quot;Refresh&quot;)">&#8634;</a>'+
 
 
       '</div></div>';
@@ -802,7 +818,7 @@ function showEncash(id){
   document.getElementById('encbody').innerHTML='<div class="enchero"><div><small>'+esc(kind==='task'?'Task payout':'Network payout')+'</small><strong>'+esc(money(e.netAmount||e.amount))+'</strong></div><span class="encstatus '+statusClass+'">'+esc(status)+'</span></div>'+
     '<div class="encsummary"><div class="encsum"><b>Gross</b><span>'+esc(money(e.amount))+'</span></div><div class="encsum"><b>Fee / tax</b><span>'+esc(money(e.tax))+'</span></div><div class="encsum net"><b>You receive</b><span>'+esc(money(e.netAmount||e.amount))+'</span></div></div>'+
     '<div class="encdetails"><div class="encdetail"><b>GCash account</b>'+esc(mask(e.payoutNumber))+'</div><div class="encdetail"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encdetail"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encdetail"><b>Transaction ID</b>'+esc(e.transactionId||'—')+'</div></div>'+
-    '<div class="encreceived" style="grid-template-columns:1fr 1fr 1fr"><button class="yes '+(decision==='yes'?'active':'')+'" onclick="setPayoutReceived(&quot;yes&quot;)">✓ Received</button><button class="waiting '+(decision==='waiting'?'active':'')+'" onclick="setPayoutReceived(&quot;waiting&quot;)">Waiting</button><button class="no '+(decision==='no'?'active':'')+'" onclick="setPayoutReceived(&quot;no&quot;)">Not received</button></div>'+
+    '<div class="encreceived" style="grid-template-columns:1fr 1fr 1fr"><button class="yes '+(decision==='yes'?'active':'')+'" onclick="confirmReceipt(&quot;yes&quot;)">✓ Received</button><button class="waiting '+(decision==='waiting'?'active':'')+'" onclick="confirmReceipt(&quot;waiting&quot;)">Waiting</button><button class="no '+(decision==='no'?'active':'')+'" onclick="confirmReceipt(&quot;no&quot;)">Not received</button></div>'+
     '<div class="encschedule"><b>Next: '+esc(upcoming==='task'?'Task Encashment':upcoming==='network'?'Network Encashment':'Not configured')+'</b><span>'+esc(day)+(q.startHour!=null&&q.endHour!=null?' · '+esc(q.startHour)+':00–'+esc(q.endHour)+':00 AM PH':'')+'</span></div>'+
     (logs?'<div class="encactivity">'+logs+'</div>':'');
   document.getElementById('encmodal').classList.add('show');
