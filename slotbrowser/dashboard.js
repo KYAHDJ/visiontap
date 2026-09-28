@@ -309,6 +309,8 @@ function getMergedSlots(status) {
       }
     }
 
+    if (!isPmath) { displayPpm = Math.min(9, Math.max(0, Math.trunc(displayPpm))); displayPph = displayPpm * 60; }
+
     // ETA — live adjusting based on displayPph, + days (hours/24)
     let etaHours = 0;
     let etaText = "";
@@ -455,14 +457,14 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 .ftr{text-align:center;padding:12px 0;font-size:10px;color:#334155}
 .livedot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.encbtn{background:#0c4a6e;color:#7dd3fc;width:auto;padding:0 9px;font-size:10px}
+.encbtn{background:#0c4a6e;color:#7dd3fc;width:auto;padding:0 10px;font-size:10px;margin-right:auto}.encnotice{border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#111a2c;border:1px solid #263449;color:#cbd5e1;font-size:10px;line-height:1.4}.encnotice b{display:block;color:#f8fafc;margin-bottom:2px}
 .encmodal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.9);z-index:50;padding:20px;overflow:auto}
 .encmodal.show{display:flex;align-items:flex-start;justify-content:center}.encpanel{width:100%;max-width:620px;background:#0b1220;border:1px solid #263449;border-radius:18px;padding:18px;box-shadow:0 28px 80px #000b}
 .enchd{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.enctitle{color:#f8fafc;font-size:15px;font-weight:750}.encclose{background:#172033;color:#94a3b8;border:1px solid #263449;border-radius:9px;padding:7px 11px;cursor:pointer}
 .enchero{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;background:linear-gradient(135deg,#0c4a6e,#082f49);border:1px solid #0369a1;border-radius:14px;padding:15px;margin-bottom:10px}.enchero small{display:block;color:#7dd3fc;font-size:9px;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px}.enchero strong{display:block;color:#fff;font-size:25px;line-height:1}.encstatus{display:inline-block;border-radius:999px;padding:5px 9px;background:#713f12;color:#fde68a;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}
 .encsummary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}.encsum{background:#111a2c;border:1px solid #223049;border-radius:10px;padding:10px}.encsum b,.encdetail b{display:block;color:#64748b;font-size:8px;text-transform:uppercase;letter-spacing:.45px;margin-bottom:4px}.encsum span{color:#e2e8f0;font-size:11px;font-weight:700}.encsum.net span{color:#34d399}
 .encdetails{display:grid;grid-template-columns:1fr 1fr;background:#0f172a;border:1px solid #1e293b;border-radius:12px;margin-bottom:10px;overflow:hidden}.encdetail{padding:10px 12px;border-bottom:1px solid #1e293b;min-width:0;word-break:break-word;font-size:10px}.encdetail:nth-child(odd){border-right:1px solid #1e293b}.encdetail:nth-last-child(-n+2){border-bottom:0}
-.encreceived{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.encreceived button{padding:11px;border-radius:10px;border:1px solid #334155;background:#131d30;color:#94a3b8;font-size:10px;font-weight:700;cursor:pointer}.encreceived button.yes.active{background:#064e3b;border-color:#10b981;color:#a7f3d0}.encreceived button.no.active{background:#450a0a;border-color:#ef4444;color:#fecaca}
+.encreceived{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.encreceived button{padding:11px;border-radius:10px;border:1px solid #334155;background:#131d30;color:#94a3b8;font-size:10px;font-weight:700;cursor:pointer}.encreceived button.yes.active{background:#064e3b;border-color:#10b981;color:#a7f3d0}.encreceived button.waiting.active{background:#713f12;border-color:#f59e0b;color:#fde68a}.encreceived button.no.active{background:#450a0a;border-color:#ef4444;color:#fecaca}
 .encschedule{display:flex;justify-content:space-between;gap:10px;background:#101827;border:1px solid #1e293b;border-radius:10px;padding:9px 11px;color:#94a3b8;font-size:9px}.encschedule b{color:#cbd5e1}.encactivity{margin-top:10px;color:#64748b;font-size:9px}.encactivity div{padding:5px 0;border-bottom:1px solid #172033}.encactivity div:last-child{border:0}
 @media(max-width:600px){.encmodal{padding:8px}.encpanel{padding:13px;border-radius:13px}.encsummary{grid-template-columns:repeat(3,1fr)}.enchero strong{font-size:21px}.encdetails{grid-template-columns:1fr}.encdetail:nth-child(odd){border-right:0}.encdetail:nth-last-child(2){border-bottom:1px solid #1e293b}}
 @media(max-width:380px){.wrap{padding:8px 8px 60px}.crow{flex-direction:column}.crow input{width:100%}.bsm{width:100%}}
@@ -578,7 +580,7 @@ function render(d){
       '<div class="sgrid">'+
         '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (Number(s.withdrawable||0)/100).toFixed(2) : s.withdrawable )+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Balance (₱)" : "Balance")+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#a78bfa">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Coins":"Points")+'</div></div>'+
-        '<div class="sbox"><div class="sv" style="color:#38bdf8" id="timer-'+esc(s.id)+'">'+esc(s.timerText||'00:00')+'</div><div class="sl">Time</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#38bdf8" id="timer-'+esc(s.id)+'">'+esc(liveTimerText(s.loopStartTime,s.timerText))+'</div><div class="sl">Time</div></div>'+
       '</div>'+
       ((s.pointsTotal>0 && ! (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") )?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
       (function(){
@@ -633,12 +635,12 @@ function render(d){
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
       '<button type="submit" class="bsm bsv">Save</button></form>'+
       eh+
-      '<div class="sacts">'+
+      '<div class="sacts">'+        (String(s.accountName).toLowerCase()==='adaihbi'?'<button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button>':'')+
         '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause">&#9646;&#9646;</a>'+
         '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume">&#9654;</a>'+
         '<a class="ibtn" href="/cmd?action=restart&slot='+sid+'" title="Restart">&#8635;</a>'+
         '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh">&#8634;</a>'+
-        (String(s.accountName).toLowerCase()==='adaihbi'?'<button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button>':'')+
+
         '<a class="ibtn dng" href="/cmd?action=remove&slot='+sid+'" title="Remove">&#10005;</a>'+
       '</div></div>';
     if (isDarlene) hDarlene+=cardHtml; else if (isDanica) hDanica+=cardHtml; else hAiko+=cardHtml;
@@ -649,17 +651,20 @@ function render(d){
   window._lastSlots = slots; // for live timer 1:1 - sync live only, no stale lastUpdate
 }
 
+function liveTimerText(start,fallback){if(!start)return fallback||'00:00';var elapsed=Math.max(0,Math.floor((Date.now()-Number(start))/1000));if(elapsed>86400)return fallback||'00:00';var m=Math.floor(elapsed/60),sec=elapsed%60;return(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec)}
 function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
 function showEncash(id){
-  var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{},status=e.receivedDecision==='yes'?'Received':e.receivedDecision==='no'?'Not received':'Awaiting your answer';
+  var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{};
+  var status=e.receivedDecision==='yes'?'Received':e.receivedDecision==='no'?'Not received':e.receivedDecision==='waiting'?'Waiting':'Answer needed';
   var mask=function(v){v=String(v||'');return v.length>4?'•••• '+v.slice(-4):(v||'—')};
   var money=function(v){v=String(v||'—');return v==='—'?v:(/[₱P]/.test(v)?v:'₱'+v)};
   var kind=String(e.kind||'network').toLowerCase(),upcoming=(q.type||'task').toLowerCase(),day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Wednesday');
+  var notice=e.receivedDecision==='yes'?'<b>Payment received</b>Waiting for your next '+day+' cash-out.':e.receivedDecision==='no'?'<b>Marked as not received</b>You can change this answer anytime.':e.receivedDecision==='waiting'?'<b>Still waiting for the payment</b>Choose Received or Not received when you know.':'<b>Have you received this money?</b>You have not answered yet. Choose an option below.';
   var logs=(e.eventLog||[]).filter(function(x){return !/history check|payout status/i.test(x.text||'')}).slice(-3).reverse().map(function(x){return '<div>'+esc(fmtWhen(x.at))+' · '+esc(x.text)+'</div>'}).join('');
   document.getElementById('encbody').innerHTML='<div class="enchero"><div><small>'+esc(kind==='task'?'Task payout':'Network payout')+'</small><strong>'+esc(money(e.netAmount||e.amount))+'</strong></div><span class="encstatus">'+esc(status)+'</span></div>'+
     '<div class="encsummary"><div class="encsum"><b>Gross</b><span>'+esc(money(e.amount))+'</span></div><div class="encsum"><b>Fee / tax</b><span>'+esc(money(e.tax))+'</span></div><div class="encsum net"><b>You receive</b><span>'+esc(money(e.netAmount||e.amount))+'</span></div></div>'+
     '<div class="encdetails"><div class="encdetail"><b>GCash account</b>'+esc(mask(e.payoutNumber))+'</div><div class="encdetail"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encdetail"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encdetail"><b>Transaction ID</b>'+esc(e.transactionId||'—')+'</div></div>'+
-    '<div class="encreceived"><button class="yes '+(e.receivedDecision==='yes'?'active':'')+'" onclick="setPayoutReceived(&quot;yes&quot;)">✓ Received</button><button class="no '+(e.receivedDecision==='no'?'active':'')+'" onclick="setPayoutReceived(&quot;no&quot;)">Not received</button></div>'+
+    '<div class="encnotice">'+notice+'</div><div class="encreceived" style="grid-template-columns:1fr 1fr 1fr"><button class="yes '+(e.receivedDecision==='yes'?'active':'')+'" onclick="setPayoutReceived(&quot;yes&quot;)">✓ Received</button><button class="waiting '+(e.receivedDecision==='waiting'?'active':'')+'" onclick="setPayoutReceived(&quot;waiting&quot;)">Waiting</button><button class="no '+(e.receivedDecision==='no'?'active':'')+'" onclick="setPayoutReceived(&quot;no&quot;)">Not received</button></div>'+
     '<div class="encschedule"><b>Next: '+esc(upcoming==='task'?'Task Encashment':'Network Encashment')+'</b><span>'+esc(day)+' · '+esc(q.startHour||8)+':00–'+esc(q.endHour||10)+':00 AM PH</span></div>'+
     (logs?'<div class="encactivity">'+logs+'</div>':'');
   document.getElementById('encmodal').classList.add('show');
@@ -757,7 +762,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/payout-received" && req.method === "POST") {
     const value = url.searchParams.get("value");
-    if (value !== "yes" && value !== "no") { res.writeHead(400); res.end("Invalid choice"); return; }
+    if (value !== "yes" && value !== "waiting" && value !== "no") { res.writeHead(400); res.end("Invalid choice"); return; }
     const state = readJson(ENCASHMENT_STATE_FILE, {});
     state.receivedDecision = value;
     state.receivedDecisionAt = Date.now();
