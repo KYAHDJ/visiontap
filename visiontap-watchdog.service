@@ -1,5 +1,5 @@
 [Unit]
-Description=VisionTap Watchdog - auto-restart Electron on crash
+Description=VisionTap Watchdog - auto-restart Chrome pilots and shared services
 After=network.target
 
 [Service]

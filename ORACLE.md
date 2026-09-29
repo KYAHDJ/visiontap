@@ -1,66 +1,49 @@
-# Oracle Cloud Server — VisionTap
+# Oracle deployment
 
-## Instance
-- **IP**: `140.245.49.233` (Oracle Linux 9, VM.Standard.E5.Flex 1 OCPU / 6 GB)
-- **SSH**: `ssh -i C:\VisionTap\oracle_key opc@140.245.49.233`
-- **User**: `opc`, home `/home/opc`
-- **Repo**: `/home/opc/VisionTap` (git `KYAHDJ/visiontap`, branch `main`)
-- **VNC**: `140.245.49.233:5901` (no password, display `:1`)
-- **Firewall**: Security List + NSG + `firewall-cmd` must open `22, 5901, 8080`
+Repository: `/home/opc/VisionTap`
+Display: `:1` at `2560x1024`
+VNC: `140.245.49.233:1919`
+Dashboard: `http://140.245.49.233:6260`
 
-```bash
-sudo firewall-cmd --permanent --add-port=5901/tcp --add-port=8080/tcp --add-port=5566/tcp
-sudo firewall-cmd --reload
+## Services
+
+```text
+visiontap-xvfb
+visiontap-openbox
+visiontap-vnc
+visiontap-scanner
+visiontap-dashboard
+visiontap-chrome@kyaiko
+visiontap-chrome@adaihbi
+visiontap-chrome@temi
+visiontap-chrome@axceling1001
+visiontap-chrome@darlenejoyce
+visiontap-watchdog
 ```
 
-## Systemd Services
-All enabled for autostart (`sudo systemctl status visiontap-*`):
+All services are enabled for startup. Electron is not installed as a VisionTap service and must remain disabled.
 
-| Service | Description | WorkingDir | Exec | Port / Display |
-|---------|-------------|------------|------|----------------|
-| `visiontap-xvfb` | Virtual X display | — | `Xvfb :1 -screen 0 1280x800x24` | `:1` |
-| `visiontap-openbox` | Window manager | — | `openbox` | `:1` |
-| `visiontap-vnc` | VNC server | — | `x11vnc -display :1 -rfbport 5901` | `5901` |
-| `visiontap-scanner` | Flask scanner | `pcapp/scanner` | `/usr/bin/python3 server.py` | `5566` |
-| `visiontap-electron` | Electron slots | `slotbrowser` | `npx electron . --no-sandbox` | `:1`, uses `DISPLAY=:1` |
-| `visiontap-dashboard` | Control dashboard | `slotbrowser` | `node dashboard.js` | `8080` |
-| `visiontap-watchdog` | Optional watchdog | — | `watchdog.sh` | — |
-
-Service files: `visiontap-*.service` in repo root, installed to `/etc/systemd/system/`.
+## Deploy
 
 ```bash
-sudo systemctl restart visiontap-scanner
-sudo systemctl restart visiontap-electron
-sudo systemctl restart visiontap-dashboard
-sudo systemctl status visiontap-electron --no-pager | head -n 20
-sudo journalctl -u visiontap-scanner -f
-sudo journalctl -u visiontap-electron -f
+cd /home/opc/VisionTap
+git pull --ff-only origin main
+npm --prefix slotbrowser ci --omit=dev
+sudo install -m 0644 visiontap-chrome@.service /etc/systemd/system/
+sudo install -m 0644 visiontap-{xvfb,openbox,vnc,scanner,dashboard,watchdog}.service /etc/systemd/system/
+for account in kyaiko adaihbi temi axceling1001 darlenejoyce; do
+  install -m 0600 "chrome-$account.env" "$HOME/.config/VisionTap-Chrome/$account.env"
+done
+sudo systemctl daemon-reload
+./start_all.sh
 ```
 
-## Display & Electron Flags
-Electron runs in low-RAM mode (`app.disableHardwareAcceleration()`, `--disable-gpu`, and `disable-dev-shm-usage`). It no longer limits renderer processes to two, so three or more slots can run independently. State dir: `~/.config/VisionTap Slots/state/` (`slots.json`, `credentials.json`, `settings.json`, `slot_commands.json`, `loop_command.json`).
+## Health checks
 
-## Scanner Deps (Oracle)
-Installed via `setup_server.sh`:
-`python3, pip, tesseract, gcc-c++, cmake, libX11, gtk3, nss, Xvfb, x11vnc, fluxbox, Node 20`, pip `flask, opencv-python-headless, pytesseract, Pillow, numpy`. No `easyocr` (2GB, fails on 1 OCPU) — replaced with `pytesseract`.
-
-Fonts: `google-noto-*, liberation-*, dejavu-*` (252 fonts) required for ECNL layout.
-
-## Deploy (Local → Oracle)
 ```bash
-# Local
-git add -A && git commit -m "msg" && git push
-
-# Oracle
-ssh -i C:\VisionTap\oracle_key opc@140.245.49.233
-cd ~/VisionTap && git pull
-sudo systemctl restart visiontap-scanner visiontap-electron visiontap-dashboard
+curl -s http://127.0.0.1:5566/health
+curl -s http://127.0.0.1:6260/api/stats
+systemctl is-active 'visiontap-chrome@*'
 ```
 
-VNC check: `vncviewer 140.245.49.233:5901`, dashboard `http://140.245.49.233:8080`, scanner `curl -s http://127.0.0.1:5566/health` → `{"status":"online"}`.
-
-## Troubleshooting
-- `scp opc@140.245.49.233:~/VisionTap/pcapp/scanner/debug_captured_task.png .`
-- `curl -s http://127.0.0.1:5566/stats | jq`
-- Electron crash: `ps aux | grep electron`, `DISPLAY=:1` must be set.
-- Credentials: `~/.config/VisionTap Slots/state/credentials.json` (watched every 2s by `main.js`).
+Profiles live under `~/.config/VisionTap-Chrome/ACCOUNT`. Shared private state remains under `~/.config/VisionTap Slots/state`. Never commit either directory.

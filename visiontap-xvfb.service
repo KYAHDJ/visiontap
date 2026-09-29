@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=opc
-ExecStart=/usr/bin/Xvfb :1 -screen 0 1280x1024x24 -ac
+ExecStart=/usr/bin/Xvfb :1 -screen 0 2560x1024x24 -ac
 Restart=always
 RestartSec=5
 

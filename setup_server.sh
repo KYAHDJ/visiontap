@@ -46,4 +46,20 @@ echo "Tesseract: $(tesseract --version 2>&1 | head -1)"
 # Kill existing processes on ports
 fuser -k 5566/tcp 2>/dev/null || true
 
+# Node dependencies (Chrome pilot only)
+npm --prefix slotbrowser ci --omit=dev
+
+# Install Chrome-only services and account configuration.
+sudo install -m 0644 visiontap-xvfb.service visiontap-openbox.service visiontap-vnc.service \
+  visiontap-scanner.service visiontap-dashboard.service visiontap-watchdog.service \
+  visiontap-chrome@.service /etc/systemd/system/
+mkdir -p "$HOME/.config/VisionTap-Chrome"/{kyaiko,adaihbi,temi,axceling1001,darlenejoyce}
+for account in kyaiko adaihbi temi axceling1001 darlenejoyce; do
+  install -m 0600 "chrome-$account.env" "$HOME/.config/VisionTap-Chrome/$account.env"
+done
+sudo systemctl disable --now visiontap-electron.service 2>/dev/null || true
+sudo systemctl daemon-reload
+sudo systemctl enable visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-scanner visiontap-dashboard visiontap-watchdog
+sudo systemctl enable visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@darlenejoyce
+
 echo "=== Setup complete at $(date) ==="

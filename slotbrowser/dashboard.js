@@ -4,24 +4,32 @@ const path = require("path");
 const os = require("os");
 const { execSync } = require("child_process");
 
-const { enqueue } = require('./command-queue');
-const PORT = 8080;
+const PORT = 6260;
 const PH_TIME_ZONE = "Asia/Manila";
-const ELECTRON_STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
-const CREDS_FILE = path.join(ELECTRON_STATE_DIR, "credentials.json");
-const HISTORY_FILE = path.join(ELECTRON_STATE_DIR, "cred_history.json");
-const LOOP_CMD_FILE = path.join(ELECTRON_STATE_DIR, "loop_command.json");
-const SLOTS_FILE = path.join(ELECTRON_STATE_DIR, "slots.json");
-const SLOT_CMD_FILE = path.join(ELECTRON_STATE_DIR, "slot_commands.json");
-const ENCASHMENT_STATE_FILE = path.join(ELECTRON_STATE_DIR, "encashment_adaihbi.json");
-const ENCASHMENT_CONFIG_FILE = path.join(ELECTRON_STATE_DIR, "encashment_config.json");
-const THEME_PREF_FILE = path.join(ELECTRON_STATE_DIR, "dashboard_theme.json");
+const STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
+const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
+const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
+const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
+const ENCASHMENT_STATE_FILE = path.join(STATE_DIR, "encashment_adaihbi.json");
+const ENCASHMENT_CONFIG_FILE = path.join(STATE_DIR, "encashment_config.json");
+const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
+const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','darlenejoyce'];
+function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
+function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
+function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
+const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '17':'darlenejoyce' };
+function sendChromeControl(action, slot = 'all') {
+  const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
+  if (!['pause','resume','reload','stop'].includes(mapped)) return;
+  const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
+  for (const account of accounts) writeJson(chromePilotCommandFile(account), { action:mapped, nonce:`${Date.now()}-${Math.random()}` });
+}
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
 // Dashboard persistent metrics — per-slot personal save file (no leaking)
-const METRICS_FILE = path.join(ELECTRON_STATE_DIR, "dashboard_metrics.json"); // legacy single file (migrated)
-function metricsFileForId(id) { return path.join(ELECTRON_STATE_DIR, `dashboard_metrics_${String(id)}.json`); }
+const METRICS_FILE = path.join(STATE_DIR, "dashboard_metrics.json"); // legacy single file (migrated)
+function metricsFileForId(id) { return path.join(STATE_DIR, `dashboard_metrics_${String(id)}.json`); }
 function loadMetricsForId(id) {
   // try per-slot file first
   let ms = readJson(metricsFileForId(id), null);
@@ -96,10 +104,10 @@ function writeJson(file, data) {
 
 function getCreds() { return readJson(CREDS_FILE, {}); }
 function getHistory() { return readJson(HISTORY_FILE, { users: [] }); }
-function getElectronSlots() { return readJson(SLOTS_FILE, { active: [] }); }
+function getConfiguredSlots() { return readJson(SLOTS_FILE, { active: [] }); }
 function isLoopPaused() {
-  const active = getElectronSlots().active || [];
-  return active.length > 0 && active.every(s => s.paused || s.stopRequested);
+  const pilots = getChromePilots().filter(p => p.running);
+  return pilots.length > 0 && pilots.every(p => p.paused);
 }
 function getStats() {
   try { return JSON.parse(run("curl -s http://127.0.0.1:5566/stats")); }
@@ -111,19 +119,18 @@ function getEarnings() {
 }
 function getStatus() {
   const scannerUp = run("curl -s http://127.0.0.1:5566/health").includes("online");
-  const electronProcs = parseInt(run("ps aux | grep electron | grep -v grep | wc -l")) || 0;
   const stats = getStats();
   const earnings = getEarnings();
   const loopPaused = isLoopPaused();
-  return { scannerUp, electronProcs, stats, earnings, loopPaused };
+  return { scannerUp, stats, earnings, loopPaused };
 }
 function getMergedSlots(status) {
-  const electronSlots = getElectronSlots();
+  const configuredSlots = getConfiguredSlots();
   const scannerSlots = (status.stats && status.stats.slots) || {};
   const slotEarnings = (status.earnings) || {};
   const creds = getCreds();
   const merged = [];
-  for (const slot of (electronSlots.active || [])) {
+  for (const slot of (configuredSlots.active || [])) {
     const id = String(slot.id);
     const name = slot.accountName || slot.name || `Slot ${Number(id) + 1}`;
     // Strict per-slot personal — no fallback to other slots (prevents history leaking)
@@ -381,10 +388,6 @@ function getMergedSlots(status) {
   }
   return merged;
 }
-function sendCommands(cmds) {
-  enqueue(path.join(ELECTRON_STATE_DIR, 'commands'), cmds);
-  log(`Commands sent: ${JSON.stringify(cmds)}`);
-}
 
 function buildPage() {
   const history = getHistory();
@@ -460,6 +463,8 @@ h1{font-size:18px;text-align:center;color:var(--accent);margin-bottom:12px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .encbtn{background:#075985;color:#bae6fd;width:auto;padding:0 11px;font-size:10px;font-weight:700}.encoutstatus{display:inline-flex;align-items:center;min-height:30px;padding:0 10px;margin-right:auto;border-radius:8px;border:1px solid #334155;background:#111827;color:#94a3b8;font-size:9px;font-weight:650;white-space:nowrap}.encoutstatus.yes{background:#052e22;border-color:#047857;color:#6ee7b7}.encoutstatus.waiting{background:#422006;border-color:#a16207;color:#fde68a}.encoutstatus.no{background:#450a0a;border-color:#b91c1c;color:#fca5a5}.encoutstatus.answer{background:#0c4a6e;border-color:#0369a1;color:#bae6fd}
 .encmodal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.9);z-index:50;padding:20px;overflow:auto}
+.card{position:relative;overflow:hidden}.slotverify{position:absolute;inset:0;z-index:12;margin:0;padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:2px solid #f59e0b;border-radius:inherit;background:rgba(5,7,16,.94);backdrop-filter:blur(13px);-webkit-backdrop-filter:blur(13px);box-shadow:inset 0 0 80px rgba(245,158,11,.08)}.slotverify-title{display:flex;flex-direction:column;align-items:center;gap:7px;color:#fff;font-size:19px;font-weight:900;letter-spacing:-.02em}.slotverify-title:before{content:'!';width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:#f59e0b;color:#140b00;font-size:24px;font-weight:950;margin-bottom:3px}.slotverify-title span{font-size:10px;color:#fbbf24;letter-spacing:.18em}.slotverify p{max-width:360px;margin:12px 0 17px;color:#d7d3e2;font-size:11px;line-height:1.55}.slotverify-stats{display:grid;grid-template-columns:repeat(3,minmax(70px,1fr));gap:8px;width:min(100%,330px);margin-bottom:14px}.slotverify-stats span{padding:8px;border:1px solid #3b3850;border-radius:9px;background:rgba(17,24,39,.85);text-align:center;color:#aaa6bc;font-size:8px}.slotverify-stats b{display:block;color:#fff;font-size:11px;margin-top:3px}.slotverify-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:min(100%,330px)}.slotverify-actions button{min-height:38px;border:1px solid #514b66;border-radius:8px;background:#201e31;color:#f8fafc;font-size:9px;font-weight:850;cursor:pointer}.slotverify-actions button:hover{background:#302c48;border-color:#756b9a}.slotverify-actions button:nth-child(2){background:#f59e0b;border-color:#f59e0b;color:#170d00}.slotverify-actions button:nth-child(2):hover{background:#fbbf24}
+@media(max-width:620px){.slotverify{padding:18px}.slotverify-title{font-size:16px}.slotverify p{font-size:10px}.slotverify-actions{grid-template-columns:1fr}.slotverify-actions button{min-height:36px}}
 .encmodal.show{display:flex;align-items:flex-start;justify-content:center}.encpanel{width:100%;max-width:620px;background:#0b1220;border:1px solid #263449;border-radius:18px;padding:18px;box-shadow:0 28px 80px #000b}
 .enchd{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.enctitle{color:#f8fafc;font-size:15px;font-weight:750}.encclose{background:#172033;color:#94a3b8;border:1px solid #263449;border-radius:9px;padding:7px 11px;cursor:pointer}
 .enchero{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;background:linear-gradient(135deg,#0c4a6e,#082f49);border:1px solid #0369a1;border-radius:14px;padding:15px;margin-bottom:10px}.enchero small{display:block;color:#7dd3fc;font-size:9px;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px}.enchero strong{display:block;color:#fff;font-size:25px;line-height:1}.encstatus{display:inline-block;border-radius:999px;padding:5px 9px;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}.encstatus.yes{background:#064e3b;color:#a7f3d0}.encstatus.waiting{background:#713f12;color:#fde68a}.encstatus.no{background:#450a0a;color:#fecaca}.encstatus.answer{background:#0c4a6e;color:#bae6fd}
@@ -614,7 +619,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 <header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span></div></header>
 <div class="wrap">
   <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div></section>
-  <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · electron · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
+  <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
   <div class="stitle">Global Controls</div>
   <div class="ggrid global-controls-grid">
@@ -661,6 +666,7 @@ function updatePHClock(){
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function pilotControl(account,action){fetch('/chrome-pilot-control?account='+encodeURIComponent(account)+'&action='+encodeURIComponent(action),{method:'POST'}).catch(function(){})}
 
 var pendingConfirmAction=null;
 function askConfirm(title,message,label,action,tone){
@@ -701,6 +707,7 @@ function syncSectionThemes(theme){
 }
 function render(d){
   var slots=d.slots||[];
+  var pilots=d.chromePilots||[],pilot=d.chromePilot||{};
   syncSectionThemes(d.theme||{});
   var aikoSlots = slots.filter(s => !["13", "16"].includes(String(s.id)) && !["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()) && !["17"].includes(String(s.id)) && !["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
   var danicaSlots = slots.filter(s => ["13", "16"].includes(String(s.id)) || ["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()));
@@ -708,7 +715,7 @@ function render(d){
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
   document.getElementById('scnt-danica').textContent=danicaSlots.length;
   document.getElementById('scnt-darlene').textContent=darleneSlots.length;
-  var activeCount=slots.filter(function(x){return !x.paused}).length,healthy=d.scannerUp&&d.electronProcs>0&&!d.loopPaused;
+  var runningPilots=pilots.filter(function(p){return p&&p.running}).length,activeCount=runningPilots||slots.filter(function(x){return !x.paused}).length,workerUp=runningPilots>0||!!pilot.running,healthy=d.scannerUp&&workerUp&&!d.loopPaused;
   document.getElementById('ov-total').textContent=String(slots.length).padStart(2,'0');
   document.getElementById('ov-active').textContent=String(activeCount).padStart(2,'0');
   document.getElementById('ov-active-note').textContent=activeCount+' of '+slots.length+' running';
@@ -720,7 +727,7 @@ function render(d){
   document.getElementById('ov-next-time').textContent=schedule.startHour!=null&&schedule.endHour!=null?schedule.startHour+':00–'+schedule.endHour+':00 AM PH':'Schedule not configured';
   document.getElementById('pills').innerHTML=
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
-    '<div class="pill"><div class="dot" style="background:'+(d.electronProcs>0?'var(--green)':'var(--red)')+'"></div>Electron '+(d.electronProcs>0?'Running':'Stopped')+'</div>'+
+    '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.loopPaused?'var(--yellow)':'var(--green)')+'"></div>Loop '+(d.loopPaused?'Paused':'Running')+'</div>';
   var lb=document.getElementById('lbtn');
   if(d.loopPaused){lb.href='/loop?cmd=resume';lb.textContent='Resume Loop';lb.className='btn bgrn bful'}
@@ -732,7 +739,10 @@ function render(d){
     var isDarlene = ["17"].includes(String(s.id)) || ["darlenejoyce"].includes(String(s.accountName).toLowerCase());
     var sc=isDarlene ? '#34d399' : (isDanica ? '#f472b6' : '#38bdf8');
     var cardClass = isDarlene ? 'card-darlene' : (isDanica ? 'card-danica' : 'card-aiko');
-    var st=s.paused ? 'PAUSED' : 'RUNNING';
+    var slotPilot=pilots.find(function(p){return p&&String(p.slot)===String(s.id)})||{};
+    var slotPaused=slotPilot.running?!!slotPilot.paused:!!s.paused;
+    var verifyHtml=slotPilot.verificationHold?'<div class="slotverify"><div class="slotverify-title">Manual verification required <span>'+esc(String(s.accountName||s.name).toUpperCase())+'</span></div><p>'+esc(slotPilot.status||'Complete verification in this account’s Oracle Chrome window. Auto-refresh is paused.')+'</p><div class="slotverify-stats"><span>Tasks<b>'+esc(slotPilot.tasks||0)+'</b></span><span>Errors<b>'+esc(slotPilot.errors||0)+'</b></span><span>Time<b>'+esc(slotPilot.time||'00:00')+'</b></span></div><div class="slotverify-actions"><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;pause&quot;)">Pause</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;resume&quot;)">Resume after verify</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;reload&quot;)">Safe reload</button></div></div>':'';
+    var st=slotPaused?'PAUSED':(slotPilot.verificationHold?'VERIFY':'RUNNING');
     var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
@@ -746,7 +756,8 @@ function render(d){
       eh+='</div>';
     }
     var cardHtml='<div class="card '+cardClass+'">'+
-      '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg state-'+(s.paused?'paused':'running')+'">'+st+'</span></div>'+
+      '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg state-'+(slotPaused?'paused':'running')+'">'+st+'</span></div>'+
+      verifyHtml+
       '<div class="sgrid">'+
         '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (Number(s.withdrawable||0)/100).toFixed(2) : s.withdrawable )+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Balance (₱)" : "Balance")+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#a78bfa">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Coins":"Points")+'</div></div>'+
@@ -923,9 +934,21 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/api/stats" && req.method === "GET") {
     const status = getStatus();
     const slots = getMergedSlots(status);
+    const chromePilots = getChromePilots();
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    res.end(JSON.stringify({ scannerUp: status.scannerUp, electronProcs: status.electronProcs, loopPaused: status.loopPaused, slots, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78", darleneColor: "#00D68F" }) }));
+    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78", darleneColor: "#00D68F" }) }));
+    return;
+  }
+
+  if (url.pathname === "/chrome-pilot-control" && req.method === "POST") {
+    const action = String(url.searchParams.get("action") || "");
+    const account = String(url.searchParams.get("account") || "adaihbi").toLowerCase();
+    if (!["pause", "resume", "reload", "stop"].includes(action)) { res.writeHead(400); res.end("Invalid action"); return; }
+    if (!CHROME_ACCOUNTS.includes(account)) { res.writeHead(400); res.end("Invalid account"); return; }
+    writeJson(chromePilotCommandFile(account), { action, nonce: `${Date.now()}-${Math.random()}` });
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ ok: true, account, action }));
     return;
   }
 
@@ -958,7 +981,7 @@ const server = http.createServer((req, res) => {
     const action = url.searchParams.get("action");
     const slot = url.searchParams.get("slot");
     log(`CMD: action=${action} slot=${slot}`);
-    try { sendCommands([{ action, slot: slot || "all" }]); }
+    try { sendChromeControl(action, slot || 'all'); }
     catch (e) { res.writeHead(400); res.end('Command could not be queued: ' + e.message); return; }
     res.writeHead(302, { "Location": "/" });
     res.end();
@@ -968,7 +991,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/loop") {
     const cmd = url.searchParams.get("cmd");
     if (cmd === "pause" || cmd === "resume") {
-      sendCommands([{ action: cmd, slot: "all" }]);
+      sendChromeControl(cmd, 'all');
       log(`Loop ${cmd}`);
     }
     res.writeHead(302, { "Location": "/" });
@@ -1006,7 +1029,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-electron");
+    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@darlenejoyce");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");

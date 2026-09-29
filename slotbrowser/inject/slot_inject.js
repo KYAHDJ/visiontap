@@ -1,5 +1,5 @@
 // VisionTap Slot - Injected page script.
-// EXACT clone of VisionTapColor task_script.js behavior + Electron HUD/host bridge.
+// VisionTap page automation API shared by the Chrome pilots.
 
 (function () {
   if (window.__vtapi) return;
@@ -412,7 +412,7 @@
     }
   } catch (e) {}
 
-  // ---- Auto-login (Electron-specific) ----
+  // ---- Auto-login ----
   (async function autoLogin() {
     try {
       const h = window.location.href.toLowerCase();
@@ -477,7 +477,7 @@
     } catch (e) {}
   })();
 
-  // Exposed for slot.js to retry login when stuck on auth page (immediate, not just once at load)
+  // Exposed for the Chrome pilot to retry login when stuck on an auth page.
   vt.tryLogin = async () => {
     try {
       const h = window.location.href.toLowerCase();
@@ -541,7 +541,7 @@
     }
   }
 
-  // ---- HUD (Electron-specific) ----
+  // ---- HUD ----
   function getOrCreateHUD(slotName) {
     let hud = document.getElementById('visiontap-hud');
     if (!hud) {
@@ -600,10 +600,10 @@
   };
 
   // ---- Chrome extension message listener ----
-  // (In Electron we use __vtapi instead, but this is needed for Chrome compat)
+  // Chrome compatibility message bridge.
   // Message handling is done via __vtapi methods below.
 
-  // ---- Public API (Electron host calls these) ----
+  // ---- Public API (Chrome pilot calls these) ----
   vt.checkInputReady = () => {
     const bodyText = document.body ? (document.body.innerText || '').trim() : '';
     const bodyLen = document.body ? (document.body.innerHTML || '').length : 0;

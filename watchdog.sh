@@ -52,8 +52,8 @@ while true; do
     echo "[$(date)] VNC down - restarting" >> $LOG
     sudo systemctl restart visiontap-vnc >> $LOG 2>&1
   fi
-  if ! sudo ss -tlnp 2>/dev/null | grep -q ':5901'; then
-    echo "[$(date)] VNC port 5901 not listening - restarting" >> $LOG
+  if ! sudo ss -tlnp 2>/dev/null | grep -q ':1919'; then
+    echo "[$(date)] VNC port 1919 not listening - restarting" >> $LOG
     sudo systemctl restart visiontap-vnc >> $LOG 2>&1
   fi
 
@@ -71,7 +71,7 @@ while true; do
   fi
 
   # 5. Dashboard
-  if ! curl -s --max-time 5 http://127.0.0.1:8080/api/stats 2>/dev/null | grep -q 'scannerUp'; then
+  if ! curl -s --max-time 5 http://127.0.0.1:6260/api/stats 2>/dev/null | grep -q 'scannerUp'; then
     echo "[$(date)] Dashboard unhealthy - restarting" >> $LOG
     sudo systemctl restart visiontap-dashboard >> $LOG 2>&1
   fi
@@ -81,62 +81,22 @@ while true; do
     sudo systemctl restart visiontap-dashboard >> $LOG 2>&1
   fi
 
-  # 6. Electron - main check
-  if ! pgrep -f 'electron.*no-sandbox' > /dev/null 2>&1; then
-    echo "[$(date)] Electron not running - restarting via systemd" >> $LOG
-    sudo systemctl restart visiontap-electron >> $LOG 2>&1
-    should_restart electron
-  else
-    # Check for SyntaxError crash loop in journal
-    if sudo journalctl -u visiontap-electron -n 20 --no-pager 2>/dev/null | grep -q 'SyntaxError'; then
-      echo "[$(date)] Electron SyntaxError detected - git pull auto-fix" >> $LOG
-      cd /home/opc/VisionTap && git fetch origin >> $LOG 2>&1 && git reset --hard origin/main >> $LOG 2>&1
-      if node --check $APP_DIR/main.js 2>/dev/null; then
-        echo "[$(date)] main.js syntax OK after pull - restarting electron" >> $LOG
-        sudo systemctl restart visiontap-electron >> $LOG 2>&1
-      else
-        echo "[$(date)] main.js still broken after pull!" >> $LOG
-      fi
-      # Clear journal to avoid loop
-      sudo journalctl --rotate 2>/dev/null; sudo journalctl --vacuum-time=1s 2>/dev/null
+  # 6. Chrome pilots - each account heals independently.
+  for account in kyaiko adaihbi temi axceling1001 darlenejoyce; do
+    svc="visiontap-chrome@$account"
+    if ! sudo systemctl is-active --quiet "$svc"; then
+      echo "[$(date)] $account Chrome pilot down - restarting" >> $LOG
+      sudo systemctl restart "$svc" >> $LOG 2>&1
+      should_restart "chrome-$account"
     fi
-    # Check for black screen: electron running but no vt-slot renderers
-    RENDERERS=$(pgrep -f 'vt-slot=' 2>/dev/null | wc -l)
-    ELECTRON_MAIN=$(pgrep -f 'electron.*slotbrowser' 2>/dev/null | wc -l)
-    if [ "$ELECTRON_MAIN" -gt 0 ] && [ "$RENDERERS" -eq 0 ]; then
-      # Give it 60s to spawn renderers after start
-      UPTIME=$(sudo systemctl show visiontap-electron --property=ActiveEnterTimestampMonotonic 2>/dev/null | cut -d= -f2)
-      # Simple: if no renderers for 2 consecutive checks, restart
-      if [ -f /tmp/.no_renderer_count ]; then
-        CNT=$(cat /tmp/.no_renderer_count)
-        CNT=$((CNT+1))
-        echo $CNT > /tmp/.no_renderer_count
-        if [ $CNT -ge 8 ]; then
-          echo "[$(date)] Black screen detected (0 renderers for 4m) - restarting electron + display stack" >> $LOG
-          sudo systemctl restart visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-electron >> $LOG 2>&1
-          echo 0 > /tmp/.no_renderer_count
-        fi
-      else
-        echo 1 > /tmp/.no_renderer_count
-      fi
-    else
-      echo 0 > /tmp/.no_renderer_count
-    fi
-    # Check node syntax for main.js/slot.js
-    if ! node --check $APP_DIR/main.js 2>/dev/null; then
-      echo "[$(date)] main.js syntax error (pre-crash) - git pull" >> $LOG
-      cd /home/opc/VisionTap && git fetch origin >> $LOG 2>&1 && git reset --hard origin/main >> $LOG 2>&1
-      sudo systemctl restart visiontap-electron >> $LOG 2>&1
-    fi
-    if ! node --check $APP_DIR/slot.js 2>/dev/null; then
-      echo "[$(date)] slot.js syntax error - git pull" >> $LOG
-      cd /home/opc/VisionTap && git fetch origin >> $LOG 2>&1 && git reset --hard origin/main >> $LOG 2>&1
-      sudo systemctl restart visiontap-electron >> $LOG 2>&1
-    fi
+  done
+  if ! node --check $APP_DIR/chrome-pilot.js 2>/dev/null || ! node --check $APP_DIR/chrome-encashment.js 2>/dev/null; then
+    echo "[$(date)] Chrome pilot syntax error - leaving services stopped for inspection" >> $LOG
+    sudo systemctl stop 'visiontap-chrome@*' >> $LOG 2>&1
   fi
 
-  # 7. Crash loop - only restart the failing service, not whole system (avoid random full restarts)
-  for svc in electron scanner dashboard; do
+  # 7. Crash loop - only restart the failing shared service.
+  for svc in scanner dashboard; do
     cnt=${restart_count[$svc]:-0}
     last=${restart_time[$svc]:-0}
     now=$(date +%s)

@@ -6,7 +6,7 @@ Requires=visiontap-xvfb.service
 [Service]
 Type=simple
 User=opc
-ExecStart=/usr/bin/x11vnc -display :1 -forever -nopw -rfbport 5901 -shared
+ExecStart=/usr/bin/x11vnc -display :1 -forever -nopw -rfbport 1919 -shared
 Restart=always
 RestartSec=5
 

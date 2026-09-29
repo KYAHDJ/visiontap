@@ -42,3 +42,6 @@ ssh_verbose.txt
 credentials.json
 cred_history.json
 *.tar.gz
+.codex-runner-check
+OUTPUT/
+TASK/
