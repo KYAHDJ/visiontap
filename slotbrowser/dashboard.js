@@ -621,6 +621,10 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
   <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
+  <div class="stitle">Android App</div>
+  <div class="ggrid">
+    <a class="btn bpur bful" href="/visiontap-android.apk" download="VisionTap-Android.apk">Download VisionTap App</a>
+  </div>
   <div class="stitle">Global Controls</div>
   <div class="ggrid global-controls-grid">
     <a class="btn bgrn" href="/cmd?action=resume&slot=all" onclick="return confirmLink(event,this,&quot;Resume every account?&quot;,&quot;All paused accounts will resume automation.&quot;,&quot;Resume all&quot;)">Resume All</a>
@@ -634,8 +638,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
   </div>
   <div class="stitle section-aiko-title"><span>AIKO — <span id="scnt-aiko">0</span> slots</span><span class="section-theme"><input id="aiko-wheel" type="color" value="#725CFF" oninput="previewSectionColor(&quot;aiko&quot;,this.value)"><input id="aiko-hex" value="#725CFF" maxlength="7" aria-label="AIKO color hex"><button type="button" onclick="confirmSectionColor(&quot;aiko&quot;)">Apply</button></span></div>
   <div id="slots-aiko"></div>
-  <div class="stitle section-danica-title"><span>DANICA — <span id="scnt-danica">0</span> slots</span><span class="section-theme"><input id="danica-wheel" type="color" value="#FF4F78" oninput="previewSectionColor(&quot;danica&quot;,this.value)"><input id="danica-hex" value="#FF4F78" maxlength="7" aria-label="DANICA color hex"><button type="button" onclick="confirmSectionColor(&quot;danica&quot;)">Apply</button></span></div>
-  <div id="slots-danica"></div>
   <div class="stitle section-darlene-title"><span>DARLENE — <span id="scnt-darlene">0</span> slots</span><span class="section-theme"><input id="darlene-wheel" type="color" value="#00D68F" oninput="previewSectionColor(&quot;darlene&quot;,this.value)"><input id="darlene-hex" value="#00D68F" maxlength="7" aria-label="DARLENE color hex"><button type="button" onclick="confirmSectionColor(&quot;darlene&quot;)">Apply</button></span></div>
   <div id="slots-darlene"></div>
   <div class="stitle">Server</div>
@@ -680,9 +682,8 @@ function closeConfirm(){document.getElementById('confirmmodal').classList.remove
 function acceptConfirm(){var action=pendingConfirmAction;document.getElementById('confirmmodal').classList.remove('show');pendingConfirmAction=null;if(action)action()}
 function confirmLink(event,element,title,message,label,tone){if(event)event.preventDefault();var href=element&&element.href;askConfirm(title,message,label,function(){if(href)window.location.href=href},tone);return false}
 function confirmSectionColor(section){var label=section.charAt(0).toUpperCase()+section.slice(1);askConfirm('Apply '+label+' theme?','This color will update every slot card in the '+label+' section.','Apply color',function(){applySectionColor(section)})}
-function confirmReceipt(value){var labels={yes:'Received',waiting:'Waiting',no:'Not received'},tones={yes:'',waiting:'warning',no:'danger'};askConfirm('Set payout as '+labels[value]+'?','This will replace the current payout answer and remain saved after refresh.',labels[value],function(){setPayoutReceived(value)},tones[value])}
 function setSectionAccent(section,value){
-  if(!/^(aiko|danica|darlene)$/.test(section)||!/^#[0-9A-F]{6}$/i.test(value))return false;
+  if(!/^(aiko|darlene)$/.test(section)||!/^#[0-9A-F]{6}$/i.test(value))return false;
   var r=parseInt(value.slice(1,3),16),g=parseInt(value.slice(3,5),16),b=parseInt(value.slice(5,7),16),root=document.documentElement;
   root.style.setProperty('--'+section+'-accent',value.toUpperCase());
   root.style.setProperty('--'+section+'-soft','rgba('+r+','+g+','+b+',.14)');
@@ -702,18 +703,16 @@ function applySectionColor(section){
   fetch('/theme-color?section='+encodeURIComponent(section)+'&value='+encodeURIComponent(value),{method:'POST'}).then(function(r){if(!r.ok)throw new Error('Save failed');return r.json()}).then(function(){window._sectionThemeDirty=window._sectionThemeDirty||{};window._sectionThemeDirty[section]=false}).catch(function(){alert('Could not save this section color. Please try again.')});
 }
 function syncSectionThemes(theme){
-  var defaults={aiko:'#725CFF',danica:'#FF4F78',darlene:'#00D68F'},dirty=window._sectionThemeDirty||{};
-  ['aiko','danica','darlene'].forEach(function(section){var value=theme&&theme[section+'Color']||defaults[section];if(dirty[section]||!setSectionAccent(section,value))return;var wheel=document.getElementById(section+'-wheel'),hex=document.getElementById(section+'-hex');if(wheel)wheel.value=value;if(hex)hex.value=value;});
+  var defaults={aiko:'#725CFF',darlene:'#00D68F'},dirty=window._sectionThemeDirty||{};
+  ['aiko','darlene'].forEach(function(section){var value=theme&&theme[section+'Color']||defaults[section];if(dirty[section]||!setSectionAccent(section,value))return;var wheel=document.getElementById(section+'-wheel'),hex=document.getElementById(section+'-hex');if(wheel)wheel.value=value;if(hex)hex.value=value;});
 }
 function render(d){
-  var slots=d.slots||[];
+  var slots=(d.slots||[]).filter(function(s){return !["13","16"].includes(String(s.id))&&!['danicajgb','nnnikkikim'].includes(String(s.accountName||'').toLowerCase())});
   var pilots=d.chromePilots||[],pilot=d.chromePilot||{};
   syncSectionThemes(d.theme||{});
   var aikoSlots = slots.filter(s => !["13", "16"].includes(String(s.id)) && !["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()) && !["17"].includes(String(s.id)) && !["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
-  var danicaSlots = slots.filter(s => ["13", "16"].includes(String(s.id)) || ["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()));
   var darleneSlots = slots.filter(s => ["17"].includes(String(s.id)) || ["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
-  document.getElementById('scnt-danica').textContent=danicaSlots.length;
   document.getElementById('scnt-darlene').textContent=darleneSlots.length;
   var runningPilots=pilots.filter(function(p){return p&&p.running}).length,activeCount=runningPilots||slots.filter(function(x){return !x.paused}).length,workerUp=runningPilots>0||!!pilot.running,healthy=d.scannerUp&&workerUp&&!d.loopPaused;
   document.getElementById('ov-total').textContent=String(slots.length).padStart(2,'0');
@@ -732,13 +731,12 @@ function render(d){
   var lb=document.getElementById('lbtn');
   if(d.loopPaused){lb.href='/loop?cmd=resume';lb.textContent='Resume Loop';lb.className='btn bgrn bful'}
   else{lb.href='/loop?cmd=pause';lb.textContent='Pause Loop';lb.className='btn bred bful'}
-  var hAiko='', hDanica='', hDarlene='';
+  var hAiko='', hDarlene='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
-    var isDanica = ["13", "16"].includes(String(s.id)) || ["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase());
     var isDarlene = ["17"].includes(String(s.id)) || ["darlenejoyce"].includes(String(s.accountName).toLowerCase());
-    var sc=isDarlene ? '#34d399' : (isDanica ? '#f472b6' : '#38bdf8');
-    var cardClass = isDarlene ? 'card-darlene' : (isDanica ? 'card-danica' : 'card-aiko');
+    var sc=isDarlene ? '#34d399' : '#38bdf8';
+    var cardClass = isDarlene ? 'card-darlene' : 'card-aiko';
     var slotPilot=pilots.find(function(p){return p&&String(p.slot)===String(s.id)})||{};
     var slotPaused=slotPilot.running?!!slotPilot.paused:!!s.paused;
     var verifyHtml=slotPilot.verificationHold?'<div class="slotverify"><div class="slotverify-title">Manual verification required <span>'+esc(String(s.accountName||s.name).toUpperCase())+'</span></div><p>'+esc(slotPilot.status||'Complete verification in this account’s Oracle Chrome window. Auto-refresh is paused.')+'</p><div class="slotverify-stats"><span>Tasks<b>'+esc(slotPilot.tasks||0)+'</b></span><span>Errors<b>'+esc(slotPilot.errors||0)+'</b></span><span>Time<b>'+esc(slotPilot.time||'00:00')+'</b></span></div><div class="slotverify-actions"><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;pause&quot;)">Pause</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;resume&quot;)">Resume after verify</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;reload&quot;)">Safe reload</button></div></div>':'';
@@ -816,7 +814,7 @@ function render(d){
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
       '</form>'+
       eh+
-      '<div class="sacts">'+        (function(){if(String(s.accountName).toLowerCase()!=='adaihbi')return '';var e=s.encashment||{},q=s.encashmentSchedule||{},d=e.receivedDecision||'',day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Wednesday'),cls=d==='yes'?'yes':d==='waiting'?'waiting':d==='no'?'no':'answer',txt=d==='yes'?'Payment received · Next withdrawal '+day:d==='waiting'?'Waiting for payment':d==='no'?'Payment not received':'Answer whether payment arrived',shortTxt=d==='yes'?'Received · Next withdrawal '+day:d==='waiting'?'Waiting for payment':d==='no'?'Not received':'Answer needed';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button><span class="encoutstatus '+cls+'"><span class="encstatus-full">'+esc(txt)+'</span><span class="encstatus-short">'+esc(shortTxt)+'</span></span></span><span class="action-break"></span>'})()+
+      '<div class="sacts">'+        (function(){if(String(s.accountName).toLowerCase()!=='adaihbi')return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button></span><span class="action-break"></span>'})()+
         '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmLink(event,this,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
         '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume" onclick="return confirmLink(event,this,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
 
@@ -824,10 +822,9 @@ function render(d){
 
 
       '</div></div>';
-    if (isDarlene) hDarlene+=cardHtml; else if (isDanica) hDanica+=cardHtml; else hAiko+=cardHtml;
+    if (isDarlene) hDarlene+=cardHtml; else hAiko+=cardHtml;
   }
   document.getElementById('slots-aiko').innerHTML=hAiko || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No AIKO slots</div>';
-  document.getElementById('slots-danica').innerHTML=hDanica || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No DANICA slots</div>';
   document.getElementById('slots-darlene').innerHTML=hDarlene || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No DARLENE slots</div>';
   window._lastSlots = slots; // for live timer 1:1 - sync live only, no stale lastUpdate
 }
@@ -836,20 +833,17 @@ function liveTimerText(start,fallback){if(!start)return fallback||'00:00';var el
 function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
 function showEncash(id){
   var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{};
-  var decision=e.receivedDecision||'',status=decision==='yes'?'Received':decision==='no'?'Not received':decision==='waiting'?'Waiting':'Answer needed',statusClass=decision==='yes'?'yes':decision==='no'?'no':decision==='waiting'?'waiting':'answer';
   var mask=function(v){v=String(v||'');return v.length>4?'•••• '+v.slice(-4):(v||'—')};
   var money=function(v){v=String(v||'—');return v==='—'?v:(/[₱P]/.test(v)?v:'₱'+v)};
   var kind=String(e.kind||'unknown').toLowerCase(),upcoming=String(q.type||'').toLowerCase(),day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Not scheduled');
   var logs=(e.eventLog||[]).filter(function(x){return !/history check|payout status/i.test(x.text||'')}).slice(-3).reverse().map(function(x){return '<div>'+esc(fmtWhen(x.at))+' · '+esc(x.text)+'</div>'}).join('');
-  document.getElementById('encbody').innerHTML='<div class="enchero"><div><small>'+esc(kind==='task'?'Task payout':'Network payout')+'</small><strong>'+esc(money(e.netAmount||e.amount))+'</strong></div><span class="encstatus '+statusClass+'">'+esc(status)+'</span></div>'+
+  document.getElementById('encbody').innerHTML='<div class="enchero"><div><small>'+esc(kind==='task'?'Task payout':'Network payout')+'</small><strong>'+esc(money(e.netAmount||e.amount))+'</strong></div></div>'+
     '<div class="encsummary"><div class="encsum"><b>Gross</b><span>'+esc(money(e.amount))+'</span></div><div class="encsum"><b>Fee / tax</b><span>'+esc(money(e.tax))+'</span></div><div class="encsum net"><b>You receive</b><span>'+esc(money(e.netAmount||e.amount))+'</span></div></div>'+
-    '<div class="encdetails"><div class="encdetail"><b>GCash account</b>'+esc(mask(e.payoutNumber))+'</div><div class="encdetail"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encdetail"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encdetail"><b>Transaction ID</b>'+esc(e.transactionId||'—')+'</div></div>'+
-    '<div class="encreceived" style="grid-template-columns:1fr 1fr 1fr"><button class="yes '+(decision==='yes'?'active':'')+'" onclick="confirmReceipt(&quot;yes&quot;)">✓ Received</button><button class="waiting '+(decision==='waiting'?'active':'')+'" onclick="confirmReceipt(&quot;waiting&quot;)">Waiting</button><button class="no '+(decision==='no'?'active':'')+'" onclick="confirmReceipt(&quot;no&quot;)">Not received</button></div>'+
+    '<div class="encdetails"><div class="encdetail"><b>GCash account</b>'+esc(mask(e.payoutNumber))+'</div><div class="encdetail"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encdetail"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encdetail"><b>Transaction ID</b>'+esc(e.transactionId||'—')+'</div><div class="encdetail"><b>Source</b>Payout history</div></div>'+
     '<div class="encschedule"><b>Next: '+esc(upcoming==='task'?'Task Encashment':upcoming==='network'?'Network Encashment':'Not configured')+'</b><span>'+esc(day)+(q.startHour!=null&&q.endHour!=null?' · '+esc(q.startHour)+':00–'+esc(q.endHour)+':00 AM PH':'')+'</span></div>'+
     (logs?'<div class="encactivity">'+logs+'</div>':'');
   document.getElementById('encmodal').classList.add('show');
 }
-function setPayoutReceived(value){fetch('/payout-received?value='+encodeURIComponent(value),{method:'POST'}).then(function(r){if(!r.ok)throw new Error('Save failed');return r.json()}).then(function(){var slot=(window._lastSlots||[]).find(function(x){return String(x.accountName||'').toLowerCase()==='adaihbi'});if(slot&&slot.encashment)slot.encashment.receivedDecision=value;if(slot)showEncash(slot.id)}).catch(function(){alert('Could not save your choice. Please try again.')})}
 function closeEncash(){document.getElementById('encmodal').classList.remove('show')}
 
 function openModal(id){ var m=document.getElementById('modal-'+id); if(m) m.classList.add('show'); }
@@ -931,6 +925,16 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (url.pathname === "/visiontap-android.apk" && req.method === "GET") {
+    const apkPath = path.join(__dirname, "visiontap-android.apk");
+    if (!fs.existsSync(apkPath)) { res.writeHead(404); res.end("APK not available"); return; }
+    res.setHeader("Content-Type", "application/vnd.android.package-archive");
+    res.setHeader("Content-Disposition", "attachment; filename=VisionTap-Android.apk");
+    res.setHeader("Cache-Control", "no-store");
+    fs.createReadStream(apkPath).pipe(res);
+    return;
+  }
+
   if (url.pathname === "/api/stats" && req.method === "GET") {
     const status = getStatus();
     const slots = getMergedSlots(status);
@@ -955,7 +959,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/theme-color" && req.method === "POST") {
     const value = String(url.searchParams.get("value") || "").trim().toUpperCase();
     const section = String(url.searchParams.get("section") || "").toLowerCase();
-    if (!["aiko","danica","darlene"].includes(section)) { res.writeHead(400); res.end("Invalid section"); return; }
+    if (!["aiko","darlene"].includes(section)) { res.writeHead(400); res.end("Invalid section"); return; }
     if (!/^#[0-9A-F]{6}$/.test(value)) { res.writeHead(400); res.end("Invalid hex color"); return; }
     const theme = readJson(THEME_PREF_FILE, {});
     theme[section + "Color"] = value;
@@ -964,17 +968,6 @@ const server = http.createServer((req, res) => {
     writeJson(THEME_PREF_FILE, theme);
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ok:true,section,color:value}));
-    return;
-  }
-  if (url.pathname === "/payout-received" && req.method === "POST") {
-    const value = url.searchParams.get("value");
-    if (value !== "yes" && value !== "waiting" && value !== "no") { res.writeHead(400); res.end("Invalid choice"); return; }
-    const state = readJson(ENCASHMENT_STATE_FILE, {});
-    state.receivedDecision = value;
-    state.receivedDecisionAt = Date.now();
-    writeJson(ENCASHMENT_STATE_FILE, state);
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ok:true,value}));
     return;
   }
   if (url.pathname === "/cmd") {

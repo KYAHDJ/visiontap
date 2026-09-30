@@ -29,6 +29,22 @@ test('safe reload is blocked while manual verification is held', async () => {
   assert.equal(reloads, 0);
 });
 
+test('persistent stalls escalate after bounded recovery reloads', () => {
+  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
+  assert.equal(pilot.recoveryReloads, 0);
+  const source = pilot.safeReload.toString();
+  assert.match(source, /recoveryReloads >= 4/);
+  assert.match(source, /lastProgressAt > 60000/);
+  assert.match(source, /process\.exitCode = 75/);
+});
+
+test('PMath restores the Electron 60-second inactivity restart and host signal', () => {
+  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
+  assert.match(pilot.restartStalledWorker.toString(), /INACTIVITY-GUARD/);
+  assert.match(pilot.handlePageSignal.toString(), /lastProgressAt < 60000/);
+  assert.match(pilot.installPageRuntime.toString(), /__vtHost/);
+});
+
 test('pilot loads the shared ad blocker and never disables cleanup', () => {
   const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
   assert.match(pilot.adBlockSource, /VisionTap - Minimal Ad Blocker/);

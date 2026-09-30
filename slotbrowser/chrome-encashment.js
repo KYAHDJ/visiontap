@@ -8,7 +8,6 @@ const ENCASH_URL = 'https://ecnlmediamarket.com/network-encashment';
 const TASK_ENCASH_URL = 'https://ecnlmediamarket.com/task-encashment';
 const HISTORY_URL = 'https://ecnlmediamarket.com/payout-history';
 const FIVE_MINUTES = 300000;
-const ONE_HOUR = 3600000;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return fallback; } }
@@ -20,7 +19,48 @@ function phParts(now = new Date()) {
   let hour = Number(parts.hour); if (hour === 24) hour = 0;
   return { key:`${parts.year}-${parts.month}-${parts.day}`, weekday:parts.weekday, hour, minute:Number(parts.minute), second:Number(parts.second) };
 }
-function defaultState() { return { date:'', kind:'', status:'scheduled', attempts:0, lastAttemptAt:0, nextAttemptAt:0, lastCheckAt:0, nextCheckAt:0, reference:'', amount:'', tax:'', netAmount:'', gateway:'', payoutNumber:'', requestedAt:'', transactionId:'', payoutStatus:'', message:'', lastUrl:'', screenshot:'', eventLog:[] }; }
+function defaultState() { return { date:'', kind:'', status:'scheduled', attempts:0, lastAttemptAt:0, nextAttemptAt:0, historyCheckedAt:0, historyCaptured:false, reference:'', amount:'', tax:'', netAmount:'', gateway:'', payoutNumber:'', requestedAt:'', transactionId:'', payoutStatus:'', message:'', lastUrl:'', screenshot:'', eventLog:[] }; }
+function cleanMoney(value) {
+  const match = String(value || '').replace(/,/g, '').match(/-?[0-9]+(?:\.[0-9]+)?/);
+  return match ? match[0] : '';
+}
+function parsePayoutRecords(records, targetDate = '') {
+  const list = Array.isArray(records) ? records : [];
+  const date = String(targetDate || '');
+  const parts = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const dateHints = [date];
+  if (parts) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    dateHints.push(`${months[Number(parts[2])-1]} ${Number(parts[3])}, ${parts[1]}`, `${parts[2]}/${parts[3]}/${parts[1]}`, `${parts[1]}/${parts[2]}/${parts[3]}`);
+  }
+  const scored = list.map((record, index) => {
+    const text = String(record?.text || '').replace(/\s+/g, ' ').trim();
+    const hasDate = dateHints.some(hint => hint && text.toLowerCase().includes(hint.toLowerCase()));
+    const hasStatus = /processing|pending|approved|paid|transferred|completed|success|failed|declined/i.test(text);
+    const hasMoney = /(?:₱|PHP|\bP\s*)[0-9]/i.test(text);
+    return { record, index, score:(hasDate?8:0)+(hasStatus?4:0)+(hasMoney?2:0)-index/1000 };
+  }).sort((a,b)=>b.score-a.score);
+  const picked = scored[0]?.record || {};
+  const headers = Array.isArray(picked.headers) ? picked.headers : [];
+  const cells = Array.isArray(picked.cells) ? picked.cells : [];
+  const fields = {};
+  headers.forEach((header, index) => { fields[String(header || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()] = String(cells[index] || '').trim(); });
+  const byHeader = patterns => {
+    for (const [key,value] of Object.entries(fields)) if (patterns.some(pattern => pattern.test(key)) && value) return value;
+    return '';
+  };
+  const text = String(picked.text || '').replace(/\s+/g, ' ').trim();
+  const status = byHeader([/^status$/, /payout status/]) || (text.match(/processing|pending|approved|paid|transferred|completed|successful?|failed|declined/i)||[])[0] || '';
+  const reference = byHeader([/^reference$/, /reference no/, /^ref$/]) || (text.match(/(?:reference(?: number| no\.?| #)?|ref no\.?)\s*[:#-]?\s*([A-Z0-9-]{5,})/i)||[])[1] || (text.match(/\b(ECL[A-Z0-9-]{5,})\b/i)||[])[1] || '';
+  const transactionId = byHeader([/^trx/, /transaction id/, /transaction no/, /^transaction$/, /^id$/, /payout id/]) || (text.match(/(?:transaction(?: id| number| no\.?)?|trx#?)\s*[:#-]?\s*([A-Z0-9-]{3,})/i)||[])[1] || '';
+  const amount = cleanMoney(byHeader([/^gross$/, /gross amount/, /^amount$/, /requested amount/, /payout amount/]));
+  const tax = cleanMoney(byHeader([/^tax$/, /^fee$/, /fee tax/, /deduction/]));
+  const netAmount = cleanMoney(byHeader([/^net$/, /net amount/, /you receive/, /receivable/, /received amount/]));
+  const requestedAt = byHeader([/^date$/, /request date/, /requested at/, /created at/, /date time/]);
+  const gateway = byHeader([/^gateway$/, /payment method/, /channel/]);
+  const payoutNumber = byHeader([/account number/, /wallet/, /mobile/, /gcash/]);
+  return { found:!!text, text, status, reference, transactionId, amount, tax, netAmount, requestedAt, gateway, payoutNumber };
+}
 
 class ChromeEncashmentController {
   constructor(pilot, stateDir) {
@@ -33,7 +73,16 @@ class ChromeEncashmentController {
     this.timer = null;
   }
   config() { return readJson(this.configFile, { enabled:false }); }
-  state() { return Object.assign(defaultState(), readJson(this.stateFile, {})); }
+  state() {
+    const state = Object.assign(defaultState(), readJson(this.stateFile, {}));
+    if (!state.historyCheckedAt && state.lastCheckAt && state.reference) {
+      state.historyCheckedAt = state.lastCheckAt;
+      state.historyCaptured = true;
+      state.nextCheckAt = 0;
+      writeJson(this.stateFile, state);
+    }
+    return state;
+  }
   save(state, event) {
     if (event) { state.eventLog = Array.isArray(state.eventLog) ? state.eventLog : []; state.eventLog.push({ at:Date.now(), text:compact(event, 300) }); state.eventLog = state.eventLog.slice(-30); }
     writeJson(this.stateFile, state);
@@ -45,13 +94,15 @@ class ChromeEncashmentController {
     const cfg = this.config(); if (!cfg.enabled) return;
     const ph = phParts(now), start = Number(cfg.startHour || 8), end = Number(cfg.endHour || 10), kind = cfg.type === 'task' ? 'task' : 'network';
     let state = this.state();
-    if (/submitted|pending|processing/i.test(`${state.status} ${state.payoutStatus}`) && state.date === ph.key) return;
+    if (/submitted|pending|processing/i.test(`${state.status} ${state.payoutStatus}`) && state.date === ph.key) {
+      if (!state.historyCheckedAt) await this.checkHistory();
+      return;
+    }
     if (ph.weekday !== (cfg.weekday || 'Wed')) return;
     if (state.date !== ph.key || state.kind !== kind) { state = defaultState(); state.date = ph.key; state.kind = kind; this.save(state, `${kind === 'task' ? 'Task' : 'Network'} schedule opened for ${ph.key}`); }
     if (/approved|paid|transferred/i.test(`${state.status} ${state.payoutStatus}`)) return;
     if (ph.hour >= start && ph.hour < end) { if (!state.lastAttemptAt || Date.now() - state.lastAttemptAt >= FIVE_MINUTES) await this.attempt(); return; }
     if (ph.hour >= end && !state.lastAttemptAt && state.status === 'scheduled') { state.status = 'window_closed'; state.message = `No withdrawal was submitted before ${end}:00 AM PH.`; this.save(state, state.message); }
-    if (/submitted|pending|processing/i.test(`${state.status} ${state.payoutStatus}`) && (!state.lastCheckAt || Date.now() - state.lastCheckAt >= ONE_HOUR)) await this.checkHistory();
   }
   async capture(state) { try { await this.pilot.page.screenshot({ path:this.imageFile, fullPage:false }); state.screenshot = path.basename(this.imageFile); } catch (error) { this.pilot.log(`ENCASH screenshot failed: ${error.message}`); } }
   async withResume(label, work) {
@@ -87,9 +138,43 @@ class ChromeEncashmentController {
     });
   }
   async checkHistory() {
-    const state=this.state();state.lastCheckAt=Date.now();state.nextCheckAt=state.lastCheckAt+ONE_HOUR;this.save(state,'Payout history check started');
-    await this.withResume('Checking payout status…',async()=>{try{await this.pilot.page.goto(HISTORY_URL,{waitUntil:'domcontentloaded',timeout:30000});await sleep(2500);const result=await this.pilot.page.evaluate(targetDate=>{const rows=[...document.querySelectorAll('tbody tr,tr')].map(el=>(el.innerText||'').replace(/\s+/g,' ').trim()).filter(Boolean),recent=rows.find(text=>text.includes(targetDate)&&/processing|pending|approved|paid|transferred|failed|declined/i.test(text))||[...rows].reverse().find(text=>/processing|pending|approved|paid|transferred|failed|declined/i.test(text))||'',status=(recent.match(/processing|pending|approved|paid|transferred|failed|declined/i)||[])[0]||'',reference=(recent.match(/\b(ECL[A-Z]-[A-Z0-9]+)\b/i)||[])[1]||'',amount=(recent.match(/[₱P]\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i)||[])[1]||'';return{url:location.href,recent,status,reference,amount};},state.date||phParts().key);state.lastUrl=result.url;state.payoutStatus=result.status||state.payoutStatus||'Pending';state.reference=result.reference||state.reference;state.amount=result.amount||state.amount;state.message=compact(result.recent||'No payout row found');state.status=/approved|paid|transferred/i.test(state.payoutStatus)?'approved':/failed|declined/i.test(state.payoutStatus)?'failed':'pending';await this.capture(state);this.save(state,`Payout status: ${state.payoutStatus||'unknown'}`);}catch(error){state.message=compact(error.message);this.save(state,`History check error: ${error.message}`);}});
+    const state=this.state();state.historyCheckedAt=Date.now();state.lastCheckAt=state.historyCheckedAt;state.nextCheckAt=0;this.save(state,'One-time payout history capture started');
+    await this.withResume('Checking payout status…',async()=>{
+      try {
+        await this.pilot.page.goto(HISTORY_URL,{waitUntil:'domcontentloaded',timeout:30000});
+        await sleep(2500);
+        const pageData=await this.pilot.page.evaluate(()=>{
+          const records=[];
+          document.querySelectorAll('table').forEach(table=>{
+            const headers=[...table.querySelectorAll('thead th')].map(el=>(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim());
+            table.querySelectorAll('tbody tr').forEach(row=>{
+              const cells=[...row.querySelectorAll('th,td')].map(el=>(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim());
+              const text=(row.innerText||row.textContent||'').replace(/\s+/g,' ').trim();
+              if(text)records.push({headers,cells,text});
+            });
+          });
+          if(!records.length) document.querySelectorAll('[class*="payout" i],[class*="transaction" i],[class*="history" i]').forEach(el=>{const text=(el.innerText||'').replace(/\s+/g,' ').trim();if(text&&/(?:₱|PHP|processing|pending|approved|paid|transferred|completed|failed|declined)/i.test(text))records.push({headers:[],cells:[],text});});
+          return {url:location.href,records};
+        });
+        const result=parsePayoutRecords(pageData.records,state.date||phParts().key);
+        state.lastUrl=pageData.url;
+        state.payoutStatus=result.status||state.payoutStatus||'Pending';
+        state.reference=result.reference||state.reference;
+        state.transactionId=result.transactionId||state.transactionId;
+        state.amount=result.amount||state.amount;
+        state.tax=result.tax||state.tax;
+        state.netAmount=result.netAmount||state.netAmount;
+        state.requestedAt=result.requestedAt||state.requestedAt;
+        state.gateway=result.gateway||state.gateway;
+        state.payoutNumber=result.payoutNumber||state.payoutNumber;
+        state.message=compact(result.text||'No payout row found');
+        state.historyCaptured=!!result.found;
+        state.status=/approved|paid|transferred|completed|success/i.test(state.payoutStatus)?'approved':/failed|declined/i.test(state.payoutStatus)?'failed':'pending';
+        await this.capture(state);
+        this.save(state,result.found?`Payout history captured once: ${state.payoutStatus||'unknown'}`:'One-time payout-history check found no matching row');
+      }catch(error){state.message=compact(error.message);this.save(state,`History check error: ${error.message}`);}
+    });
   }
 }
 
-module.exports = { ChromeEncashmentController, phParts, PH_TIME_ZONE };
+module.exports = { ChromeEncashmentController, phParts, parsePayoutRecords, PH_TIME_ZONE };

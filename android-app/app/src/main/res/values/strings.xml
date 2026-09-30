@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VisionTap</string>
+    <string name="refresh">Refresh</string>
+    <string name="widget_title">VISIONTAP • LIVE ACCOUNTS</string>
+    <string name="widget_description">Live VisionTap account balances and status</string>
+</resources>

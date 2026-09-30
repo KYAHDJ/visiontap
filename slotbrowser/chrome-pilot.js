@@ -90,6 +90,7 @@ class ChromePilot {
     this.lastActivityAt = Date.now();
     this.lastProgressAt = this.lastActivityAt;
     this.lastReloadAt = 0;
+    this.recoveryReloads = 0;
     this.startedAt = Date.now();
     this.loopStartTime = this.startedAt;
     this.lastDashboardSyncAt = 0;
@@ -200,6 +201,7 @@ class ChromePilot {
   }
 
   async guardPage(page) {
+    await page.exposeFunction('__vtSignal', msg => this.handlePageSignal(msg)).catch(() => {});
     page.on('dialog', dialog => dialog.dismiss().catch(() => {}));
     page.on('framenavigated', frame => {
       if (frame === page.mainFrame()) {
@@ -208,6 +210,24 @@ class ChromePilot {
       }
     });
     page.on('close', () => { if (page === this.page) this.stopped = true; });
+  }
+
+  async handlePageSignal(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'vt_log') { this.log(msg.msg || 'Page message'); return; }
+    if (msg.type !== 'stale_refresh' || TASK_MODE !== 'math') return;
+    if (this.paused || this.verificationHold || Date.now() - this.lastProgressAt < 60000) return;
+    await this.restartStalledWorker(`page-stale:${msg.src || '?'}`);
+  }
+
+  async restartStalledWorker(reason) {
+    if (this.paused || this.verificationHold || await this.detectVerification()) return false;
+    this.log(`INACTIVITY-GUARD: no PMath progress for 60 seconds (${reason}); restarting only ${ACCOUNT}.`);
+    process.exitCode = 75;
+    this.running = false;
+    await this.setStatus(`Restarting ${ACCOUNT} after 60 seconds without PMath progress…`);
+    await this.context?.close().catch(() => {});
+    return true;
   }
 
   async positionWindow() {
@@ -276,6 +296,7 @@ class ChromePilot {
   async installPageRuntime() {
     if (!this.page || this.page.isClosed()) return;
     if (!isVerificationUrl(this.page.url()) && /ecnlmediamarket\.com|pmath100\.com/i.test(this.page.url())) {
+      await this.page.evaluate(() => { window.__vtHost = { signal: msg => window.__vtSignal(msg) }; }).catch(() => {});
       await this.page.evaluate(this.adBlockSource).catch(() => {});
       await this.page.evaluate(this.injectSource).catch(() => {});
       await this.page.evaluate(account => { if (!document.title.startsWith(`[${account}] `)) document.title = `[${account}] ${document.title}`; }, ACCOUNT).catch(() => {});
@@ -330,7 +351,8 @@ class ChromePilot {
         verificationHold: this.verificationHold, paused: this.paused,
         resumeArmed: this.resumeArmed,
         status: this.statusText, tasks: this.taskCount, errors: this.errorCount,
-        time, updatedAt: Date.now()
+        time, updatedAt: Date.now(), lastProgressAt: this.lastProgressAt,
+        lastReloadAt: this.lastReloadAt, recoveryReloads: this.recoveryReloads
       }, null, 2));
     } catch (error) { this.log(`Could not publish dashboard state: ${error.message}`); }
   }
@@ -373,9 +395,19 @@ class ChromePilot {
       return false;
     }
     if (Date.now() - this.lastReloadAt < 15000) return false;
-    this.lastReloadAt = Date.now(); this.pending = null; this.epoch++;
-    await this.setStatus(`Safe reload: ${reason}`);
     const recovery = !/^manual control/.test(reason);
+    if (recovery && this.recoveryReloads >= 4 && Date.now() - this.lastProgressAt > 60000) {
+      this.log(`Recovery reloads did not restore progress (${reason}); restarting only ${ACCOUNT} with its preserved profile.`);
+      process.exitCode = 75;
+      this.running = false;
+      await this.setStatus(`Restarting ${ACCOUNT} after a persistent page stall…`);
+      await this.context?.close().catch(() => {});
+      return false;
+    }
+    this.lastReloadAt = Date.now(); this.pending = null; this.epoch++;
+    if (recovery) this.recoveryReloads++;
+    this.log(`Safe reload ${this.recoveryReloads}: ${reason}`);
+    await this.setStatus(`Safe reload: ${reason}`);
     if (recovery) await this.page.goto(WORK_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     else await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     await this.installPageRuntime();
@@ -502,7 +534,10 @@ class ChromePilot {
     const image = grabbed?.imageData;
     if (!image) {
       this.consecutiveNoImage++;
-      if (this.consecutiveNoImage >= 3) await this.safeReload('no-image-x3');
+      if (TASK_MODE === 'math') {
+        if (Date.now() - this.lastProgressAt >= 60000) await this.restartStalledWorker('no task image');
+        else await this.setStatus('PMath has no task image yet. Retrying…');
+      } else if (this.consecutiveNoImage >= 3) await this.safeReload('no-image-x3');
       else await this.setStatus(`Waiting for a task image (${this.consecutiveNoImage}/3)…`);
       return;
     }
@@ -512,6 +547,7 @@ class ChromePilot {
       this.lastObservedHash = imageHash;
       this.lastProgressAt = Date.now();
       this.lastActivityAt = this.lastProgressAt;
+      this.recoveryReloads = 0;
       this.consecutiveDetectFails = 0;
       this.notReadySince = 0;
     }

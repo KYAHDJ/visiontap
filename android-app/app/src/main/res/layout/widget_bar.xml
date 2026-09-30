@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="12dp" android:background="@drawable/widget_background">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_title" android:textColor="#8B7CFF" android:textStyle="bold" android:textSize="12sp" />
+    <TextView android:id="@+id/row1" style="@style/WidgetRow" />
+    <TextView android:id="@+id/row2" style="@style/WidgetRow" />
+    <TextView android:id="@+id/row3" style="@style/WidgetRow" />
+    <TextView android:id="@+id/row4" style="@style/WidgetRow" />
+    <TextView android:id="@+id/row5" style="@style/WidgetRow" />
+    <TextView android:id="@+id/updated" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="4dp" android:textColor="#8A879F" android:textSize="11sp" />
+</LinearLayout>

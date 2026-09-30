@@ -45,3 +45,7 @@ cred_history.json
 .codex-runner-check
 OUTPUT/
 TASK/
+android-app/local.properties
+android-app/.gradle/
+android-app/app/build/
+android-app/build/
