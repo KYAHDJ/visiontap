@@ -63,12 +63,13 @@ function parsePayoutRecords(records, targetDate = '') {
 }
 
 class ChromeEncashmentController {
-  constructor(pilot, stateDir) {
+  constructor(pilot, stateDir, account = 'adaihbi') {
     this.pilot = pilot;
     this.stateDir = stateDir;
-    this.configFile = path.join(stateDir, 'encashment_config.json');
-    this.stateFile = path.join(stateDir, 'encashment_adaihbi.json');
-    this.imageFile = path.join(stateDir, 'encashment_adaihbi.png');
+    this.account = String(account || 'adaihbi').trim().toLowerCase();
+    this.configFile = path.join(stateDir, this.account === 'adaihbi' ? 'encashment_config.json' : `encashment_${this.account}_config.json`);
+    this.stateFile = path.join(stateDir, `encashment_${this.account}.json`);
+    this.imageFile = path.join(stateDir, `encashment_${this.account}.png`);
     this.busy = false;
     this.timer = null;
   }

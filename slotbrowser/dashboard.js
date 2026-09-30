@@ -10,10 +10,11 @@ const STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state")
 const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
-const ENCASHMENT_STATE_FILE = path.join(STATE_DIR, "encashment_adaihbi.json");
-const ENCASHMENT_CONFIG_FILE = path.join(STATE_DIR, "encashment_config.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','darlenejoyce'];
+const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001']);
+function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
+function encashmentConfigFile(account) { return path.join(STATE_DIR, account === 'adaihbi' ? 'encashment_config.json' : `encashment_${account}_config.json`); }
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
@@ -381,8 +382,8 @@ function getMergedSlots(status) {
       balanceHistory: Array.isArray(ms.balanceHistory) ? ms.balanceHistory.slice(-10) : [],
       _windowActive: ms.windowStart > 0,
       _cooldownActive: ms.cooldownStart > 0,
-      encashment: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? readJson(ENCASHMENT_STATE_FILE, null) : null,
-      encashmentSchedule: String(slot.accountName || name).toLowerCase() === 'adaihbi' ? (()=>{const c=readJson(ENCASHMENT_CONFIG_FILE,{});return {type:c.type||'',weekday:c.weekday||'',startHour:c.startHour==null?null:Number(c.startHour),endHour:c.endHour==null?null:Number(c.endHour),retryMinutes:5};})() : null
+      encashment: (()=>{const account=String(slot.accountName || name).toLowerCase();return ENCASHMENT_ACCOUNTS.has(account)?readJson(encashmentStateFile(account),null):null;})(),
+      encashmentSchedule: (()=>{const account=String(slot.accountName || name).toLowerCase();if(!ENCASHMENT_ACCOUNTS.has(account))return null;const c=readJson(encashmentConfigFile(account),{});return {type:c.type||'',weekday:c.weekday||'',startHour:c.startHour==null?null:Number(c.startHour),endHour:c.endHour==null?null:Number(c.endHour),retryMinutes:5};})()
     };
     merged.push(mergedSlot);
   }
@@ -645,7 +646,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
     <a class="btn bgrn bful" href="/restart" onclick="return confirmLink(event,this,&quot;Restart VisionTap?&quot;,&quot;The dashboard and automation services may be briefly unavailable.&quot;,&quot;Restart VisionTap&quot;)">Restart VisionTap</a>
   </div>
   <div class="ftr"><span class="livedot"></span><span id="ltxt">Connecting...</span></div>
-  <div class="encmodal" id="encmodal" onclick="if(event.target===this)closeEncash()"><div class="encpanel"><div class="enchd"><div class="enctitle">adaihbi Payout</div><button class="encclose" onclick="closeEncash()">Close</button></div><div id="encbody"></div></div></div>
+  <div class="encmodal" id="encmodal" onclick="if(event.target===this)closeEncash()"><div class="encpanel"><div class="enchd"><div class="enctitle" id="enctitle">Payout</div><button class="encclose" onclick="closeEncash()">Close</button></div><div id="encbody"></div></div></div>
   <div class="confirmmodal" id="confirmmodal" onclick="if(event.target===this)closeConfirm()"><div class="confirmpanel" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><div class="confirmicon">!</div><h2 id="confirm-title">Confirm action</h2><p id="confirm-message"></p><div class="confirmactions"><button type="button" class="confirmcancel" onclick="closeConfirm()">Cancel</button><button type="button" class="confirmaccept" id="confirm-accept" onclick="acceptConfirm()">Confirm</button></div></div></div>
 </div>
 <datalist id="hu">${historyOpts}</datalist>
@@ -814,7 +815,7 @@ function render(d){
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
       '</form>'+
       eh+
-      '<div class="sacts">'+        (function(){if(String(s.accountName).toLowerCase()!=='adaihbi')return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button></span><span class="action-break"></span>'})()+
+      '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button></span><span class="action-break"></span>'})()+
         '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmLink(event,this,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
         '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume" onclick="return confirmLink(event,this,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
 
@@ -833,6 +834,7 @@ function liveTimerText(start,fallback){if(!start)return fallback||'00:00';var el
 function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
 function showEncash(id){
   var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{};
+  document.getElementById('enctitle').textContent=String(slot&&slot.accountName||'Account')+' Payout';
   var mask=function(v){v=String(v||'');return v.length>4?'•••• '+v.slice(-4):(v||'—')};
   var money=function(v){v=String(v||'—');return v==='—'?v:(/[₱P]/.test(v)?v:'₱'+v)};
   var kind=String(e.kind||'unknown').toLowerCase(),upcoming=String(q.type||'').toLowerCase(),day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Not scheduled');

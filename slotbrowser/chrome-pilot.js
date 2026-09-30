@@ -15,6 +15,7 @@ const LOGIN_URL = TASK_MODE === 'math' ? 'https://pmath100.com/login' : 'https:/
 const WORK_URL = TASK_MODE === 'math' ? 'https://pmath100.com/games-mathproblem#' : 'https://ecnlmediamarket.com/solving-colors';
 const SUBMIT_DELAYS = { adaihbi: 0, temi: 400, axceling1001: 700, darlenejoyce: 0, kyaiko: 0 };
 const SUBMIT_DELAY_MS = Number(process.env.VT_SUBMIT_DELAY_MS ?? SUBMIT_DELAYS[ACCOUNT] ?? 0);
+const ENCASHMENT_ACCOUNTS = new Set(['adaihbi', 'temi', 'axceling1001']);
 const STALL_RESET_MS = 15000;
 const SCANNER_URL = 'http://127.0.0.1:5566';
 const IS_WIN = process.platform === 'win32';
@@ -105,7 +106,7 @@ class ChromePilot {
     this.verificationClearStreak = 0;
     this.lastHoldScreenshotAt = 0;
     this.resumeArmed = false;
-    this.encashment = ACCOUNT === 'adaihbi' ? new ChromeEncashmentController(this, PILOT_STATE_DIR) : null;
+    this.encashment = ENCASHMENT_ACCOUNTS.has(ACCOUNT) ? new ChromeEncashmentController(this, PILOT_STATE_DIR, ACCOUNT) : null;
   }
 
   log(message) {
