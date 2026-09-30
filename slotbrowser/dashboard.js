@@ -622,20 +622,12 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
   <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
-  <div class="stitle">Android App</div>
-  <div class="ggrid">
-    <a class="btn bpur bful" href="/visiontap-android.apk" download="VisionTap-Android.apk">Download VisionTap App</a>
-  </div>
   <div class="stitle">Global Controls</div>
   <div class="ggrid global-controls-grid">
     <a class="btn bgrn" href="/cmd?action=resume&slot=all" onclick="return confirmLink(event,this,&quot;Resume every account?&quot;,&quot;All paused accounts will resume automation.&quot;,&quot;Resume all&quot;)">Resume All</a>
     <a class="btn bred" href="/cmd?action=pause&slot=all" onclick="return confirmLink(event,this,&quot;Pause every account?&quot;,&quot;All account automation will pause until resumed.&quot;,&quot;Pause all&quot;)">Pause All</a>
     <a class="btn byel" href="/cmd?action=restart&slot=all" onclick="return confirmLink(event,this,&quot;Restart every account?&quot;,&quot;All account windows will restart.&quot;,&quot;Restart all&quot;)">Restart All</a>
     <a class="btn bpur" href="/cmd?action=refresh&slot=all" onclick="return confirmLink(event,this,&quot;Refresh every account?&quot;,&quot;All account pages will reload.&quot;,&quot;Refresh all&quot;)">Refresh All</a>
-  </div>
-  <div class="stitle">Loop</div>
-  <div class="ggrid">
-    <a class="btn bgrn bful" id="lbtn" href="/loop?cmd=resume" onclick="return confirmLink(event,this,&quot;Change loop state?&quot;,&quot;This will change automation for every account.&quot;,this.textContent)">Resume Loop</a>
   </div>
   <div class="stitle section-aiko-title"><span>AIKO — <span id="scnt-aiko">0</span> slots</span><span class="section-theme"><input id="aiko-wheel" type="color" value="#725CFF" oninput="previewSectionColor(&quot;aiko&quot;,this.value)"><input id="aiko-hex" value="#725CFF" maxlength="7" aria-label="AIKO color hex"><button type="button" onclick="confirmSectionColor(&quot;aiko&quot;)">Apply</button></span></div>
   <div id="slots-aiko"></div>
@@ -666,6 +658,20 @@ function updatePHClock(){
   if(timeEl) timeEl.textContent=formatPHTime(now);
   if(dateEl) dateEl.textContent=formatPHDate(now);
   return now;
+}
+
+function nextEncashment(slots,now){
+  var parts=new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now).reduce(function(out,item){out[item.type]=item.value;return out},{});
+  var weekdays={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6},today=weekdays[parts.weekday],minutes=Number(parts.hour)%24*60+Number(parts.minute),base=Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day));
+  var candidates=(slots||[]).map(function(slot){
+    var schedule=slot.encashmentSchedule||{},day=weekdays[schedule.weekday],start=Number(schedule.startHour),end=Number(schedule.endHour);
+    if(day==null||!Number.isFinite(start)||!Number.isFinite(end))return null;
+    var days=(day-today+7)%7;
+    if(days===0&&minutes>=end*60)days=7;
+    var date=new Date(base+days*86400000),dateText=new Intl.DateTimeFormat('en-PH',{timeZone:'UTC',month:'short',day:'numeric'}).format(date);
+    return {slot:slot,schedule:schedule,days:days,sort:days*1440+(days===0?Math.max(0,start*60-minutes):start*60),dateText:dateText};
+  }).filter(Boolean).sort(function(a,b){return a.sort-b.sort});
+  return candidates[0]||null;
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -722,16 +728,13 @@ function render(d){
   document.getElementById('ov-health').textContent=healthy?'Healthy':'Attention';
   document.getElementById('app-state-text').textContent=healthy?'System Online':'System Needs Attention';
   document.getElementById('app-live-dot').style.background=healthy?'var(--green)':'var(--red)';
-  var encSlot=slots.find(function(x){return String(x.accountName||'').toLowerCase()==='adaihbi'}),schedule=encSlot&&encSlot.encashmentSchedule||{},dayNames={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'},scheduleDay=dayNames[schedule.weekday]||schedule.weekday||'Not scheduled';
-  document.getElementById('ov-next-day').textContent=scheduleDay;
-  document.getElementById('ov-next-time').textContent=schedule.startHour!=null&&schedule.endHour!=null?schedule.startHour+':00–'+schedule.endHour+':00 AM PH':'Schedule not configured';
+  var next=nextEncashment(slots,new Date()),dayNames={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
+  document.getElementById('ov-next-day').textContent=next?(next.days===0?'Today':dayNames[next.schedule.weekday])+' · '+String(next.slot.accountName||next.slot.name):'Not scheduled';
+  document.getElementById('ov-next-time').textContent=next?next.dateText+' · '+next.schedule.startHour+':00–'+next.schedule.endHour+':00 AM PH':'No payout schedule configured';
   document.getElementById('pills').innerHTML=
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.loopPaused?'var(--yellow)':'var(--green)')+'"></div>Loop '+(d.loopPaused?'Paused':'Running')+'</div>';
-  var lb=document.getElementById('lbtn');
-  if(d.loopPaused){lb.href='/loop?cmd=resume';lb.textContent='Resume Loop';lb.className='btn bgrn bful'}
-  else{lb.href='/loop?cmd=pause';lb.textContent='Pause Loop';lb.className='btn bred bful'}
   var hAiko='', hDarlene='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
@@ -837,7 +840,7 @@ function showEncash(id){
   document.getElementById('enctitle').textContent=String(slot&&slot.accountName||'Account')+' Payout';
   var mask=function(v){v=String(v||'');return v.length>4?'•••• '+v.slice(-4):(v||'—')};
   var money=function(v){v=String(v||'—');return v==='—'?v:(/[₱P]/.test(v)?v:'₱'+v)};
-  var kind=String(e.kind||'unknown').toLowerCase(),upcoming=String(q.type||'').toLowerCase(),day=q.weekday==='Wed'?'Wednesday':(q.weekday||'Not scheduled');
+  var kind=String(e.kind||'unknown').toLowerCase(),upcoming=String(q.type||'').toLowerCase(),day=({Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'})[q.weekday]||q.weekday||'Not scheduled';
   var logs=(e.eventLog||[]).filter(function(x){return !/history check|payout status/i.test(x.text||'')}).slice(-3).reverse().map(function(x){return '<div>'+esc(fmtWhen(x.at))+' · '+esc(x.text)+'</div>'}).join('');
   document.getElementById('encbody').innerHTML='<div class="enchero"><div><small>'+esc(kind==='task'?'Task payout':'Network payout')+'</small><strong>'+esc(money(e.netAmount||e.amount))+'</strong></div></div>'+
     '<div class="encsummary"><div class="encsum"><b>Gross</b><span>'+esc(money(e.amount))+'</span></div><div class="encsum"><b>Fee / tax</b><span>'+esc(money(e.tax))+'</span></div><div class="encsum net"><b>You receive</b><span>'+esc(money(e.netAmount||e.amount))+'</span></div></div>'+
@@ -927,16 +930,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (url.pathname === "/visiontap-android.apk" && req.method === "GET") {
-    const apkPath = path.join(__dirname, "visiontap-android.apk");
-    if (!fs.existsSync(apkPath)) { res.writeHead(404); res.end("APK not available"); return; }
-    res.setHeader("Content-Type", "application/vnd.android.package-archive");
-    res.setHeader("Content-Disposition", "attachment; filename=VisionTap-Android.apk");
-    res.setHeader("Cache-Control", "no-store");
-    fs.createReadStream(apkPath).pipe(res);
-    return;
-  }
-
   if (url.pathname === "/api/stats" && req.method === "GET") {
     const status = getStatus();
     const slots = getMergedSlots(status);
@@ -983,17 +976,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (url.pathname === "/loop") {
-    const cmd = url.searchParams.get("cmd");
-    if (cmd === "pause" || cmd === "resume") {
-      sendChromeControl(cmd, 'all');
-      log(`Loop ${cmd}`);
-    }
-    res.writeHead(302, { "Location": "/" });
-    res.end();
-    return;
-  }
-
   if (url.pathname === "/save-creds") {
     const slot = url.searchParams.get("slot");
     let user = url.searchParams.get("user") || "";
@@ -1028,6 +1010,12 @@ const server = http.createServer((req, res) => {
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");
+    return;
+  }
+
+  if (url.pathname !== "/" || req.method !== "GET") {
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    res.end("Not found");
     return;
   }
 
