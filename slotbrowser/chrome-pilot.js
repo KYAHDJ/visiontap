@@ -343,7 +343,7 @@ class ChromePilot {
   }
 
   async updateOverlay() {
-    const elapsed = Math.floor((Date.now() - this.startedAt) / 1000);
+    const elapsed = Math.floor((Date.now() - this.loopStartTime) / 1000);
     const time = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
     try {
       fs.mkdirSync(PILOT_STATE_DIR, { recursive: true });
@@ -352,7 +352,7 @@ class ChromePilot {
         verificationHold: this.verificationHold, paused: this.paused,
         resumeArmed: this.resumeArmed,
         status: this.statusText, tasks: this.taskCount, errors: this.errorCount,
-        time, updatedAt: Date.now(), lastProgressAt: this.lastProgressAt,
+        time, elapsed, loopStartTime:this.loopStartTime, updatedAt: Date.now(), lastProgressAt: this.lastProgressAt,
         lastReloadAt: this.lastReloadAt, recoveryReloads: this.recoveryReloads
       }, null, 2));
     } catch (error) { this.log(`Could not publish dashboard state: ${error.message}`); }

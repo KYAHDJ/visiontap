@@ -135,6 +135,8 @@ function getMergedSlots(status) {
     const id = String(slot.id);
     const name = slot.accountName || slot.name || `Slot ${Number(id) + 1}`;
     if (id === '17' || String(name).toLowerCase() === 'darlenejoyce') continue;
+    const account = String(slot.accountName || name).toLowerCase();
+    const pilotState = readJson(chromePilotStateFile(account), {});
     // Strict per-slot personal — no fallback to other slots (prevents history leaking)
     let sc = scannerSlots[id] || scannerSlots[String(id)] || null;
     if (!sc || Object.keys(sc).length === 0) sc = {};
@@ -363,9 +365,9 @@ function getMergedSlots(status) {
       lastUpdate: sc.lastUpdate || "",
       earningsHistory: displayHist.filter(e => e && e.earning < 10).slice(-20).reverse(),
       pointsHistory: sc.pointsHistory || slot.pointsHistory || [],
-      timerText: sc.timerText || slot.timerText || "00:00",
-      elapsed: sc.elapsed != null ? sc.elapsed : (slot.elapsed || 0),
-      loopStartTime: slot.loopStartTime || sc.loopStartTime || null,
+      timerText: pilotState.time || sc.timerText || slot.timerText || "00:00",
+      elapsed: pilotState.elapsed != null ? pilotState.elapsed : (sc.elapsed != null ? sc.elapsed : (slot.elapsed || 0)),
+      loopStartTime: pilotState.loopStartTime || sc.loopStartTime || slot.loopStartTime || null,
       // Live metrics (PH dashboard time, persisted) — 250 pts = 3 pesos
       pointsPerMinute: displayPpm,
       pointsPerHour: displayPph,
@@ -828,7 +830,7 @@ function render(d){
   window._lastSlots = slots; // for live timer 1:1 - sync live only, no stale lastUpdate
 }
 
-function liveTimerText(start,fallback){if(!start)return fallback||'00:00';var elapsed=Math.max(0,Math.floor((Date.now()-Number(start))/1000));if(elapsed>86400)return fallback||'00:00';var m=Math.floor(elapsed/60),sec=elapsed%60;return(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec)}
+function liveTimerText(start,fallback){if(!start)return fallback||'00:00';var elapsed=Math.max(0,Math.floor((Date.now()-Number(start))/1000));var m=Math.floor(elapsed/60),sec=elapsed%60;return(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec)}
 function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
 function showEncash(id){
   var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{};
@@ -871,7 +873,6 @@ setInterval(function(){
       if(el && s.loopStartTime){
         var elapsed=Math.floor((Date.now()-s.loopStartTime)/1000);
         if(elapsed<0) elapsed=0;
-        if(elapsed>86400) elapsed=0;
         var m=Math.floor(elapsed/60), sec=elapsed%60;
         el.textContent=(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec);
       }
