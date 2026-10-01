@@ -13,7 +13,7 @@ const SLOT_ID = String(process.env.VT_SLOT_ID || '11');
 const TASK_MODE = process.env.VT_TASK_MODE === 'math' || ACCOUNT === 'kyaiko' ? 'math' : 'color';
 const LOGIN_URL = TASK_MODE === 'math' ? 'https://pmath100.com/login' : 'https://ecnlmediamarket.com/login';
 const WORK_URL = TASK_MODE === 'math' ? 'https://pmath100.com/games-mathproblem#' : 'https://ecnlmediamarket.com/solving-colors';
-const SUBMIT_DELAYS = { adaihbi: 0, temi: 400, axceling1001: 700, darlenejoyce: 0, kyaiko: 0 };
+const SUBMIT_DELAYS = { adaihbi: 0, temi: 400, axceling1001: 700, kyaiko: 0 };
 const SUBMIT_DELAY_MS = Number(process.env.VT_SUBMIT_DELAY_MS ?? SUBMIT_DELAYS[ACCOUNT] ?? 0);
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi', 'temi', 'axceling1001']);
 const STALL_RESET_MS = 15000;

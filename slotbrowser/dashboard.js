@@ -11,14 +11,14 @@ const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
-const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','darlenejoyce'];
+const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001'];
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, account === 'adaihbi' ? 'encashment_config.json' : `encashment_${account}_config.json`); }
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '17':'darlenejoyce' };
+const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001' };
 function sendChromeControl(action, slot = 'all') {
   const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
   if (!['pause','resume','reload','stop'].includes(mapped)) return;
@@ -134,6 +134,7 @@ function getMergedSlots(status) {
   for (const slot of (configuredSlots.active || [])) {
     const id = String(slot.id);
     const name = slot.accountName || slot.name || `Slot ${Number(id) + 1}`;
+    if (id === '17' || String(name).toLowerCase() === 'darlenejoyce') continue;
     // Strict per-slot personal — no fallback to other slots (prevents history leaking)
     let sc = scannerSlots[id] || scannerSlots[String(id)] || null;
     if (!sc || Object.keys(sc).length === 0) sc = {};
@@ -631,8 +632,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
   </div>
   <div class="stitle section-aiko-title"><span>AIKO — <span id="scnt-aiko">0</span> slots</span><span class="section-theme"><input id="aiko-wheel" type="color" value="#725CFF" oninput="previewSectionColor(&quot;aiko&quot;,this.value)"><input id="aiko-hex" value="#725CFF" maxlength="7" aria-label="AIKO color hex"><button type="button" onclick="confirmSectionColor(&quot;aiko&quot;)">Apply</button></span></div>
   <div id="slots-aiko"></div>
-  <div class="stitle section-darlene-title"><span>DARLENE — <span id="scnt-darlene">0</span> slots</span><span class="section-theme"><input id="darlene-wheel" type="color" value="#00D68F" oninput="previewSectionColor(&quot;darlene&quot;,this.value)"><input id="darlene-hex" value="#00D68F" maxlength="7" aria-label="DARLENE color hex"><button type="button" onclick="confirmSectionColor(&quot;darlene&quot;)">Apply</button></span></div>
-  <div id="slots-darlene"></div>
   <div class="stitle">Server</div>
   <div class="ggrid">
     <a class="btn bgrn bful" href="/restart" onclick="return confirmLink(event,this,&quot;Restart VisionTap?&quot;,&quot;The dashboard and automation services may be briefly unavailable.&quot;,&quot;Restart VisionTap&quot;)">Restart VisionTap</a>
@@ -690,7 +689,7 @@ function acceptConfirm(){var action=pendingConfirmAction;document.getElementById
 function confirmLink(event,element,title,message,label,tone){if(event)event.preventDefault();var href=element&&element.href;askConfirm(title,message,label,function(){if(href)window.location.href=href},tone);return false}
 function confirmSectionColor(section){var label=section.charAt(0).toUpperCase()+section.slice(1);askConfirm('Apply '+label+' theme?','This color will update every slot card in the '+label+' section.','Apply color',function(){applySectionColor(section)})}
 function setSectionAccent(section,value){
-  if(!/^(aiko|darlene)$/.test(section)||!/^#[0-9A-F]{6}$/i.test(value))return false;
+  if(section!=='aiko'||!/^#[0-9A-F]{6}$/i.test(value))return false;
   var r=parseInt(value.slice(1,3),16),g=parseInt(value.slice(3,5),16),b=parseInt(value.slice(5,7),16),root=document.documentElement;
   root.style.setProperty('--'+section+'-accent',value.toUpperCase());
   root.style.setProperty('--'+section+'-soft','rgba('+r+','+g+','+b+',.14)');
@@ -710,17 +709,15 @@ function applySectionColor(section){
   fetch('/theme-color?section='+encodeURIComponent(section)+'&value='+encodeURIComponent(value),{method:'POST'}).then(function(r){if(!r.ok)throw new Error('Save failed');return r.json()}).then(function(){window._sectionThemeDirty=window._sectionThemeDirty||{};window._sectionThemeDirty[section]=false}).catch(function(){alert('Could not save this section color. Please try again.')});
 }
 function syncSectionThemes(theme){
-  var defaults={aiko:'#725CFF',darlene:'#00D68F'},dirty=window._sectionThemeDirty||{};
-  ['aiko','darlene'].forEach(function(section){var value=theme&&theme[section+'Color']||defaults[section];if(dirty[section]||!setSectionAccent(section,value))return;var wheel=document.getElementById(section+'-wheel'),hex=document.getElementById(section+'-hex');if(wheel)wheel.value=value;if(hex)hex.value=value;});
+  var defaults={aiko:'#725CFF'},dirty=window._sectionThemeDirty||{};
+  ['aiko'].forEach(function(section){var value=theme&&theme[section+'Color']||defaults[section];if(dirty[section]||!setSectionAccent(section,value))return;var wheel=document.getElementById(section+'-wheel'),hex=document.getElementById(section+'-hex');if(wheel)wheel.value=value;if(hex)hex.value=value;});
 }
 function render(d){
-  var slots=(d.slots||[]).filter(function(s){return !["13","16"].includes(String(s.id))&&!['danicajgb','nnnikkikim'].includes(String(s.accountName||'').toLowerCase())});
+  var slots=(d.slots||[]).filter(function(s){return !["13","16","17"].includes(String(s.id))&&!['danicajgb','nnnikkikim','darlenejoyce'].includes(String(s.accountName||'').toLowerCase())});
   var pilots=d.chromePilots||[],pilot=d.chromePilot||{};
   syncSectionThemes(d.theme||{});
-  var aikoSlots = slots.filter(s => !["13", "16"].includes(String(s.id)) && !["danicajgb", "nnnikkikim"].includes(String(s.accountName).toLowerCase()) && !["17"].includes(String(s.id)) && !["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
-  var darleneSlots = slots.filter(s => ["17"].includes(String(s.id)) || ["darlenejoyce"].includes(String(s.accountName).toLowerCase()));
+  var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
-  document.getElementById('scnt-darlene').textContent=darleneSlots.length;
   var runningPilots=pilots.filter(function(p){return p&&p.running}).length,activeCount=runningPilots||slots.filter(function(x){return !x.paused}).length,workerUp=runningPilots>0||!!pilot.running,healthy=d.scannerUp&&workerUp&&!d.loopPaused;
   document.getElementById('ov-total').textContent=String(slots.length).padStart(2,'0');
   document.getElementById('ov-active').textContent=String(activeCount).padStart(2,'0');
@@ -735,12 +732,11 @@ function render(d){
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.loopPaused?'var(--yellow)':'var(--green)')+'"></div>Loop '+(d.loopPaused?'Paused':'Running')+'</div>';
-  var hAiko='', hDarlene='';
+  var hAiko='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
-    var isDarlene = ["17"].includes(String(s.id)) || ["darlenejoyce"].includes(String(s.accountName).toLowerCase());
-    var sc=isDarlene ? '#34d399' : '#38bdf8';
-    var cardClass = isDarlene ? 'card-darlene' : 'card-aiko';
+    var sc='#38bdf8';
+    var cardClass='card-aiko';
     var slotPilot=pilots.find(function(p){return p&&String(p.slot)===String(s.id)})||{};
     var slotPaused=slotPilot.running?!!slotPilot.paused:!!s.paused;
     var verifyHtml=slotPilot.verificationHold?'<div class="slotverify"><div class="slotverify-title">Manual verification required <span>'+esc(String(s.accountName||s.name).toUpperCase())+'</span></div><p>'+esc(slotPilot.status||'Complete verification in this account’s Oracle Chrome window. Auto-refresh is paused.')+'</p><div class="slotverify-stats"><span>Tasks<b>'+esc(slotPilot.tasks||0)+'</b></span><span>Errors<b>'+esc(slotPilot.errors||0)+'</b></span><span>Time<b>'+esc(slotPilot.time||'00:00')+'</b></span></div><div class="slotverify-actions"><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;pause&quot;)">Pause</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;resume&quot;)">Resume after verify</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;reload&quot;)">Safe reload</button></div></div>':'';
@@ -826,10 +822,9 @@ function render(d){
 
 
       '</div></div>';
-    if (isDarlene) hDarlene+=cardHtml; else hAiko+=cardHtml;
+    hAiko+=cardHtml;
   }
   document.getElementById('slots-aiko').innerHTML=hAiko || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No AIKO slots</div>';
-  document.getElementById('slots-darlene').innerHTML=hDarlene || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No DARLENE slots</div>';
   window._lastSlots = slots; // for live timer 1:1 - sync live only, no stale lastUpdate
 }
 
@@ -936,7 +931,7 @@ const server = http.createServer((req, res) => {
     const chromePilots = getChromePilots();
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78", darleneColor: "#00D68F" }) }));
+    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
 
@@ -954,7 +949,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/theme-color" && req.method === "POST") {
     const value = String(url.searchParams.get("value") || "").trim().toUpperCase();
     const section = String(url.searchParams.get("section") || "").toLowerCase();
-    if (!["aiko","darlene"].includes(section)) { res.writeHead(400); res.end("Invalid section"); return; }
+    if (section !== "aiko") { res.writeHead(400); res.end("Invalid section"); return; }
     if (!/^#[0-9A-F]{6}$/.test(value)) { res.writeHead(400); res.end("Invalid hex color"); return; }
     const theme = readJson(THEME_PREF_FILE, {});
     theme[section + "Color"] = value;
@@ -1006,7 +1001,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@darlenejoyce");
+    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");
