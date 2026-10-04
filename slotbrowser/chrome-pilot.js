@@ -478,26 +478,30 @@ class ChromePilot {
       let result = await this.callApi('pmathDoConvertAll');
       if (!result || result.status === 'no-btn') result = await this.callApi('pmathDoConvert', { amount:available });
       if (!result || !/clicked|converted/.test(result.status || '')) throw new Error(`Conversion control unavailable (${result?.status || 'unknown'})`);
-      for (let i = 0; i < 3; i++) {
+      const confirmation = await this.callApi('pmathConfirmPreparedConversion');
+      if (confirmation?.status !== 'confirmed') throw new Error(`PMath confirmation flow stopped at ${confirmation?.status || 'unknown'}`);
+      const expectedRemainder = available % 100;
+      let coinsAfter = NaN;
+      let pageText = '';
+      for (let i = 0; i < 30; i++) {
         await sleep(1000);
-        await this.page.evaluate(() => {
-          const button = [...document.querySelectorAll('.swal2-confirm,.modal button,button,[role="button"],input[type="submit"]')]
-            .find(el => /^(yes|confirm|continue|convert|ok|proceed)$/i.test((el.innerText || el.value || '').trim()) && !el.disabled);
-          if (button) button.click();
-        }).catch(() => {});
+        const afterMeta = await this.callApi('pmathGetMeta').catch(() => null);
+        coinsAfter = Number(afterMeta?.coins);
+        pageText = await this.page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 1600)).catch(() => '');
+        if ((Number.isFinite(coinsAfter) && coinsAfter <= expectedRemainder) || /coins converted successfully/i.test(pageText)) break;
       }
-      await sleep(2500);
-      const pageText = await this.page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 1200)).catch(() => '');
       await this.page.goto(WORK_URL, { waitUntil:'domcontentloaded', timeout:30000 });
       await sleep(2000);
       await this.installPageRuntime();
       const afterMeta = await this.callApi('pmathGetMeta').catch(() => null);
-      const coinsAfter = Number(afterMeta?.coins);
-      const succeeded = (Number.isFinite(coinsAfter) && coinsAfter < available) || /success|converted|peso balance|conversion complete/i.test(pageText);
+      const workCoins = Number(afterMeta?.coins);
+      if (Number.isFinite(workCoins)) coinsAfter = workCoins;
+      const succeeded = (Number.isFinite(coinsAfter) && coinsAfter <= expectedRemainder) || /coins converted successfully|conversion receipt/i.test(pageText);
       if (!succeeded) throw new Error('PMath did not confirm the coin conversion');
+      const convertedAmount = Math.max(0, available - (Number.isFinite(coinsAfter) ? coinsAfter : expectedRemainder));
       this.pmathConversion.status = 'converted';
       this.pmathConversion.coinsAfter = Number.isFinite(coinsAfter) ? coinsAfter : null;
-      this.pmathConversion.message = `${available} coins converted to pesos.`;
+      this.pmathConversion.message = `${convertedAmount} coins converted to pesos; ${Number.isFinite(coinsAfter) ? coinsAfter : expectedRemainder} coins remain.`;
       if (Number.isFinite(coinsAfter)) { this.pointsDone = coinsAfter; this.withdrawable = coinsAfter; }
       await this.report();
       this.log(`PMath conversion completed: ${available} coins${Number.isFinite(coinsAfter) ? ` -> ${coinsAfter}` : ''}.`);

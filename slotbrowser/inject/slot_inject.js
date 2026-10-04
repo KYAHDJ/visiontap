@@ -994,6 +994,31 @@
     if (btn) { if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' }; btn.click(); return { status: "clicked" }; }
     return { status: "no-btn" };
   };
+  vt.pmathConfirmPreparedConversion = async () => {
+    const visible = el => {
+      if (!el) return false;
+      const style = getComputedStyle(el), rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+    const buttons = () => Array.from(document.querySelectorAll('button,a.btn,input[type="button"],input[type="submit"],[role="button"]')).filter(visible);
+    const dismiss = buttons().find(el => /^(cancel|close|×|x)$/i.test((el.innerText || el.value || el.getAttribute('aria-label') || '').trim())) ||
+      Array.from(document.querySelectorAll('.btn-close,.close,[data-bs-dismiss="modal"],[data-dismiss="modal"]')).find(visible);
+    if (!dismiss) return { status:'no-dismiss' };
+    dismiss.click();
+    await sleep(400);
+    const convert = buttons().find(el => /^convert coins$/i.test((el.innerText || el.value || '').trim()));
+    if (!convert) return { status:'no-convert-coins' };
+    convert.click();
+    let confirm = null;
+    for (let i = 0; i < 20 && !confirm; i++) {
+      await sleep(250);
+      confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
+    }
+    if (!confirm) return { status:'no-yes-convert' };
+    if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status:'cancelled' };
+    confirm.click();
+    return { status:'confirmed' };
+  };
 
   vt.pageReady = () => ({
     url: window.location.href,
