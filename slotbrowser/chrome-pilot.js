@@ -13,6 +13,9 @@ const SLOT_ID = String(process.env.VT_SLOT_ID || '11');
 const TASK_MODE = process.env.VT_TASK_MODE === 'math' || ACCOUNT === 'kyaiko' ? 'math' : 'color';
 const LOGIN_URL = TASK_MODE === 'math' ? 'https://pmath100.com/login' : 'https://ecnlmediamarket.com/login';
 const WORK_URL = TASK_MODE === 'math' ? 'https://pmath100.com/games-mathproblem#' : 'https://ecnlmediamarket.com/solving-colors';
+const PMATH_CONVERT_URL = 'https://pmath100.com/convert-coins';
+const PMATH_CONVERT_THRESHOLD = 30000;
+const PMATH_CONVERT_RETRY_MS = 300000;
 const SUBMIT_DELAYS = { adaihbi: 0, temi: 400, axceling1001: 700, kyaiko: 0 };
 const SUBMIT_DELAY_MS = Number(process.env.VT_SUBMIT_DELAY_MS ?? SUBMIT_DELAYS[ACCOUNT] ?? 0);
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi', 'temi', 'axceling1001']);
@@ -99,6 +102,7 @@ class ChromePilot {
     this.pointsDone = null;
     this.pointsTotal = 250;
     this.withdrawable = null;
+    this.pmathConversion = { status:'waiting', lastAttemptAt:0, coinsBefore:null, coinsAfter:null, message:'' };
     this.statusText = `Starting ${ACCOUNT} Chrome pilot…`;
     this.injectSource = fs.readFileSync(INJECT_PATH, 'utf8');
     this.adBlockSource = fs.readFileSync(AD_BLOCK_PATH, 'utf8');
@@ -353,7 +357,8 @@ class ChromePilot {
         resumeArmed: this.resumeArmed,
         status: this.statusText, tasks: this.taskCount, errors: this.errorCount,
         time, elapsed, loopStartTime:this.loopStartTime, updatedAt: Date.now(), lastProgressAt: this.lastProgressAt,
-        lastReloadAt: this.lastReloadAt, recoveryReloads: this.recoveryReloads
+        lastReloadAt: this.lastReloadAt, recoveryReloads: this.recoveryReloads,
+        pmathConversion: TASK_MODE === 'math' ? this.pmathConversion : undefined
       }, null, 2));
     } catch (error) { this.log(`Could not publish dashboard state: ${error.message}`); }
   }
@@ -440,6 +445,82 @@ class ChromePilot {
     }, 5000).catch(() => {});
   }
 
+  async convertPmathCoins(observedCoins = null) {
+    if (TASK_MODE !== 'math' || this.paused || this.verificationHold) return false;
+    if (this.pmathConversion.lastAttemptAt && Date.now() - this.pmathConversion.lastAttemptAt < PMATH_CONVERT_RETRY_MS) return false;
+    this.pmathConversion.lastAttemptAt = Date.now();
+    this.pmathConversion.status = 'checking';
+    this.pmathConversion.coinsBefore = Number.isFinite(Number(observedCoins)) ? Number(observedCoins) : null;
+    this.pmathConversion.message = 'Checking convertible PMath coins…';
+    await this.setStatus(this.pmathConversion.message);
+    try {
+      if (!/pmath100\.com\/convert-coins/i.test(this.page.url())) {
+        await this.page.goto(PMATH_CONVERT_URL, { waitUntil:'domcontentloaded', timeout:30000 });
+        await sleep(2000);
+      }
+      await this.installPageRuntime();
+      const meta = await this.callApi('pmathGetMeta').catch(() => null);
+      const available = Math.max(
+        Number(this.pmathConversion.coinsBefore || 0),
+        Number(meta?.convertible || 0),
+        Number(meta?.coins || 0)
+      );
+      if (!Number.isFinite(available) || available < PMATH_CONVERT_THRESHOLD) {
+        this.pmathConversion.status = 'waiting';
+        this.pmathConversion.message = `Conversion skipped: ${Number.isFinite(available) ? available : 0} coins available.`;
+        await this.setStatus(this.pmathConversion.message);
+        return false;
+      }
+      this.pmathConversion.status = 'converting';
+      this.pmathConversion.coinsBefore = available;
+      this.pmathConversion.message = `Converting ${available} PMath coins to pesos…`;
+      await this.setStatus(this.pmathConversion.message);
+      let result = await this.callApi('pmathDoConvertAll');
+      if (!result || result.status === 'no-btn') result = await this.callApi('pmathDoConvert', { amount:available });
+      if (!result || !/clicked|converted/.test(result.status || '')) throw new Error(`Conversion control unavailable (${result?.status || 'unknown'})`);
+      for (let i = 0; i < 3; i++) {
+        await sleep(1000);
+        await this.page.evaluate(() => {
+          const button = [...document.querySelectorAll('.swal2-confirm,.modal button,button,[role="button"],input[type="submit"]')]
+            .find(el => /^(yes|confirm|continue|convert|ok|proceed)$/i.test((el.innerText || el.value || '').trim()) && !el.disabled);
+          if (button) button.click();
+        }).catch(() => {});
+      }
+      await sleep(2500);
+      const pageText = await this.page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 1200)).catch(() => '');
+      await this.page.goto(WORK_URL, { waitUntil:'domcontentloaded', timeout:30000 });
+      await sleep(2000);
+      await this.installPageRuntime();
+      const afterMeta = await this.callApi('pmathGetMeta').catch(() => null);
+      const coinsAfter = Number(afterMeta?.coins);
+      const succeeded = (Number.isFinite(coinsAfter) && coinsAfter < available) || /success|converted|peso balance|conversion complete/i.test(pageText);
+      if (!succeeded) throw new Error('PMath did not confirm the coin conversion');
+      this.pmathConversion.status = 'converted';
+      this.pmathConversion.coinsAfter = Number.isFinite(coinsAfter) ? coinsAfter : null;
+      this.pmathConversion.message = `${available} coins converted to pesos.`;
+      if (Number.isFinite(coinsAfter)) { this.pointsDone = coinsAfter; this.withdrawable = coinsAfter; }
+      await this.report();
+      this.log(`PMath conversion completed: ${available} coins${Number.isFinite(coinsAfter) ? ` -> ${coinsAfter}` : ''}.`);
+      await this.setStatus(this.pmathConversion.message);
+      return true;
+    } catch (error) {
+      this.pmathConversion.status = 'failed';
+      this.pmathConversion.message = `PMath conversion failed: ${error.message}`;
+      this.errorCount++;
+      this.log(this.pmathConversion.message);
+      await this.setStatus(this.pmathConversion.message);
+      return false;
+    } finally {
+      if (!/pmath100\.com\/games-mathproblem/i.test(this.page.url())) {
+        await this.page.goto(WORK_URL, { waitUntil:'domcontentloaded', timeout:30000 }).catch(() => {});
+      }
+      await this.installPageRuntime();
+      this.lastActivityAt = Date.now();
+      this.lastProgressAt = this.lastActivityAt;
+      this.pending = null;
+    }
+  }
+
   async syncDashboardMeta(force = false) {
     const meta = await this.callApi('getTaskMeta').catch(() => null);
     if (meta) {
@@ -519,6 +600,12 @@ class ChromePilot {
       await this.setStatus('Verification cleared and task page stable. Resuming safely…');
     }
     if (this.paused) { await this.updateOverlay(); return; }
+    if (TASK_MODE === 'math' && /pmath100\.com\/convert-coins/i.test(this.page.url())) {
+      await this.installPageRuntime();
+      const meta = await this.callApi('pmathGetMeta').catch(() => null);
+      await this.convertPmathCoins(meta?.convertible ?? meta?.coins ?? this.pointsDone);
+      return;
+    }
     const onExpectedWorkPage = TASK_MODE === 'math'
       ? /pmath100\.com\/games-mathproblem/i.test(this.page.url())
       : /ecnlmediamarket\.com\/solving-colors/i.test(this.page.url());
@@ -528,6 +615,17 @@ class ChromePilot {
     }
     if (!await this.scannerReady()) { await this.ensureScanner(); await this.setStatus('Waiting for local scanner…'); return; }
     await this.installPageRuntime();
+    if (TASK_MODE === 'math') {
+      const meta = await this.callApi('pmathGetMeta').catch(() => null);
+      if (meta?.coins != null && !Number.isNaN(Number(meta.coins))) {
+        this.pointsDone = Number(meta.coins); this.withdrawable = Number(meta.coins);
+      }
+      const convertible = Number(meta?.convertible ?? meta?.coins);
+      if (Number.isFinite(convertible) && convertible >= PMATH_CONVERT_THRESHOLD) {
+        await this.convertPmathCoins(convertible);
+        return;
+      }
+    }
     await this.syncDashboardMeta();
     const ready = await this.callApi('checkInputReady');
     if (ready?.checking || ready?.isBlank2026) { await this.safeReload(ready.checking ? 'checking state' : 'blank 2026 page'); return; }

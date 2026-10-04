@@ -742,6 +742,8 @@ function render(d){
     var slotPilot=pilots.find(function(p){return p&&String(p.slot)===String(s.id)})||{};
     var slotPaused=slotPilot.running?!!slotPilot.paused:!!s.paused;
     var verifyHtml=slotPilot.verificationHold?'<div class="slotverify"><div class="slotverify-title">Manual verification required <span>'+esc(String(s.accountName||s.name).toUpperCase())+'</span></div><p>'+esc(slotPilot.status||'Complete verification in this account’s Oracle Chrome window. Auto-refresh is paused.')+'</p><div class="slotverify-stats"><span>Tasks<b>'+esc(slotPilot.tasks||0)+'</b></span><span>Errors<b>'+esc(slotPilot.errors||0)+'</b></span><span>Time<b>'+esc(slotPilot.time||'00:00')+'</b></span></div><div class="slotverify-actions"><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;pause&quot;)">Pause</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;resume&quot;)">Resume after verify</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;reload&quot;)">Safe reload</button></div></div>':'';
+    var isKyaiko=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko',conversion=slotPilot.pmathConversion||{},conversionClass=conversion.status==='converted'?'yes':conversion.status==='failed'?'no':'waiting';
+    var conversionHtml=isKyaiko?'<div class="encoutstatus '+conversionClass+'" style="display:flex;margin:0 0 12px;width:100%;justify-content:center">'+esc(conversion.message||'Auto-convert enabled at 30,000 coins')+'</div>':'';
     var st=slotPaused?'PAUSED':(slotPilot.verificationHold?'VERIFY':'RUNNING');
     var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
@@ -758,6 +760,7 @@ function render(d){
     var cardHtml='<div class="card '+cardClass+'">'+
       '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg state-'+(slotPaused?'paused':'running')+'">'+st+'</span></div>'+
       verifyHtml+
+      conversionHtml+
       '<div class="sgrid">'+
         '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (Number(s.withdrawable||0)/100).toFixed(2) : s.withdrawable )+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Balance (₱)" : "Balance")+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#a78bfa">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Coins":"Points")+'</div></div>'+

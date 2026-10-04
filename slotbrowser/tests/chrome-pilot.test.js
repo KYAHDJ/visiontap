@@ -50,3 +50,11 @@ test('pilot loads the shared ad blocker and never disables cleanup', () => {
   assert.match(pilot.adBlockSource, /VisionTap - Minimal Ad Blocker/);
   assert.doesNotMatch(pilot.injectSource, /__vtDisableAdCleanup\s*=\s*true/);
 });
+
+test('Kyaiko auto-converts PMath coins at the 30,000 threshold', () => {
+  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
+  assert.match(pilot.iteration.toString(), /convertPmathCoins/);
+  assert.match(pilot.convertPmathCoins.toString(), /pmathDoConvertAll/);
+  assert.match(pilot.convertPmathCoins.toString(), /PMATH_CONVERT_THRESHOLD/);
+  assert.match(pilot.convertPmathCoins.toString(), /PMATH_CONVERT_RETRY_MS/);
+});
