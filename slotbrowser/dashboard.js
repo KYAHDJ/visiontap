@@ -5,6 +5,7 @@ const os = require("os");
 const { execSync } = require("child_process");
 
 const PORT = 6260;
+const PMATH_CONVERT_THRESHOLD = 30000;
 const PH_TIME_ZONE = "Asia/Manila";
 const STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
 const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
@@ -168,6 +169,39 @@ function getMergedSlots(status) {
     const curPoints = isPmath ? currentWithdrawable : pointsDone;
     let dirty = false;
 
+    // PMath moves complete 100-coin groups into its peso wallet. Keep that
+    // converted value in the dashboard total while the live coin counter
+    // starts again from the small remainder.
+    if (isPmath && ms.pmathWalletVersion !== 1) {
+      let convertedCoins = 0;
+      let previousRaw = null;
+      ms.balanceHistory = (Array.isArray(ms.balanceHistory) ? ms.balanceHistory : []).map(entry => {
+        const raw = Number(entry && entry.value) || 0;
+        if (previousRaw >= PMATH_CONVERT_THRESHOLD && raw < 1000 && previousRaw - raw >= PMATH_CONVERT_THRESHOLD - 100) {
+          convertedCoins += Math.floor(previousRaw / 100) * 100;
+        }
+        previousRaw = raw;
+        return { ...entry, value: raw + convertedCoins };
+      });
+      ms.pmathConvertedCoins = convertedCoins;
+      ms.lastPmathRawCoins = currentWithdrawable;
+      ms.pmathWalletVersion = 1;
+      dirty = true;
+    }
+    if (isPmath) {
+      const previousRaw = Number(ms.lastPmathRawCoins);
+      if (Number.isFinite(previousRaw) && previousRaw >= PMATH_CONVERT_THRESHOLD && currentWithdrawable < 1000 && previousRaw - currentWithdrawable >= PMATH_CONVERT_THRESHOLD - 100) {
+        ms.pmathConvertedCoins = (Number(ms.pmathConvertedCoins) || 0) + Math.floor(previousRaw / 100) * 100;
+      }
+      if (ms.lastPmathRawCoins !== currentWithdrawable) {
+        ms.lastPmathRawCoins = currentWithdrawable;
+        dirty = true;
+      }
+    }
+    const dashboardWithdrawable = isPmath
+      ? currentWithdrawable + (Number(ms.pmathConvertedCoins) || 0)
+      : currentWithdrawable;
+
     // Migrate Kyaiko from the old points-based rate source without creating a false spike.
     if (isPmath && ms.rateUnit !== "coins") {
       ms.rateUnit = "coins";
@@ -188,19 +222,19 @@ function getMergedSlots(status) {
 
     // Balance history — 2-min timer, 10 visible entries, persisted per-slot
     if (!Array.isArray(ms.balanceHistory)) ms.balanceHistory = [];
-    if (ms.balanceHistory.length === 0 && currentWithdrawable !== 0) {
-      ms.balanceHistory.push({ value: currentWithdrawable, time: nowMs });
-      ms.lastBalanceValue = currentWithdrawable;
+    if (ms.balanceHistory.length === 0 && dashboardWithdrawable !== 0) {
+      ms.balanceHistory.push({ value: dashboardWithdrawable, time: nowMs });
+      ms.lastBalanceValue = dashboardWithdrawable;
       ms.lastBalanceTime = nowMs;
       ms.lastHistoryCheck = nowMs;
       dirty = true;
     } else if (ms.balanceHistory.length > 0) {
       const lastEntry = ms.balanceHistory[ms.balanceHistory.length - 1];
-      const balChanged = currentWithdrawable !== lastEntry.value && currentWithdrawable !== 0;
+      const balChanged = dashboardWithdrawable !== lastEntry.value && dashboardWithdrawable !== 0;
       if (balChanged) {
-        ms.balanceHistory.push({ value: currentWithdrawable, time: nowMs });
+        ms.balanceHistory.push({ value: dashboardWithdrawable, time: nowMs });
         if (ms.balanceHistory.length > 10) ms.balanceHistory = ms.balanceHistory.slice(-10);
-        ms.lastBalanceValue = currentWithdrawable;
+        ms.lastBalanceValue = dashboardWithdrawable;
         ms.lastBalanceTime = nowMs;
         ms.lastHistoryCheck = nowMs;
         dirty = true;
@@ -213,8 +247,8 @@ function getMergedSlots(status) {
           dirty = true;
         }
       }
-      if (ms.lastBalanceValue !== currentWithdrawable) {
-        ms.lastBalanceValue = currentWithdrawable;
+      if (ms.lastBalanceValue !== dashboardWithdrawable) {
+        ms.lastBalanceValue = dashboardWithdrawable;
         ms.lastBalanceTime = nowMs;
         dirty = true;
       }
@@ -358,7 +392,8 @@ function getMergedSlots(status) {
       wrongCount: sc.wrongCount || 0,
       errorCount: sc.errorCount || 0,
       taskCount: sc.taskCount || 0,
-      withdrawable: sc.withdrawable != null ? sc.withdrawable : 0,
+      withdrawable: dashboardWithdrawable,
+      pmathCoinBalance: isPmath ? currentWithdrawable : null,
       pointsDone: pointsDone,
       pointsTotal: pointsTotal,
       totalEarned: Math.round(totalEarned * 10000) / 10000,
