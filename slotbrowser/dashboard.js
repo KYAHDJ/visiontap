@@ -22,9 +22,18 @@ function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chro
 const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001' };
 function sendChromeControl(action, slot = 'all') {
   const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
-  if (!['pause','resume','reload','stop'].includes(mapped)) return;
+  if (!['pause','resume','reload','stop'].includes(mapped)) throw new Error('Invalid control action');
   const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
+  if (accounts.length === 0) throw new Error('Unknown account slot');
   for (const account of accounts) writeJson(chromePilotCommandFile(account), { action:mapped, nonce:`${Date.now()}-${Math.random()}` });
+  return { action: mapped, accounts };
+}
+function restartChromeServices(slot = 'all') {
+  const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
+  if (accounts.length === 0) throw new Error('Unknown account slot');
+  const units = accounts.map(account => `visiontap-chrome@${account}`).join(' ');
+  execSync(`sudo systemctl restart ${units}`, { timeout: 30000 });
+  return { action: 'restart', accounts };
 }
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
@@ -662,10 +671,10 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
   <div class="pills" id="pills"></div>
   <div class="stitle">Global Controls</div>
   <div class="ggrid global-controls-grid">
-    <a class="btn bgrn" href="/cmd?action=resume&slot=all" onclick="return confirmLink(event,this,&quot;Resume every account?&quot;,&quot;All paused accounts will resume automation.&quot;,&quot;Resume all&quot;)">Resume All</a>
-    <a class="btn bred" href="/cmd?action=pause&slot=all" onclick="return confirmLink(event,this,&quot;Pause every account?&quot;,&quot;All account automation will pause until resumed.&quot;,&quot;Pause all&quot;)">Pause All</a>
-    <a class="btn byel" href="/cmd?action=restart&slot=all" onclick="return confirmLink(event,this,&quot;Restart every account?&quot;,&quot;All account windows will restart.&quot;,&quot;Restart all&quot;)">Restart All</a>
-    <a class="btn bpur" href="/cmd?action=refresh&slot=all" onclick="return confirmLink(event,this,&quot;Refresh every account?&quot;,&quot;All account pages will reload.&quot;,&quot;Refresh all&quot;)">Refresh All</a>
+    <a class="btn bgrn" href="/cmd?action=resume&slot=all" onclick="return confirmControl(event,'resume','all',&quot;Resume every account?&quot;,&quot;All paused accounts will resume automation.&quot;,&quot;Resume all&quot;)">Resume All</a>
+    <a class="btn bred" href="/cmd?action=pause&slot=all" onclick="return confirmControl(event,'pause','all',&quot;Pause every account?&quot;,&quot;All account automation will pause until resumed.&quot;,&quot;Pause all&quot;)">Pause All</a>
+    <a class="btn byel" href="/cmd?action=restart&slot=all" onclick="return confirmControl(event,'restart','all',&quot;Restart every account?&quot;,&quot;All account workers and windows will restart.&quot;,&quot;Restart all&quot;)">Restart All</a>
+    <a class="btn bpur" href="/cmd?action=refresh&slot=all" onclick="return confirmControl(event,'refresh','all',&quot;Refresh every account?&quot;,&quot;All account pages will reload.&quot;,&quot;Refresh all&quot;)">Refresh All</a>
   </div>
   <div class="stitle section-aiko-title"><span>AIKO — <span id="scnt-aiko">0</span> slots</span><span class="section-theme"><input id="aiko-wheel" type="color" value="#725CFF" oninput="previewSectionColor(&quot;aiko&quot;,this.value)"><input id="aiko-hex" value="#725CFF" maxlength="7" aria-label="AIKO color hex"><button type="button" onclick="confirmSectionColor(&quot;aiko&quot;)">Apply</button></span></div>
   <div id="slots-aiko"></div>
@@ -724,6 +733,15 @@ function askConfirm(title,message,label,action,tone){
 function closeConfirm(){document.getElementById('confirmmodal').classList.remove('show');pendingConfirmAction=null}
 function acceptConfirm(){var action=pendingConfirmAction;document.getElementById('confirmmodal').classList.remove('show');pendingConfirmAction=null;if(action)action()}
 function confirmLink(event,element,title,message,label,tone){if(event)event.preventDefault();var href=element&&element.href;askConfirm(title,message,label,function(){if(href)window.location.href=href},tone);return false}
+function controlFeedback(message,ok){var el=document.getElementById('app-state-text'),dot=document.getElementById('app-live-dot');if(el)el.textContent=message;if(dot)dot.style.background=ok===false?'#ff3b61':'#00d68f'}
+function runDashboardControl(action,slot,label){
+  controlFeedback((label||'Control')+'…');
+  return fetch('/dashboard-control?action='+encodeURIComponent(action)+'&slot='+encodeURIComponent(slot),{method:'POST',cache:'no-store'})
+    .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||'Control failed');return body})})
+    .then(function(body){controlFeedback((label||'Control')+' sent to '+body.accounts.length+' account'+(body.accounts.length===1?'':'s'));setTimeout(poll,350);return body})
+    .catch(function(error){controlFeedback(error.message||'Control failed',false);throw error});
+}
+function confirmControl(event,action,slot,title,message,label,tone){if(event)event.preventDefault();askConfirm(title,message,label,function(){runDashboardControl(action,slot,label).catch(function(){})},tone);return false}
 function confirmSectionColor(section){var label=section.charAt(0).toUpperCase()+section.slice(1);askConfirm('Apply '+label+' theme?','This color will update every slot card in the '+label+' section.','Apply color',function(){applySectionColor(section)})}
 function setSectionAccent(section,value){
   if(section!=='aiko'||!/^#[0-9A-F]{6}$/i.test(value))return false;
@@ -855,10 +873,10 @@ function render(d){
       '</form>'+
       eh+
       '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button></span><span class="action-break"></span>'})()+
-        '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmLink(event,this,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
-        '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume" onclick="return confirmLink(event,this,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
+        '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmControl(event,&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
+        '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume" onclick="return confirmControl(event,&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
 
-        '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh" onclick="return confirmLink(event,this,&quot;Refresh this account?&quot;,&quot;The account page will reload.&quot;,&quot;Refresh&quot;)">&#8634;</a>'+
+        '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh" onclick="return confirmControl(event,&quot;refresh&quot;,&quot;'+sid+'&quot;,&quot;Refresh this account?&quot;,&quot;The account page will reload.&quot;,&quot;Refresh&quot;)">&#8634;</a>'+
 
 
       '</div></div>';
@@ -982,6 +1000,27 @@ const server = http.createServer((req, res) => {
     writeJson(chromePilotCommandFile(account), { action, nonce: `${Date.now()}-${Math.random()}` });
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ ok: true, account, action }));
+    return;
+  }
+
+  if (url.pathname === "/dashboard-control" && req.method === "POST") {
+    const action = String(url.searchParams.get("action") || "").toLowerCase();
+    const slot = String(url.searchParams.get("slot") || "all").toLowerCase();
+    if (!['pause','resume','refresh','restart'].includes(action)) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok:false, error:'Invalid control action' }));
+      return;
+    }
+    try {
+      const result = action === 'restart' ? restartChromeServices(slot) : sendChromeControl(action, slot);
+      log(`DASHBOARD CONTROL: action=${action} accounts=${result.accounts.join(',')}`);
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "no-store");
+      res.end(JSON.stringify({ ok:true, requestedAction:action, ...result }));
+    } catch (error) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok:false, error:error.message || 'Control failed' }));
+    }
     return;
   }
 
