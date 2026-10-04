@@ -21,3 +21,8 @@ test('restart all restarts Chrome workers while refresh only reloads pages', () 
   assert.match(source, /execSync\(`sudo systemctl restart \$\{units\}`/);
   assert.match(source, /action === 'restart' \|\| action === 'refresh' \? 'reload'/);
 });
+
+test('Kyaiko uses balance history without a duplicate earnings history', () => {
+  assert.match(source, /if\(!isKyaikoCard&&s\.earningsHistory&&s\.earningsHistory\.length>0\)/);
+  assert.match(source, /Balance History \(10\)/);
+});

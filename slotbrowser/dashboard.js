@@ -802,7 +802,8 @@ function render(d){
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
     var eh='';
-    if(s.earningsHistory&&s.earningsHistory.length>0){
+    var isKyaikoCard=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko';
+    if(!isKyaikoCard&&s.earningsHistory&&s.earningsHistory.length>0){
       eh='<div class="ehd">Earnings History</div><div class="elst">';
       for(var j=0;j<s.earningsHistory.length;j++){
         var e=s.earningsHistory[j];
