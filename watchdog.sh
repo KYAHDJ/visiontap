@@ -82,7 +82,7 @@ while true; do
   fi
 
   # 6. Chrome pilots - each account heals independently.
-  for account in kyaiko adaihbi temi axceling1001; do
+  for account in kyaiko adaihbi temi axceling1001 clarencebopis connormofu; do
     svc="visiontap-chrome@$account"
     if ! sudo systemctl is-active --quiet "$svc"; then
       echo "[$(date)] $account Chrome pilot down - restarting" >> $LOG

@@ -16,9 +16,9 @@ const WORK_URL = TASK_MODE === 'math' ? 'https://pmath100.com/games-mathproblem#
 const PMATH_CONVERT_URL = 'https://pmath100.com/convert-coins';
 const PMATH_CONVERT_THRESHOLD = 30000;
 const PMATH_CONVERT_RETRY_MS = 300000;
-const SUBMIT_DELAYS = { adaihbi: 0, temi: 400, axceling1001: 700, kyaiko: 0 };
+const SUBMIT_DELAYS = { adaihbi: 0, temi: 400, axceling1001: 700, clarencebopis: 1000, connormofu: 1300, kyaiko: 0 };
 const SUBMIT_DELAY_MS = Number(process.env.VT_SUBMIT_DELAY_MS ?? SUBMIT_DELAYS[ACCOUNT] ?? 0);
-const ENCASHMENT_ACCOUNTS = new Set(['adaihbi', 'temi', 'axceling1001']);
+const ENCASHMENT_ACCOUNTS = new Set(['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu']);
 const STALL_RESET_MS = 15000;
 const SCANNER_URL = 'http://127.0.0.1:5566';
 const IS_WIN = process.platform === 'win32';

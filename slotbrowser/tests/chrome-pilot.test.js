@@ -60,3 +60,10 @@ test('Kyaiko auto-converts PMath coins at the 30,000 threshold', () => {
   assert.match(pilot.convertPmathCoins.toString(), /PMATH_CONVERT_THRESHOLD/);
   assert.match(pilot.convertPmathCoins.toString(), /PMATH_CONVERT_RETRY_MS/);
 });
+
+test('all five ECNL accounts have isolated payout controllers', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
+  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu']) {
+    assert.match(source, new RegExp(account));
+  }
+});

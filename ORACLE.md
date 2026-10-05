@@ -1,7 +1,7 @@
 # Oracle deployment
 
 Repository: `/home/opc/VisionTap`
-Display: `:1` at `2560x1024`
+Display: `:1` at `3072x1024`
 VNC: `140.245.49.233:1919`
 Dashboard: `http://140.245.49.233:6260`
 
@@ -17,6 +17,8 @@ visiontap-chrome@kyaiko
 visiontap-chrome@adaihbi
 visiontap-chrome@temi
 visiontap-chrome@axceling1001
+visiontap-chrome@clarencebopis
+visiontap-chrome@connormofu
 visiontap-watchdog
 ```
 
@@ -30,7 +32,7 @@ git pull --ff-only origin main
 npm --prefix slotbrowser ci --omit=dev
 sudo install -m 0644 visiontap-chrome@.service /etc/systemd/system/
 sudo install -m 0644 visiontap-{xvfb,openbox,vnc,scanner,dashboard,watchdog}.service /etc/systemd/system/
-for account in kyaiko adaihbi temi axceling1001; do
+for account in kyaiko adaihbi temi axceling1001 clarencebopis connormofu; do
   install -m 0600 "chrome-$account.env" "$HOME/.config/VisionTap-Chrome/$account.env"
 done
 sudo systemctl daemon-reload

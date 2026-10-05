@@ -53,13 +53,13 @@ npm --prefix slotbrowser ci --omit=dev
 sudo install -m 0644 visiontap-xvfb.service visiontap-openbox.service visiontap-vnc.service \
   visiontap-scanner.service visiontap-dashboard.service visiontap-watchdog.service \
   visiontap-chrome@.service /etc/systemd/system/
-mkdir -p "$HOME/.config/VisionTap-Chrome"/{kyaiko,adaihbi,temi,axceling1001}
-for account in kyaiko adaihbi temi axceling1001; do
+mkdir -p "$HOME/.config/VisionTap-Chrome"/{kyaiko,adaihbi,temi,axceling1001,clarencebopis,connormofu}
+for account in kyaiko adaihbi temi axceling1001 clarencebopis connormofu; do
   install -m 0600 "chrome-$account.env" "$HOME/.config/VisionTap-Chrome/$account.env"
 done
 sudo systemctl disable --now visiontap-electron.service 2>/dev/null || true
 sudo systemctl daemon-reload
 sudo systemctl enable visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-scanner visiontap-dashboard visiontap-watchdog
-sudo systemctl enable visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001
+sudo systemctl enable visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu
 
 echo "=== Setup complete at $(date) ==="

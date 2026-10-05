@@ -12,14 +12,14 @@ const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
-const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001'];
-const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001']);
+const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu'];
+const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, account === 'adaihbi' ? 'encashment_config.json' : `encashment_${account}_config.json`); }
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001' };
+const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu' };
 function sendChromeControl(action, slot = 'all') {
   const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
   if (!['pause','resume','reload','stop'].includes(mapped)) throw new Error('Invalid control action');
@@ -768,7 +768,7 @@ function syncSectionThemes(theme){
   ['aiko'].forEach(function(section){var value=theme&&theme[section+'Color']||defaults[section];if(dirty[section]||!setSectionAccent(section,value))return;var wheel=document.getElementById(section+'-wheel'),hex=document.getElementById(section+'-hex');if(wheel)wheel.value=value;if(hex)hex.value=value;});
 }
 function render(d){
-  var slots=(d.slots||[]).filter(function(s){return !["13","16","17"].includes(String(s.id))&&!['danicajgb','nnnikkikim','darlenejoyce'].includes(String(s.accountName||'').toLowerCase())});
+  var slots=(d.slots||[]).filter(function(s){return String(s.id)!=="17"&&String(s.accountName||'').toLowerCase()!=='darlenejoyce'});
   var pilots=d.chromePilots||[],pilot=d.chromePilot||{};
   syncSectionThemes(d.theme||{});
   var aikoSlots = slots;
@@ -873,7 +873,7 @@ function render(d){
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
       '</form>'+
       eh+
-      '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button></span><span class="action-break"></span>'})()+
+      '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001','clarencebopis','connormofu'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button></span><span class="action-break"></span>'})()+
         '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmControl(event,&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
         '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume" onclick="return confirmControl(event,&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
 
@@ -1080,7 +1080,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001");
+    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");
