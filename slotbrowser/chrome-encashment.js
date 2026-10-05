@@ -8,6 +8,7 @@ const ENCASH_URL = 'https://ecnlmediamarket.com/network-encashment';
 const TASK_ENCASH_URL = 'https://ecnlmediamarket.com/task-encashment';
 const HISTORY_URL = 'https://ecnlmediamarket.com/payout-history';
 const FIVE_MINUTES = 300000;
+const MIN_CASHOUT_PESOS = 300;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return fallback; } }
@@ -102,6 +103,15 @@ class ChromeEncashmentController {
     if (ph.weekday !== (cfg.weekday || 'Wed')) return;
     if (state.date !== ph.key || state.kind !== kind) { state = defaultState(); state.date = ph.key; state.kind = kind; this.save(state, `${kind === 'task' ? 'Task' : 'Network'} schedule opened for ${ph.key}`); }
     if (/approved|paid|transferred/i.test(`${state.status} ${state.payoutStatus}`)) return;
+    const available = Number(this.pilot.withdrawable);
+    if (!Number.isFinite(available) || available < MIN_CASHOUT_PESOS) {
+      const message = `Cash-out locked: ₱${Number.isFinite(available) ? available.toFixed(3).replace(/\.?0+$/, '') : '0'} is below the ₱${MIN_CASHOUT_PESOS} minimum.`;
+      if (state.status !== 'below_minimum' || state.message !== message) {
+        state.status = 'below_minimum'; state.message = message; state.observedBalance = Number.isFinite(available) ? available : 0;
+        this.save(state, message);
+      }
+      return;
+    }
     if (ph.hour >= start && ph.hour < end) { if (!state.lastAttemptAt || Date.now() - state.lastAttemptAt >= FIVE_MINUTES) await this.attempt(); return; }
     if (ph.hour >= end && !state.lastAttemptAt && state.status === 'scheduled') { state.status = 'window_closed'; state.message = `No withdrawal was submitted before ${end}:00 AM PH.`; this.save(state, state.message); }
   }
@@ -113,6 +123,8 @@ class ChromeEncashmentController {
   }
   async attempt() {
     const cfg = this.config(); if (!cfg.enabled) return;
+    const available = Number(this.pilot.withdrawable);
+    if (!Number.isFinite(available) || available < MIN_CASHOUT_PESOS) return;
     const state = this.state(); if (state.lastAttemptAt && Date.now() - state.lastAttemptAt < FIVE_MINUTES) return;
     state.lastAttemptAt = Date.now(); state.nextAttemptAt = state.lastAttemptAt + FIVE_MINUTES; state.attempts = Number(state.attempts || 0) + 1; state.status = 'attempting'; this.save(state, `Attempt ${state.attempts} started`);
     await this.withResume('Withdrawal attempt in progress…', async () => {
@@ -178,4 +190,4 @@ class ChromeEncashmentController {
   }
 }
 
-module.exports = { ChromeEncashmentController, phParts, parsePayoutRecords, PH_TIME_ZONE };
+module.exports = { ChromeEncashmentController, phParts, parsePayoutRecords, PH_TIME_ZONE, MIN_CASHOUT_PESOS };

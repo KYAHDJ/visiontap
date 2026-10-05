@@ -772,8 +772,9 @@ function renderDailyPayout(slots,now){
   var numeric=Number(String(amount||0).replace(/[^0-9.-]/g,''));
   document.getElementById('daily-payout-title').textContent=String(slot.accountName||slot.name)+' · '+slot.encashmentSchedule.startHour+':00–'+slot.encashmentSchedule.endHour+':00 AM PH';
   document.getElementById('daily-payout-amount').textContent='₱'+(Number.isFinite(numeric)?numeric.toFixed(3).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1'):'0');
-  document.getElementById('daily-payout-status').textContent=received?'Received':status.replace(/_/g,' ').replace(/\b\w/g,function(ch){return ch.toUpperCase()});
-  document.getElementById('daily-payout-reminder').textContent=received?'Payout receipt is confirmed.':'Not received yet? Sign in online and check the payout history or GCash status.';
+  var belowMinimum=!received&&Number.isFinite(numeric)&&numeric<300;
+  document.getElementById('daily-payout-status').textContent=received?'Received':belowMinimum?'Waiting For ₱300':status.replace(/_/g,' ').replace(/\b\w/g,function(ch){return ch.toUpperCase()});
+  document.getElementById('daily-payout-reminder').textContent=received?'Payout receipt is confirmed.':belowMinimum?'Cash-out is locked until this account reaches at least ₱300.':'Not received yet? Sign in online and check the payout history or GCash status.';
   banner.classList.toggle('received',received);banner.hidden=false;
 }
 function render(d){

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parsePayoutRecords } = require('../chrome-encashment');
+const { ChromeEncashmentController, parsePayoutRecords, MIN_CASHOUT_PESOS } = require('../chrome-encashment');
 
 test('payout history columns populate every dashboard detail', () => {
   const result = parsePayoutRecords([{
@@ -27,4 +27,10 @@ test('payout parser prefers the requested date over an older row', () => {
   ], '2026-09-30');
   assert.equal(result.amount, '426.098');
   assert.equal(result.status, 'Pending');
+});
+
+test('cash-out is hard-locked below 300 pesos', () => {
+  assert.equal(MIN_CASHOUT_PESOS, 300);
+  assert.match(ChromeEncashmentController.prototype.tick.toString(), /available < MIN_CASHOUT_PESOS/);
+  assert.match(ChromeEncashmentController.prototype.attempt.toString(), /available < MIN_CASHOUT_PESOS/);
 });

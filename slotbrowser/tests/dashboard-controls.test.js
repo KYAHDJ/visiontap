@@ -50,4 +50,6 @@ test('dashboard highlights todays payout and pending receipt reminder', () => {
   assert.match(source, /function renderDailyPayout\(/);
   assert.match(source, /Not received yet\? Sign in online and check the payout history or GCash status\./);
   assert.match(source, /Payout receipt is confirmed\./);
+  assert.match(source, /Cash-out is locked until this account reaches at least ₱300\./);
+  assert.match(source, /Waiting For ₱300/);
 });
