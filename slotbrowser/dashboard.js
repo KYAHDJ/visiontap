@@ -661,12 +661,18 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 .section-theme button{display:block!important;width:64px!important;height:32px!important;font-size:8px!important}
 @media(max-width:760px){.stitle.section-aiko-title,.stitle.section-danica-title,.stitle.section-darlene-title{grid-template-columns:1fr!important;align-items:start!important;gap:10px!important;padding:10px 0 13px 14px!important}.section-theme{justify-self:stretch;width:100%!important;grid-template-columns:44px minmax(0,1fr) 72px!important}.section-theme input[type=color]{width:44px!important;min-width:44px!important;height:40px!important}.section-theme input:not([type=color]){width:100%!important;height:40px!important;font-size:11px!important}.section-theme button{width:72px!important;height:40px!important;font-size:9px!important}}
 @media(max-width:350px){.section-theme{grid-template-columns:42px minmax(0,1fr)!important}.section-theme button{grid-column:1/-1;width:100%!important}.section-theme input[type=color]{width:42px!important;min-width:42px!important}}
+/* Fixed per-account identity colors and prominent daily payout notice */
+.daily-payout{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;margin:0 0 18px;padding:16px 18px;border:1px solid rgba(0,214,143,.5);border-radius:16px;background:linear-gradient(135deg,rgba(0,214,143,.16),rgba(104,87,255,.12));box-shadow:0 14px 34px rgba(0,0,0,.25)}
+.daily-payout[hidden]{display:none}.daily-payout-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:13px;background:#00a96f;color:#fff;font-size:21px;font-weight:900}.daily-payout-copy small{display:block;color:#8af2ca;font-size:8px;font-weight:900;letter-spacing:.9px;text-transform:uppercase}.daily-payout-copy strong{display:block;margin-top:3px;color:#fff;font-size:18px}.daily-payout-copy span{display:block;margin-top:4px;color:#c7c3d8;font-size:10px;line-height:1.45}.daily-payout-amount{text-align:right}.daily-payout-amount b{display:block;color:#fff;font-size:23px}.daily-payout-amount span{display:inline-block;margin-top:4px;padding:4px 8px;border-radius:999px;background:#ff9f0a;color:#160b00;font-size:8px;font-weight:900;text-transform:uppercase}.daily-payout.received{border-color:rgba(0,214,143,.72)}.daily-payout.received .daily-payout-amount span{background:#00a96f;color:#fff}
+.card{border-color:color-mix(in srgb,var(--section-accent) 70%,#292844)!important;border-top:4px solid var(--section-accent)!important;background:linear-gradient(145deg,var(--section-soft),#111126 48%,#0e0e20)!important;box-shadow:0 14px 34px rgba(0,0,0,.3),0 0 25px var(--section-glow)!important}.card:hover{border-color:var(--section-accent)!important;box-shadow:0 18px 42px rgba(0,0,0,.4),0 0 34px var(--section-glow)!important}.card .pfill{background:linear-gradient(90deg,color-mix(in srgb,var(--section-accent) 60%,white),var(--section-accent))}.card .bhist-val,.card .sbox:first-child .sv{color:var(--section-accent)!important}.card-hd{position:relative;display:flex!important;align-items:center;justify-content:center!important;min-height:46px;padding:0 66px;margin-bottom:15px}.card-nm{width:100%;text-align:center;font-size:21px!important;font-weight:900!important;letter-spacing:.2px;color:#fff!important}.card-bg{position:absolute;right:0;top:50%;transform:translateY(-50%)}
+@media(max-width:620px){.daily-payout{grid-template-columns:auto minmax(0,1fr);padding:14px}.daily-payout-amount{grid-column:1/-1;text-align:left;padding-left:58px}.daily-payout-amount b{font-size:20px}.card-nm{font-size:18px!important}.card-hd{padding:0 58px 0 0;justify-content:flex-start!important}.card-nm{text-align:left}}
 </style>
 </head>
 <body>
 <header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span></div></header>
 <div class="wrap">
   <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div></section>
+  <section class="daily-payout" id="daily-payout" hidden aria-live="polite"><div class="daily-payout-icon">₱</div><div class="daily-payout-copy"><small>Today's cash-out</small><strong id="daily-payout-title">—</strong><span id="daily-payout-reminder">—</span></div><div class="daily-payout-amount"><b id="daily-payout-amount">—</b><span id="daily-payout-status">—</span></div></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
   <div class="stitle">Global Controls</div>
@@ -676,7 +682,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
     <a class="btn byel" href="/cmd?action=restart&slot=all" onclick="return confirmControl(event,'restart','all',&quot;Restart every account?&quot;,&quot;All account workers and windows will restart.&quot;,&quot;Restart all&quot;)">Restart All</a>
     <a class="btn bpur" href="/cmd?action=refresh&slot=all" onclick="return confirmControl(event,'refresh','all',&quot;Refresh every account?&quot;,&quot;All account pages will reload.&quot;,&quot;Refresh all&quot;)">Refresh All</a>
   </div>
-  <div class="stitle section-aiko-title"><span>AIKO — <span id="scnt-aiko">0</span> slots</span><span class="section-theme"><input id="aiko-wheel" type="color" value="#725CFF" oninput="previewSectionColor(&quot;aiko&quot;,this.value)"><input id="aiko-hex" value="#725CFF" maxlength="7" aria-label="AIKO color hex"><button type="button" onclick="confirmSectionColor(&quot;aiko&quot;)">Apply</button></span></div>
+  <div class="stitle section-aiko-title"><span>ACCOUNTS — <span id="scnt-aiko">0</span> slots</span></div>
   <div id="slots-aiko"></div>
   <div class="stitle">Server</div>
   <div class="ggrid">
@@ -742,35 +748,37 @@ function runDashboardControl(action,slot,label){
     .catch(function(error){controlFeedback(error.message||'Control failed',false);throw error});
 }
 function confirmControl(event,action,slot,title,message,label,tone){if(event)event.preventDefault();askConfirm(title,message,label,function(){runDashboardControl(action,slot,label).catch(function(){})},tone);return false}
-function confirmSectionColor(section){var label=section.charAt(0).toUpperCase()+section.slice(1);askConfirm('Apply '+label+' theme?','This color will update every slot card in the '+label+' section.','Apply color',function(){applySectionColor(section)})}
-function setSectionAccent(section,value){
-  if(section!=='aiko'||!/^#[0-9A-F]{6}$/i.test(value))return false;
-  var r=parseInt(value.slice(1,3),16),g=parseInt(value.slice(3,5),16),b=parseInt(value.slice(5,7),16),root=document.documentElement;
-  root.style.setProperty('--'+section+'-accent',value.toUpperCase());
-  root.style.setProperty('--'+section+'-soft','rgba('+r+','+g+','+b+',.14)');
-  root.style.setProperty('--'+section+'-glow','rgba('+r+','+g+','+b+',.22)');
-  return true;
+function slotTheme(account){
+  var themes={
+    kyaiko:['#8b5cf6','rgba(139,92,246,.15)','rgba(139,92,246,.25)'],
+    clarencebopis:['#0ea5e9','rgba(14,165,233,.15)','rgba(14,165,233,.25)'],
+    connormofu:['#14b8a6','rgba(20,184,166,.15)','rgba(20,184,166,.25)'],
+    adaihbi:['#22c55e','rgba(34,197,94,.15)','rgba(34,197,94,.25)'],
+    temi:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
+    axceling1001:['#ec4899','rgba(236,72,153,.15)','rgba(236,72,153,.25)']
+  };
+  return themes[String(account||'').toLowerCase()]||['#64748b','rgba(100,116,139,.15)','rgba(100,116,139,.25)'];
 }
-function previewSectionColor(section,value){
-  if(!setSectionAccent(section,value))return;
-  var hex=document.getElementById(section+'-hex');if(hex)hex.value=value.toUpperCase();
-  window._sectionThemeDirty=window._sectionThemeDirty||{};window._sectionThemeDirty[section]=true;
-}
-function applySectionColor(section){
-  var input=document.getElementById(section+'-hex'),value=String(input&&input.value||'').trim().toUpperCase();
-  if(value.charAt(0)!=='#')value='#'+value;
-  if(!setSectionAccent(section,value)){alert('Enter a valid 6-digit hex color, for example #725CFF.');return;}
-  input.value=value;var wheel=document.getElementById(section+'-wheel');if(wheel)wheel.value=value;
-  fetch('/theme-color?section='+encodeURIComponent(section)+'&value='+encodeURIComponent(value),{method:'POST'}).then(function(r){if(!r.ok)throw new Error('Save failed');return r.json()}).then(function(){window._sectionThemeDirty=window._sectionThemeDirty||{};window._sectionThemeDirty[section]=false}).catch(function(){alert('Could not save this section color. Please try again.')});
-}
-function syncSectionThemes(theme){
-  var defaults={aiko:'#725CFF'},dirty=window._sectionThemeDirty||{};
-  ['aiko'].forEach(function(section){var value=theme&&theme[section+'Color']||defaults[section];if(dirty[section]||!setSectionAccent(section,value))return;var wheel=document.getElementById(section+'-wheel'),hex=document.getElementById(section+'-hex');if(wheel)wheel.value=value;if(hex)hex.value=value;});
+function phDayParts(now){return new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'}).formatToParts(now).reduce(function(out,item){out[item.type]=item.value;return out},{})}
+function renderDailyPayout(slots,now){
+  var parts=phDayParts(now),today=parts.weekday,dateKey=parts.year+'-'+parts.month+'-'+parts.day;
+  var slot=(slots||[]).find(function(item){return item.encashmentSchedule&&item.encashmentSchedule.weekday===today});
+  var banner=document.getElementById('daily-payout');
+  if(!banner||!slot){if(banner)banner.hidden=true;return}
+  var state=slot.encashment||{},isToday=String(state.date||'')===dateKey;
+  var status=String(isToday?(state.payoutStatus||state.status||'Scheduled'):'Scheduled');
+  var received=/approved|paid|transferred|completed|success/i.test(status);
+  var amount=isToday?(state.netAmount||state.amount||slot.withdrawable):slot.withdrawable;
+  var numeric=Number(String(amount||0).replace(/[^0-9.-]/g,''));
+  document.getElementById('daily-payout-title').textContent=String(slot.accountName||slot.name)+' · '+slot.encashmentSchedule.startHour+':00–'+slot.encashmentSchedule.endHour+':00 AM PH';
+  document.getElementById('daily-payout-amount').textContent='₱'+(Number.isFinite(numeric)?numeric.toFixed(3).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1'):'0');
+  document.getElementById('daily-payout-status').textContent=received?'Received':status.replace(/_/g,' ').replace(/\b\w/g,function(ch){return ch.toUpperCase()});
+  document.getElementById('daily-payout-reminder').textContent=received?'Payout receipt is confirmed.':'Not received yet? Sign in online and check the payout history or GCash status.';
+  banner.classList.toggle('received',received);banner.hidden=false;
 }
 function render(d){
   var slots=(d.slots||[]).filter(function(s){return String(s.id)!=="17"&&String(s.accountName||'').toLowerCase()!=='darlenejoyce'});
   var pilots=d.chromePilots||[],pilot=d.chromePilot||{};
-  syncSectionThemes(d.theme||{});
   var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
   var runningPilots=pilots.filter(function(p){return p&&p.running}).length,activeCount=runningPilots||slots.filter(function(x){return !x.paused}).length,workerUp=runningPilots>0||!!pilot.running,healthy=d.scannerUp&&workerUp&&!d.loopPaused;
@@ -787,10 +795,11 @@ function render(d){
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.loopPaused?'var(--yellow)':'var(--green)')+'"></div>Loop '+(d.loopPaused?'Paused':'Running')+'</div>';
+  renderDailyPayout(slots,new Date());
   var hAiko='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
-    var sc='#38bdf8';
+    var sc='#38bdf8',theme=slotTheme(s.accountName||s.name);
     var cardClass='card-aiko';
     var slotPilot=pilots.find(function(p){return p&&String(p.slot)===String(s.id)})||{};
     var slotPaused=slotPilot.running?!!slotPilot.paused:!!s.paused;
@@ -811,8 +820,8 @@ function render(d){
       }
       eh+='</div>';
     }
-    var cardHtml='<div class="card '+cardClass+'">'+
-      '<div class="card-hd"><span class="card-nm">'+esc(s.name)+'</span><span class="card-bg state-'+(slotPaused?'paused':'running')+'">'+st+'</span></div>'+
+    var cardHtml='<div class="card '+cardClass+'" style="--section-accent:'+theme[0]+';--section-soft:'+theme[1]+';--section-glow:'+theme[2]+'">'+
+      '<div class="card-hd"><span class="card-nm">'+esc(s.accountName||s.name)+'</span><span class="card-bg state-'+(slotPaused?'paused':'running')+'">'+st+'</span></div>'+
       verifyHtml+
       conversionHtml+
       '<div class="sgrid">'+

@@ -35,3 +35,19 @@ test('dashboard includes all five ECNL slots and their controls', () => {
   assert.match(source, /'16':'connormofu'/);
   assert.doesNotMatch(source, /\["13","16","17"\]/);
 });
+
+test('dashboard uses fixed distinct slot colors without a color picker', () => {
+  for (const color of ['#8b5cf6', '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b', '#ec4899']) {
+    assert.match(source, new RegExp(color, 'i'));
+  }
+  assert.doesNotMatch(source, /id="aiko-wheel"/);
+  assert.doesNotMatch(source, /onclick="confirmSectionColor/);
+  assert.match(source, /\.card-nm\{width:100%;text-align:center;font-size:21px/);
+});
+
+test('dashboard highlights todays payout and pending receipt reminder', () => {
+  assert.match(source, /id="daily-payout"/);
+  assert.match(source, /function renderDailyPayout\(/);
+  assert.match(source, /Not received yet\? Sign in online and check the payout history or GCash status\./);
+  assert.match(source, /Payout receipt is confirmed\./);
+});
