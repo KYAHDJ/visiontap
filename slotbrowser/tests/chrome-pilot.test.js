@@ -67,3 +67,12 @@ test('all five ECNL accounts have isolated payout controllers', () => {
     assert.match(source, new RegExp(account));
   }
 });
+
+test('ECNL submission delays are staggered across the five accounts', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
+  assert.match(source, /adaihbi: 0/);
+  assert.match(source, /temi: 300/);
+  assert.match(source, /axceling1001: 600/);
+  assert.match(source, /clarencebopis: 900/);
+  assert.match(source, /connormofu: 1100/);
+});
