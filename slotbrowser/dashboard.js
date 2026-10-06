@@ -12,6 +12,7 @@ const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
+const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
 const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu'];
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
@@ -172,8 +173,10 @@ function getMergedSlots(status) {
     // --- Persistent per-slot metrics — personal file per slot (no leaking) ---
     let ms = getSlotMetrics(String(id));
     const nowMs = Date.now();
-    const currentWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
     const isPmath = String(id) === "14" || String(name).toLowerCase() === "kyaiko";
+    const pilotCoins = Number(pilotState.withdrawable != null ? pilotState.withdrawable : pilotState.pointsDone);
+    const scannerWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
+    const currentWithdrawable = isPmath && Number.isFinite(pilotCoins) ? pilotCoins : scannerWithdrawable;
     // ECNL tracks cycle points; Kyaiko tracks its live cumulative coin balance.
     const curPoints = isPmath ? currentWithdrawable : pointsDone;
     let dirty = false;
@@ -207,9 +210,9 @@ function getMergedSlots(status) {
         dirty = true;
       }
     }
-    const dashboardWithdrawable = isPmath
-      ? currentWithdrawable + (Number(ms.pmathConvertedCoins) || 0)
-      : currentWithdrawable;
+    // Kyaiko's live dashboard balance mirrors the coins currently shown by PMath.
+    // Converted/cashed-out coins are represented by payout records instead.
+    const dashboardWithdrawable = currentWithdrawable;
 
     // Migrate Kyaiko from the old points-based rate source without creating a false spike.
     if (isPmath && ms.rateUnit !== "coins") {
@@ -268,7 +271,7 @@ function getMergedSlots(status) {
     if (isPmath) {
       // pmath: coins instantly from web (withdrawable = coins), 100 coins =1 peso → 300₱ =30,000 coins
       // For instant center display, use currentWithdrawable as coins (same as pointsDone for pmath)
-      if (currentWithdrawable > 0) pointsDone = currentWithdrawable;
+      pointsDone = currentWithdrawable;
       const tp = 300;
       // Fixed goal: 100 coins = ₱1, so ₱300 = 30,000 coins.
       ms.targetPesos = tp;
@@ -662,8 +665,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 @media(max-width:760px){.stitle.section-aiko-title,.stitle.section-danica-title,.stitle.section-darlene-title{grid-template-columns:1fr!important;align-items:start!important;gap:10px!important;padding:10px 0 13px 14px!important}.section-theme{justify-self:stretch;width:100%!important;grid-template-columns:44px minmax(0,1fr) 72px!important}.section-theme input[type=color]{width:44px!important;min-width:44px!important;height:40px!important}.section-theme input:not([type=color]){width:100%!important;height:40px!important;font-size:11px!important}.section-theme button{width:72px!important;height:40px!important;font-size:9px!important}}
 @media(max-width:350px){.section-theme{grid-template-columns:42px minmax(0,1fr)!important}.section-theme button{grid-column:1/-1;width:100%!important}.section-theme input[type=color]{width:42px!important;min-width:42px!important}}
 /* Fixed per-account identity colors and prominent daily payout notice */
-.daily-payout{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;margin:0 0 18px;padding:16px 18px;border:1px solid rgba(0,214,143,.5);border-radius:16px;background:linear-gradient(135deg,rgba(0,214,143,.16),rgba(104,87,255,.12));box-shadow:0 14px 34px rgba(0,0,0,.25)}
-.daily-payout[hidden]{display:none}.daily-payout-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:13px;background:#00a96f;color:#fff;font-size:21px;font-weight:900}.daily-payout-copy small{display:block;color:#8af2ca;font-size:8px;font-weight:900;letter-spacing:.9px;text-transform:uppercase}.daily-payout-copy strong{display:block;margin-top:3px;color:#fff;font-size:18px}.daily-payout-copy span{display:block;margin-top:4px;color:#c7c3d8;font-size:10px;line-height:1.45}.daily-payout-amount{text-align:right}.daily-payout-amount b{display:block;color:#fff;font-size:23px}.daily-payout-amount span{display:inline-block;margin-top:4px;padding:4px 8px;border-radius:999px;background:#ff9f0a;color:#160b00;font-size:8px;font-weight:900;text-transform:uppercase}.daily-payout.received{border-color:rgba(0,214,143,.72)}.daily-payout.received .daily-payout-amount span{background:#00a96f;color:#fff}
+.daily-payouts{display:grid;gap:10px;margin:0 0 18px}.daily-payouts[hidden]{display:none}.daily-payout{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:16px 18px;border:1px solid rgba(0,214,143,.5);border-radius:16px;background:linear-gradient(135deg,rgba(0,214,143,.16),rgba(104,87,255,.12));box-shadow:0 14px 34px rgba(0,0,0,.25)}
+.daily-payout-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:13px;background:#00a96f;color:#fff;font-size:21px;font-weight:900}.daily-payout-copy small{display:block;color:#8af2ca;font-size:8px;font-weight:900;letter-spacing:.9px;text-transform:uppercase}.daily-payout-copy strong{display:block;margin-top:3px;color:#fff;font-size:18px}.daily-payout-copy span{display:block;margin-top:4px;color:#c7c3d8;font-size:10px;line-height:1.45}.daily-payout-amount{text-align:right}.daily-payout-amount b{display:block;color:#fff;font-size:23px}.daily-payout-amount span{display:inline-block;margin-top:4px;padding:4px 8px;border-radius:999px;background:#ff9f0a;color:#160b00;font-size:8px;font-weight:900;text-transform:uppercase}.daily-payout.received{border-color:rgba(0,214,143,.72)}.daily-payout.received .daily-payout-amount span{background:#00a96f;color:#fff}
 .card{border-color:color-mix(in srgb,var(--section-accent) 70%,#292844)!important;border-top:4px solid var(--section-accent)!important;background:linear-gradient(145deg,var(--section-soft),#111126 48%,#0e0e20)!important;box-shadow:0 14px 34px rgba(0,0,0,.3),0 0 25px var(--section-glow)!important}.card:hover{border-color:var(--section-accent)!important;box-shadow:0 18px 42px rgba(0,0,0,.4),0 0 34px var(--section-glow)!important}.card .pfill{background:linear-gradient(90deg,color-mix(in srgb,var(--section-accent) 60%,white),var(--section-accent))}.card .bhist-val,.card .sbox:first-child .sv{color:var(--section-accent)!important}.card-hd{position:relative;display:flex!important;align-items:center;justify-content:center!important;min-height:46px;padding:0 66px;margin-bottom:15px}.card-nm{width:100%;text-align:center;font-size:21px!important;font-weight:900!important;letter-spacing:.2px;color:#fff!important}.card-bg{position:absolute;right:0;top:50%;transform:translateY(-50%)}
 @media(max-width:620px){.daily-payout{grid-template-columns:auto minmax(0,1fr);padding:14px}.daily-payout-amount{grid-column:1/-1;text-align:left;padding-left:58px}.daily-payout-amount b{font-size:20px}.card-nm{font-size:18px!important}.card-hd{padding:0 58px 0 0;justify-content:flex-start!important}.card-nm{text-align:left}}
 </style>
@@ -672,7 +675,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 <header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span></div></header>
 <div class="wrap">
   <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div></section>
-  <section class="daily-payout" id="daily-payout" hidden aria-live="polite"><div class="daily-payout-icon">₱</div><div class="daily-payout-copy"><small>Today's cash-out</small><strong id="daily-payout-title">—</strong><span id="daily-payout-reminder">—</span></div><div class="daily-payout-amount"><b id="daily-payout-amount">—</b><span id="daily-payout-status">—</span></div></section>
+  <section class="daily-payouts" id="daily-payout" hidden aria-live="polite"></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
   <div class="stitle">Global Controls</div>
@@ -760,22 +763,27 @@ function slotTheme(account){
   return themes[String(account||'').toLowerCase()]||['#64748b','rgba(100,116,139,.15)','rgba(100,116,139,.25)'];
 }
 function phDayParts(now){return new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'}).formatToParts(now).reduce(function(out,item){out[item.type]=item.value;return out},{})}
-function renderDailyPayout(slots,now){
+function renderDailyPayout(slots,pmathPayouts,now){
   var parts=phDayParts(now),today=parts.weekday,dateKey=parts.year+'-'+parts.month+'-'+parts.day;
-  var slot=(slots||[]).find(function(item){return item.encashmentSchedule&&item.encashmentSchedule.weekday===today});
-  var banner=document.getElementById('daily-payout');
-  if(!banner||!slot){if(banner)banner.hidden=true;return}
-  var state=slot.encashment||{},isToday=String(state.date||'')===dateKey;
-  var status=String(isToday?(state.payoutStatus||state.status||'Scheduled'):'Scheduled');
-  var received=/approved|paid|transferred|completed|success/i.test(status);
-  var amount=isToday?(state.netAmount||state.amount||slot.withdrawable):slot.withdrawable;
-  var numeric=Number(String(amount||0).replace(/[^0-9.-]/g,''));
-  document.getElementById('daily-payout-title').textContent=String(slot.accountName||slot.name)+' · '+slot.encashmentSchedule.startHour+':00–'+slot.encashmentSchedule.endHour+':00 AM PH';
-  document.getElementById('daily-payout-amount').textContent='₱'+(Number.isFinite(numeric)?numeric.toFixed(3).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1'):'0');
-  var belowMinimum=!received&&Number.isFinite(numeric)&&numeric<300;
-  document.getElementById('daily-payout-status').textContent=received?'Received':belowMinimum?'Waiting For ₱300':status.replace(/_/g,' ').replace(/\b\w/g,function(ch){return ch.toUpperCase()});
-  document.getElementById('daily-payout-reminder').textContent=received?'Payout receipt is confirmed.':belowMinimum?'Cash-out is locked until this account reaches at least ₱300.':'Not received yet? Sign in online and check the payout history or GCash status.';
-  banner.classList.toggle('received',received);banner.hidden=false;
+  var wrap=document.getElementById('daily-payout');
+  if(!wrap)return;
+  var records=[];
+  (slots||[]).forEach(function(slot){var state=slot.encashment||{},hasSubmission=!!(state.amount||state.netAmount||state.reference||state.transactionId||/submitted|pending|processing|approved|paid|transferred|completed|success/i.test(String(state.status||'')+' '+String(state.payoutStatus||'')));if(String(state.date||'')===dateKey&&hasSubmission)records.push({account:slot.accountName||slot.name,state:state,schedule:slot.encashmentSchedule||null,platform:'ECNL'})});
+  (pmathPayouts||[]).forEach(function(state){if(String(state.date||'')===dateKey)records.push({account:state.account||'kyaiko',state:state,schedule:null,platform:'PMath'})});
+  if(!records.length){(slots||[]).filter(function(slot){return slot.encashmentSchedule&&slot.encashmentSchedule.weekday===today}).forEach(function(slot){records.push({account:slot.accountName||slot.name,state:{status:'Scheduled',amount:slot.withdrawable},schedule:slot.encashmentSchedule,platform:'ECNL'})})}
+  if(!records.length){wrap.hidden=true;wrap.innerHTML='';return}
+  wrap.innerHTML=records.map(function(record){
+    var state=record.state||{},status=String(state.payoutStatus||state.status||'Scheduled'),received=/approved|paid|transferred|completed|success/i.test(status);
+    var amount=state.netAmount||state.takeHome||state.amount||0,numeric=Number(String(amount||0).replace(/[^0-9.-]/g,'')),belowMinimum=!received&&Number.isFinite(numeric)&&numeric<300;
+    var schedule=record.schedule&&record.schedule.startHour!=null?' · '+record.schedule.startHour+':00–'+record.schedule.endHour+':00 AM PH':'';
+    var title=String(record.account)+' · '+record.platform+schedule,amountText='₱'+(Number.isFinite(numeric)?numeric.toFixed(2):'0.00');
+    var statusText=received?'Received':belowMinimum?'Waiting For ₱300':status.replace(/_/g,' ').replace(/\b\w/g,function(ch){return ch.toUpperCase()});
+    var detail=state.transactionId||state.reference||state.trxCode||'';
+    var reminder=received?'Payout receipt is confirmed.':belowMinimum?'Cash-out is locked until this account reaches at least ₱300.':'Not received yet? Sign in online and check the payout history or GCash status.';
+    if(detail)reminder+=' Reference: '+detail+'.';
+    return '<article class="daily-payout'+(received?' received':'')+'"><div class="daily-payout-icon">₱</div><div class="daily-payout-copy"><small>Today’s cash-out</small><strong>'+esc(title)+'</strong><span>'+esc(reminder)+'</span></div><div class="daily-payout-amount"><b>'+esc(amountText)+'</b><span>'+esc(statusText)+'</span></div></article>';
+  }).join('');
+  wrap.hidden=false;
 }
 function render(d){
   var slots=(d.slots||[]).filter(function(s){return String(s.id)!=="17"&&String(s.accountName||'').toLowerCase()!=='darlenejoyce'});
@@ -796,7 +804,7 @@ function render(d){
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.loopPaused?'var(--yellow)':'var(--green)')+'"></div>Loop '+(d.loopPaused?'Paused':'Running')+'</div>';
-  renderDailyPayout(slots,new Date());
+  renderDailyPayout(slots,d.pmathPayouts||[],new Date());
   var hAiko='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
@@ -999,7 +1007,9 @@ const server = http.createServer((req, res) => {
     const chromePilots = getChromePilots();
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
+    const pmathPayoutsRaw = readJson(PMATH_PAYOUT_HISTORY_FILE, []);
+    const pmathPayouts = Array.isArray(pmathPayoutsRaw) ? pmathPayoutsRaw : (Array.isArray(pmathPayoutsRaw.records) ? pmathPayoutsRaw.records : []);
+    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
 

@@ -48,8 +48,17 @@ test('dashboard uses fixed distinct slot colors without a color picker', () => {
 test('dashboard highlights todays payout and pending receipt reminder', () => {
   assert.match(source, /id="daily-payout"/);
   assert.match(source, /function renderDailyPayout\(/);
+  assert.match(source, /pmathPayouts/);
+  assert.match(source, /records\.map/);
+  assert.match(source, /Today’s cash-out/);
   assert.match(source, /Not received yet\? Sign in online and check the payout history or GCash status\./);
   assert.match(source, /Payout receipt is confirmed\./);
   assert.match(source, /Cash-out is locked until this account reaches at least ₱300\./);
   assert.match(source, /Waiting For ₱300/);
+});
+
+test('Kyaiko balance mirrors the live PMath coin count', () => {
+  assert.match(source, /const pilotCoins = Number\(pilotState\.withdrawable/);
+  assert.match(source, /const dashboardWithdrawable = currentWithdrawable/);
+  assert.match(source, /pointsDone = currentWithdrawable/);
 });
