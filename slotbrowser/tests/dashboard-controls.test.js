@@ -80,4 +80,15 @@ test('every slot shows a live next cash-out earnings estimate after ETA', () => 
   const etaIndex = source.indexOf('ETA: <span');
   const estimateIndex = source.indexOf('nextCashoutLine', etaIndex);
   assert.ok(etaIndex >= 0 && estimateIndex > etaIndex);
+  assert.match(source, /next-cashout-line/);
+});
+
+test('top dashboard shows live weekday and monthly earnings forecasts', () => {
+  assert.match(source, /id="forecast-week"/);
+  assert.match(source, /id="forecast-month"/);
+  assert.match(source, /function updateEarningsForecast\(slots\)/);
+  assert.match(source, /pesosPerHour\*24\*5/);
+  assert.match(source, /weekdayTotal\*\(52\/12\)/);
+  assert.match(source, /PMath approximate/);
+  assert.match(source, /updateEarningsForecast\(slots\)/);
 });
