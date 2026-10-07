@@ -846,9 +846,9 @@ function balanceHistoryTimerStart(history){
   if(!entries.length)return 0;
   for(var i=entries.length-1;i>0;i--){
     if(Number(entries[i].value)===Number(entries[i-1].value))continue;
-    return Number(entries[i-1].time||0);
+    return Number(entries[i].time||0);
   }
-  return Number(entries[0].time||0);
+  return Number(entries[entries.length-1].time||0);
 }
 
 function formatBalanceChangeTimer(startTime,now){
@@ -860,7 +860,7 @@ function formatBalanceChangeTimer(startTime,now){
   if(hours)parts.push(hours+'h');
   if(minutes)parts.push(minutes+'m');
   parts.push(secs+'s');
-  return 'Changed after '+parts.slice(0,3).join(' ');
+  return 'Changed '+parts.slice(0,3).join(' ')+' ago';
 }
 
 function refreshBalanceChangeTimers(){

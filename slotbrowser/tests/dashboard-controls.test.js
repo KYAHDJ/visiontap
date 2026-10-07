@@ -96,7 +96,9 @@ test('top dashboard shows live weekday and monthly earnings forecasts', () => {
 test('balance history heading shows when each balance last changed', () => {
   assert.match(source, /function balanceHistoryTimerStart\(history\)/);
   assert.match(source, /function formatBalanceChangeTimer\(startTime,now\)/);
-  assert.match(source, /Changed after '\+parts\.slice\(0,3\)\.join\(' '\)/);
+  assert.match(source, /return Number\(entries\[i\]\.time\|\|0\)/);
+  assert.doesNotMatch(source, /return Number\(entries\[i-1\]\.time\|\|0\)/);
+  assert.match(source, /Changed '\+parts\.slice\(0,3\)\.join\(' '\)\+' ago'/);
   assert.match(source, /class="bcol-hd-row"/);
   assert.match(source, /class="balance-age"/);
   assert.match(source, /data-balance-start/);
