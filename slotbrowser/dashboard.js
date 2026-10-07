@@ -98,6 +98,22 @@ function pointsDelta(cur, start, isPmath) {
   return (max - start) + cur;
 }
 
+function balanceHistoryPesosPerHour(history, isPmath) {
+  const entries = (Array.isArray(history) ? history : []).filter(entry => Number.isFinite(Number(entry?.value)) && Number.isFinite(Number(entry?.time)));
+  if (entries.length < 2) return 0;
+  let startIndex = 0;
+  for (let i = 1; i < entries.length; i++) {
+    if (Number(entries[i].value) < Number(entries[i - 1].value)) startIndex = i;
+  }
+  const first = entries[startIndex];
+  const last = entries[entries.length - 1];
+  const elapsedHours = (Number(last.time) - Number(first.time)) / 3600000;
+  const rawGain = Number(last.value) - Number(first.value);
+  if (!(elapsedHours > 0) || !(rawGain > 0)) return 0;
+  const pesoGain = isPmath ? rawGain / 100 : rawGain;
+  return Math.round((pesoGain / elapsedHours) * 10000) / 10000;
+}
+
 function run(cmd) {
   try { return execSync(cmd, { timeout: 10000 }).toString().trim(); }
   catch (e) { return "error"; }
@@ -288,16 +304,9 @@ function getMergedSlots(status) {
       const POINTS_PER_CYCLE = 250;
       const PESOS_PER_CYCLE = 3;
       const POINTS_PER_PESO = POINTS_PER_CYCLE / PESOS_PER_CYCLE;
-      let tp = ms.targetPesos || (ms.targetPoints ? Math.trunc(ms.targetPoints/4) : 300);
-      if (!tp || tp < 300) tp = 300;
-      if (ms.targetPoints && !ms.targetPesos) {
-        tp = Math.trunc(ms.targetPoints/4);
-        if (tp < 300) tp = 300;
-      }
-      while (currentWithdrawable >= tp) {
-        tp += 100;
-        dirty = true;
-      }
+      // Every ECNL account has the same hard cash-out minimum. Do not carry
+      // old rolling ₱400/₱500/₱600 targets into a new post-cashout balance.
+      const tp = 300;
       ms.targetPesos = tp;
       if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
       targetPesos = tp;
@@ -369,12 +378,16 @@ function getMergedSlots(status) {
 
     if (!isPmath) { displayPpm = Math.min(9, Math.max(0, Math.trunc(displayPpm))); displayPph = displayPpm * 60; }
 
-    // ETA — live adjusting based on displayPph, + days (hours/24)
+    // Use actual balance growth for money projections. The 60-second points
+    // rate remains visible, but it is too volatile for cash-out forecasting.
+    const estimatedPesosPerHour = balanceHistoryPesosPerHour(ms.balanceHistory, isPmath);
+
+    // ETA — live adjusting from the persisted peso/coin balance history.
     let etaHours = 0;
     let etaText = "";
     let etaDays = 0;
-    if (displayPph > 0 && pointsUntilTarget > 0) {
-      etaHours = pointsUntilTarget / displayPph;
+    if (estimatedPesosPerHour > 0 && pesosNeeded > 0) {
+      etaHours = pesosNeeded / estimatedPesosPerHour;
       etaDays = etaHours / 24;
       let baseText;
       if (etaHours < 1) {
@@ -418,6 +431,7 @@ function getMergedSlots(status) {
       // Live metrics (PH dashboard time, persisted) — 250 pts = 3 pesos
       pointsPerMinute: displayPpm,
       pointsPerHour: displayPph,
+      estimatedPesosPerHour: estimatedPesosPerHour,
       pointsUntilTarget: pointsUntilTarget,
       currentTargetPoints: currentTargetPoints,
       targetPesos: targetPesos,
@@ -752,22 +766,36 @@ function nextCashoutProjection(slot,now){
     days=(scheduledDay-today+7)%7;
     if(days===0&&minutes>=end*60)days=7;
   }
-  var minutesUntil=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
-  var hoursUntil=Math.max(0,minutesUntil/60);
   var currentPesos=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
-  var pesosPerHour=Number(slot.pointsPerHour||0)*(isPmath?1/100:3/250);
-  var amount=Math.max(0,currentPesos+pesosPerHour*hoursUntil);
+  var fallbackRate=Number(slot.pointsPerHour||0)*(isPmath?1/100:3/250);
+  var pesosPerHour=Number(slot.estimatedPesosPerHour||0)>0?Number(slot.estimatedPesosPerHour):fallbackRate;
+  function candidate(){
+    var candidateMinutes=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
+    var candidateHours=Math.max(0,candidateMinutes/60);
+    return {hours:candidateHours,amount:Math.max(0,currentPesos+pesosPerHour*candidateHours)};
+  }
+  var projected=candidate(),guard=0;
+  while(projected.amount<300&&pesosPerHour>0&&guard++<104){
+    if(isPmath){
+      do{days++;scheduledDay=(scheduledDay+1)%7}while(scheduledDay===0||scheduledDay===6);
+    }else days+=7;
+    projected=candidate();
+  }
+  var hoursUntil=projected.hours,amount=projected.amount;
   var dayNames=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  var dayLabel=days===0?'Today':days===1?'Tomorrow':dayNames[scheduledDay];
-  var whenText=dayLabel+' · '+start+':00–'+end+':00 AM PH';
+  var base=Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day)),cashoutDate=new Date(base+days*86400000);
+  var dateText=new Intl.DateTimeFormat('en-PH',{timeZone:'UTC',month:'short',day:'numeric'}).format(cashoutDate);
+  var dayLabel=days===0?'Today':days===1?'Tomorrow':dayNames[scheduledDay]+' · '+dateText;
+  var whenText=(amount>=300?dayLabel:'Not yet predictable')+' · '+start+':00–'+end+':00 AM PH';
   return {amount:amount,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
 }
 
 function updateEarningsForecast(slots){
   var pesosPerHour=(slots||[]).reduce(function(total,slot){
     var account=String(slot.accountName||slot.name||'').toLowerCase(),isPmath=String(slot.id)==='14'||account==='kyaiko';
-    var rate=Number(slot.pointsPerHour||0);
-    return total+(Number.isFinite(rate)?rate*(isPmath?1/100:3/250):0);
+    var historyRate=Number(slot.estimatedPesosPerHour||0),pointsRate=Number(slot.pointsPerHour||0)*(isPmath?1/100:3/250);
+    var rate=historyRate>0?historyRate:pointsRate;
+    return total+(Number.isFinite(rate)?rate:0);
   },0);
   var weekdayTotal=Math.max(0,pesosPerHour*24*5);
   var monthlyTotal=weekdayTotal*(52/12);

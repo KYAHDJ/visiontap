@@ -115,3 +115,14 @@ test('top mini dashboard summarizes every slot cash-out detail', () => {
   assert.match(source, /renderMiniSummary\(slots,new Date\(\)\)/);
   assert.match(source, /whenText:whenText/);
 });
+
+test('earnings estimates use balance history, the real minimum, and an eligible schedule', () => {
+  assert.match(source, /function balanceHistoryPesosPerHour\(history, isPmath\)/);
+  assert.match(source, /const estimatedPesosPerHour = balanceHistoryPesosPerHour\(ms\.balanceHistory, isPmath\)/);
+  assert.match(source, /etaHours = pesosNeeded \/ estimatedPesosPerHour/);
+  assert.match(source, /estimatedPesosPerHour: estimatedPesosPerHour/);
+  assert.match(source, /const tp = 300/);
+  assert.doesNotMatch(source, /while \(currentWithdrawable >= tp\)/);
+  assert.match(source, /while\(projected\.amount<300&&pesosPerHour>0/);
+  assert.match(source, /historyRate>0\?historyRate:pointsRate/);
+});
