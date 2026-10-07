@@ -48,6 +48,9 @@ test('PMath restores the Electron 60-second inactivity restart and host signal',
 test('PMath host failures refresh immediately with no waiting screen', () => {
   const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
   assert.match(pilot.detectPmathHostError.toString(), /520\|521\|522\|523\|524/);
+  assert.match(pilot.detectPmathHostError.toString(), /cloudflare/i);
+  assert.match(pilot.detectPmathHostError.toString(), /namedHostFailure/);
+  assert.doesNotMatch(pilot.detectPmathHostError.toString(), /\(520\|521\|522\|523\|524\)\|web server/);
   assert.match(pilot.guardPmathHost.toString(), /refreshing PMath immediately/);
   assert.match(pilot.guardPmathHost.toString(), /page\.reload/);
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');

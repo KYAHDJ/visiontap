@@ -240,9 +240,13 @@ class ChromePilot {
     return this.page.evaluate(() => {
       const title = document.title || '';
       const text = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
-      const match = `${title} ${text}`.match(/(?:error\s*code\s*)?(520|521|522|523|524)|web server is returning an unknown error|host error/i);
-      if (!match) return null;
-      return { code: (match[1] || '5xx').toUpperCase(), title, text: text.slice(0, 500) };
+      const pageText = `${title} ${text}`;
+      const namedHostFailure = /web server is returning an unknown error|web server is down|connection timed out|origin is unreachable|a timeout occurred/i.test(pageText);
+      const cloudflareFailure = /cloudflare/i.test(pageText)
+        && /(?:error\s*(?:code\s*)?)\b(520|521|522|523|524)\b|\b(520|521|522|523|524)\s+error\b/i.test(pageText);
+      if (!namedHostFailure && !cloudflareFailure) return null;
+      const codeMatch = pageText.match(/\b(520|521|522|523|524)\b/);
+      return { code: codeMatch?.[1] || '5xx', title, text: text.slice(0, 500) };
     }).catch(() => null);
   }
 
