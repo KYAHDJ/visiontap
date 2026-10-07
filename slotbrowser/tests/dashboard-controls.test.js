@@ -94,15 +94,11 @@ test('top dashboard shows live weekday and monthly earnings forecasts', () => {
 });
 
 test('balance history heading shows when each balance last changed', () => {
-  assert.match(source, /function relativeBalanceAge\(timestamp,now\)/);
-  assert.match(source, /Changed just now/);
-  assert.match(source, /Changed '\+seconds\+'s ago/);
-  assert.match(source, /Changed '\+minutes\+'m ago/);
-  assert.match(source, /Changed '\+hours\+'h ago/);
+  assert.match(source, /function balanceHistoryChangeInterval\(history\)/);
+  assert.match(source, /Changed after '\+parts\.slice\(0,2\)\.join\(' '\)/);
   assert.match(source, /class="bcol-hd-row"/);
   assert.match(source, /class="balance-age"/);
-  assert.match(source, /function latestBalanceHistoryChange\(history\)/);
-  assert.match(source, /latestBalanceHistoryChange\(balHist\)/);
-  assert.doesNotMatch(source, /latestBalanceChange = Number\(s\.lastBalanceUpdate/);
-  assert.match(source, /Dashboard restarts,[\s\S]*must never reset this relative-change clock/);
+  assert.match(source, /balanceHistoryChangeInterval\(balHist\)/);
+  assert.doesNotMatch(source, /relativeBalanceAge|Changed just now|ago'/);
+  assert.match(source, /Current time, polling, and restarts do not affect it/);
 });

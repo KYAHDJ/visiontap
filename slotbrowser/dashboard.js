@@ -769,27 +769,20 @@ function updateEarningsForecast(slots){
   if(month)month.innerHTML=format(monthlyTotal);
 }
 
-function relativeBalanceAge(timestamp,now){
-  var changedAt=Number(timestamp||0);
-  if(!changedAt)return 'No change yet';
-  var seconds=Math.max(0,Math.floor((Number(now||Date.now())-changedAt)/1000));
-  if(seconds<5)return 'Changed just now';
-  if(seconds<60)return 'Changed '+seconds+'s ago';
-  var minutes=Math.floor(seconds/60);
-  if(minutes<60)return 'Changed '+minutes+'m ago';
-  var hours=Math.floor(minutes/60);
-  if(hours<24)return 'Changed '+hours+'h ago';
-  var days=Math.floor(hours/24);
-  return 'Changed '+days+'d ago';
-}
-
-function latestBalanceHistoryChange(history){
+function balanceHistoryChangeInterval(history){
   var entries=Array.isArray(history)?history:[];
-  if(!entries.length)return 0;
+  if(entries.length<2)return 'First record';
   for(var i=entries.length-1;i>0;i--){
-    if(Number(entries[i].value)!==Number(entries[i-1].value))return Number(entries[i].time||0);
+    if(Number(entries[i].value)===Number(entries[i-1].value))continue;
+    var seconds=Math.max(0,Math.round((Number(entries[i].time||0)-Number(entries[i-1].time||0))/1000));
+    var days=Math.floor(seconds/86400),hours=Math.floor((seconds%86400)/3600),minutes=Math.floor((seconds%3600)/60),secs=seconds%60,parts=[];
+    if(days)parts.push(days+'d');
+    if(hours)parts.push(hours+'h');
+    if(minutes)parts.push(minutes+'m');
+    if(secs||!parts.length)parts.push(secs+'s');
+    return 'Changed after '+parts.slice(0,2).join(' ');
   }
-  return Number(entries[0].time||0);
+  return 'No distinct change';
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -929,10 +922,9 @@ function render(d){
         var cashoutNote = cashoutProjection && !cashoutProjection.eligible ? ' <span style="color:var(--muted)">(below &#8369;300 minimum)</span>' : '';
         var nextCashoutLine = '<div class="bcalc-line next-cashout-line">Next cash-out estimate: <span class="bcalc-em" style="color:#10b981">&#8369;'+Number(cashoutAmount).toFixed(2)+'</span>'+cashoutNote+'</div>';
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
-        // Use the persisted Balance History event itself. Dashboard restarts,
-        // refreshes, and polling must never reset this relative-change clock.
-        var latestBalanceChange = latestBalanceHistoryChange(balHist);
-        var balanceAgeText = relativeBalanceAge(latestBalanceChange,Date.now());
+        // Measure the actual interval between the two latest distinct Balance
+        // History records. Current time, polling, and restarts do not affect it.
+        var balanceAgeText = balanceHistoryChangeInterval(balHist);
         function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
         var histHtml = '';
         if (balHist.length===0) histHtml = '<div style="font-size:9px;color:var(--muted)">-</div>';
