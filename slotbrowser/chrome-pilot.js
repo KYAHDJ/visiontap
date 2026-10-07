@@ -110,6 +110,8 @@ class ChromePilot {
     this.verificationClearStreak = 0;
     this.lastHoldScreenshotAt = 0;
     this.resumeArmed = false;
+    this.serverRecoveryActive = false;
+    this.nextServerErrorCheckAt = 0;
     this.encashment = ENCASHMENT_ACCOUNTS.has(ACCOUNT) ? new ChromeEncashmentController(this, PILOT_STATE_DIR, ACCOUNT) : null;
   }
 
@@ -263,6 +265,47 @@ class ChromePilot {
     this.recoveryReloads = 0;
     await this.installPageRuntime();
     await this.setStatus('Refreshing PMath after a host error…');
+    return true;
+  }
+
+  async detectServerRuntimeError() {
+    if (!this.page || this.page.isClosed()) return null;
+    return this.page.evaluate(() => {
+      const title = document.title || '';
+      const text = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+      const pageText = `${title} ${text}`;
+      const match = pageText.match(/\bserver\s+(?:is\s+)?down\b|\bruntime error\b|\bapplication error\b|server error in ['"][^'"]+['"] application/i);
+      return match ? { reason:match[0], title, text:text.slice(0, 500) } : null;
+    }).catch(() => null);
+  }
+
+  async guardServerRuntimeError() {
+    const now = Date.now();
+    if (this.serverRecoveryActive && now < this.nextServerErrorCheckAt) {
+      const seconds = Math.max(1, Math.ceil((this.nextServerErrorCheckAt - now) / 1000));
+      await this.setStatus(`Server recovery check in ${seconds}s…`);
+      return true;
+    }
+    const problem = await this.detectServerRuntimeError();
+    if (!problem) {
+      if (this.serverRecoveryActive) {
+        this.log('SERVER-RUNTIME-GUARD: server is back; continuing the normal work loop.');
+        this.serverRecoveryActive = false;
+        this.nextServerErrorCheckAt = 0;
+        this.lastActivityAt = now;
+        this.lastProgressAt = now;
+        await this.installPageRuntime();
+        await this.setStatus('Server is back. Resuming work…');
+      }
+      return false;
+    }
+    this.serverRecoveryActive = true;
+    this.nextServerErrorCheckAt = now + 10000;
+    this.pending = null;
+    this.epoch++;
+    this.log(`SERVER-RUNTIME-GUARD: ${problem.reason} detected; refreshing and checking again in 10 seconds.`);
+    await this.page.reload({ waitUntil:'domcontentloaded', timeout:30000 }).catch(() => {});
+    await this.setStatus('Server error detected. Refreshed; checking again in 10 seconds…');
     return true;
   }
 
@@ -574,6 +617,7 @@ class ChromePilot {
     if (this.encashment?.busy) return;
     if (Date.now() < this.nextIterationAt) return;
     if (this.paused) { await this.updateOverlay(); return; }
+    if (await this.guardServerRuntimeError()) return;
     if (await this.guardPmathHost()) return;
     const verification = await this.detectVerification();
     if (verification) {

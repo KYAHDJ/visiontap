@@ -57,6 +57,17 @@ test('PMath host failures refresh immediately with no waiting screen', () => {
   assert.doesNotMatch(source, /PMath is temporarily unavailable|PMATH_OUTAGE_RETRY|nextPmathHostRetryAt/);
 });
 
+test('all slots recover server-down and runtime-error pages every 10 seconds', () => {
+  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
+  assert.match(pilot.detectServerRuntimeError.toString(), /server\\s\+/);
+  assert.match(pilot.detectServerRuntimeError.toString(), /runtime error/);
+  assert.match(pilot.detectServerRuntimeError.toString(), /application error/);
+  assert.match(pilot.guardServerRuntimeError.toString(), /now \+ 10000/);
+  assert.match(pilot.guardServerRuntimeError.toString(), /page\.reload/);
+  assert.match(pilot.guardServerRuntimeError.toString(), /server is back; continuing the normal work loop/);
+  assert.match(pilot.iteration.toString(), /guardServerRuntimeError/);
+});
+
 test('pilot loads the shared ad blocker and never disables cleanup', () => {
   const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
   assert.match(pilot.adBlockSource, /VisionTap - Minimal Ad Blocker/);
