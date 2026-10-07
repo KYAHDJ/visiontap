@@ -558,6 +558,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;backgrou
 .sgrid{gap:0;margin-bottom:14px;padding:13px 0;border-top:1px solid #efedf7;border-bottom:1px solid #efedf7}.sbox{background:transparent;border-radius:0;padding:4px 12px;border-left:1px solid #eceaf5}.sbox:first-child{border-left:0}.sv{font-size:19px;color:var(--midnight)!important;letter-spacing:-.035em}.sbox:first-child .sv{color:var(--accent)!important}.sl{font-size:9px;color:#9290a8;margin-top:4px}
 .pbar{background:#e9e6fc;height:7px;margin-bottom:14px}.pfill{background:linear-gradient(90deg,#5547ff,var(--accent))}
 .b2col{gap:9px;margin:8px 0 13px}.bcol{background:#f8f7ff;border:1px solid #eceafb;border-radius:12px;padding:12px;min-height:112px}.bcol:hover{border-color:#d8d4f7}.bcol-hd{font-size:10px;color:var(--midnight);margin-bottom:8px}.bhist-row{border-bottom-color:#eceaf5;padding:3px 0}.bhist-val{color:var(--accent)}.bhist-time,.bcalc-line{color:#85839d}.bcalc-em{color:var(--midnight)}
+.bcol-hd-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}.bcol-hd-row .bcol-hd{margin-bottom:0}.balance-age{color:#85839d;font-size:8px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
 .next-cashout-line{font-size:12px!important;line-height:1.45!important;margin-top:7px!important;padding-top:6px;border-top:1px solid var(--border);font-weight:700}.next-cashout-line .bcalc-em{font-size:14px}
 .crow{gap:7px;margin:4px 0 9px}.crow input{padding:8px 10px;background:#fafaff;border:1px solid #e4e2f0;color:var(--midnight);border-radius:8px;font-size:11px}.crow input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(45,28,245,.1)}.bsm{border-radius:8px;padding:7px 13px}.bsv{background:#eeeaff;color:var(--accent)}
 .ehd{color:#85839d}.erow{border-bottom-color:#f0eff7}.eamt{color:var(--green)}
@@ -768,6 +769,20 @@ function updateEarningsForecast(slots){
   if(month)month.innerHTML=format(monthlyTotal);
 }
 
+function relativeBalanceAge(timestamp,now){
+  var changedAt=Number(timestamp||0);
+  if(!changedAt)return 'No change yet';
+  var seconds=Math.max(0,Math.floor((Number(now||Date.now())-changedAt)/1000));
+  if(seconds<5)return 'Changed just now';
+  if(seconds<60)return 'Changed '+seconds+'s ago';
+  var minutes=Math.floor(seconds/60);
+  if(minutes<60)return 'Changed '+minutes+'m ago';
+  var hours=Math.floor(minutes/60);
+  if(hours<24)return 'Changed '+hours+'h ago';
+  var days=Math.floor(hours/24);
+  return 'Changed '+days+'d ago';
+}
+
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function pilotControl(account,action){fetch('/chrome-pilot-control?account='+encodeURIComponent(account)+'&action='+encodeURIComponent(action),{method:'POST'}).catch(function(){})}
 
@@ -905,6 +920,8 @@ function render(d){
         var cashoutNote = cashoutProjection && !cashoutProjection.eligible ? ' <span style="color:var(--muted)">(below &#8369;300 minimum)</span>' : '';
         var nextCashoutLine = '<div class="bcalc-line next-cashout-line">Next cash-out estimate: <span class="bcalc-em" style="color:#10b981">&#8369;'+Number(cashoutAmount).toFixed(2)+'</span>'+cashoutNote+'</div>';
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
+        var latestBalanceChange = Number(s.lastBalanceUpdate||0) || (balHist.length ? Number(balHist[balHist.length-1].time||0) : 0);
+        var balanceAgeText = relativeBalanceAge(latestBalanceChange,Date.now());
         function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
         var histHtml = '';
         if (balHist.length===0) histHtml = '<div style="font-size:9px;color:var(--muted)">-</div>';
@@ -918,7 +935,7 @@ function render(d){
           }
         }
         var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/(isPmathCard?100:250)).toFixed(1) : '0';
-        var leftCol = '<div class="bcol"><div class="bcol-hd">Balance History (10)</div><div class="bhist-list">'+histHtml+'</div></div>';
+        var leftCol = '<div class="bcol"><div class="bcol-hd-row"><div class="bcol-hd">Balance History (10)</div><span class="balance-age">'+esc(balanceAgeText)+'</span></div><div class="bhist-list">'+histHtml+'</div></div>';
         var avgSecondsPerPoint = ptsPerMin>0 ? (60/ptsPerMin) : 0;
         var rightCol;
         if (isPmathCard) {

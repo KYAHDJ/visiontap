@@ -92,3 +92,14 @@ test('top dashboard shows live weekday and monthly earnings forecasts', () => {
   assert.match(source, /PMath approximate/);
   assert.match(source, /updateEarningsForecast\(slots\)/);
 });
+
+test('balance history heading shows when each balance last changed', () => {
+  assert.match(source, /function relativeBalanceAge\(timestamp,now\)/);
+  assert.match(source, /Changed just now/);
+  assert.match(source, /Changed '\+seconds\+'s ago/);
+  assert.match(source, /Changed '\+minutes\+'m ago/);
+  assert.match(source, /Changed '\+hours\+'h ago/);
+  assert.match(source, /class="bcol-hd-row"/);
+  assert.match(source, /class="balance-age"/);
+  assert.match(source, /s\.lastBalanceUpdate/);
+});
