@@ -114,6 +114,9 @@ test('top mini dashboard summarizes every slot cash-out detail', () => {
   assert.match(source, /nextCashoutProjection\(slot,now\)/);
   assert.match(source, /renderMiniSummary\(slots,new Date\(\)\)/);
   assert.match(source, /whenText:whenText/);
+  assert.match(source, /Points'\)\+' \/ minute/);
+  assert.match(source, /liveRate\.toFixed\(2\)/);
+  assert.match(source, /mini-slot-stat rate/);
 });
 
 test('earnings estimates use balance history, the real minimum, and an eligible schedule', () => {
