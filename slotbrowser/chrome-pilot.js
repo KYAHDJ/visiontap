@@ -664,6 +664,11 @@ class ChromePilot {
     }
     await this.syncDashboardMeta();
     const ready = await this.callApi('checkInputReady');
+    if (ready?.checking && TASK_MODE !== 'math') {
+      this.nextIterationAt = Date.now() + 750;
+      await this.setStatus('Waiting for ECNL to present the next task…');
+      return;
+    }
     if (ready?.checking || ready?.isBlank2026) { await this.safeReload(ready.checking ? 'checking state' : 'blank 2026 page'); return; }
     const grabbed = await this.callApi('grabImage', true);
     const image = grabbed?.imageData;
@@ -672,8 +677,8 @@ class ChromePilot {
       if (TASK_MODE === 'math') {
         if (Date.now() - this.lastProgressAt >= 60000) await this.restartStalledWorker('no task image');
         else await this.setStatus('PMath has no task image yet. Retrying…');
-      } else if (this.consecutiveNoImage >= 3) await this.safeReload('no-image-x3');
-      else await this.setStatus(`Waiting for a task image (${this.consecutiveNoImage}/3)…`);
+      } else if (this.consecutiveNoImage >= 8) await this.safeReload('no-image-x8');
+      else await this.setStatus(`Waiting for ECNL task transition (${this.consecutiveNoImage}/8)…`);
       return;
     }
     this.consecutiveNoImage = 0;
@@ -745,8 +750,8 @@ class ChromePilot {
           this.errorCount++;
           this.lastErrorHash = imageHash;
         }
-        if (this.consecutiveDetectFails >= 3) await this.safeReload('detect-fail-x3');
-        else await this.setStatus(`Scanner could not verify this task (${this.consecutiveDetectFails}/3): ${result.error || 'unknown color'}`); return;
+        if (this.consecutiveDetectFails >= 5) await this.safeReload('detect-fail-x5');
+        else await this.setStatus(`Scanner could not verify this task (${this.consecutiveDetectFails}/5): ${result.error || 'unknown color'}`); return;
       }
       this.consecutiveDetectFails = 0;
       this.lastErrorHash = null;
@@ -776,7 +781,9 @@ class ChromePilot {
     await this.report({ correct: true, color: this.pending.answer, taskNum: this.taskCount });
     this.log(`Submitted task ${this.taskCount}: ${this.pending.answer}`);
     this.pending = null;
-    this.nextIterationAt = Date.now() + 2000;
+    // ECNL can present the next task quickly. A short settle period keeps the
+    // page reliable without wasting two seconds after every correct answer.
+    this.nextIterationAt = Date.now() + 500;
     await this.setStatus(`Task ${this.taskCount} submitted. Waiting for the next task…`);
   }
 

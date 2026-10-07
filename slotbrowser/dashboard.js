@@ -114,6 +114,27 @@ function balanceHistoryPesosPerHour(history, isPmath) {
   return Math.round((pesoGain / elapsedHours) * 10000) / 10000;
 }
 
+function rollingPointsPerMinute(history, nowMs, windowMs = 300000) {
+  const rows = (Array.isArray(history) ? history : [])
+    .map(row => ({ points:Number(row?.pointsDone), time:Number(row?.ts) * 1000 }))
+    .filter(row => Number.isFinite(row.points) && Number.isFinite(row.time) && row.time <= nowMs)
+    .sort((a, b) => a.time - b.time);
+  if (rows.length < 2) return 0;
+  const cutoff = nowMs - windowMs;
+  let startIndex = rows.findIndex(row => row.time >= cutoff);
+  if (startIndex < 0) startIndex = rows.length - 1;
+  if (startIndex > 0) startIndex--;
+  const sample = rows.slice(startIndex);
+  if (sample.length < 2) return 0;
+  let gained = 0;
+  for (let i = 1; i < sample.length; i++) {
+    if (sample[i].points !== sample[i - 1].points) gained += pointsDelta(sample[i].points, sample[i - 1].points, false);
+  }
+  const elapsedMinutes = (sample[sample.length - 1].time - sample[0].time) / 60000;
+  if (!(elapsedMinutes > 0.5) || !(gained > 0)) return 0;
+  return Math.round((gained / elapsedMinutes) * 100) / 100;
+}
+
 function run(cmd) {
   try { return execSync(cmd, { timeout: 10000 }).toString().trim(); }
   catch (e) { return "error"; }
@@ -376,7 +397,11 @@ function getMergedSlots(status) {
       }
     }
 
-    if (!isPmath) { displayPpm = Math.min(9, Math.max(0, Math.trunc(displayPpm))); displayPph = displayPpm * 60; }
+    if (!isPmath) {
+      const rollingPpm = rollingPointsPerMinute(sc.pointsHistory || slot.pointsHistory || [], nowMs);
+      displayPpm = rollingPpm > 0 ? rollingPpm : Math.max(0, Math.round(displayPpm * 100) / 100);
+      displayPph = Math.round(displayPpm * 60 * 100) / 100;
+    }
 
     // Use actual balance growth for money projections. The 60-second points
     // rate remains visible, but it is too volatile for cash-out forecasting.

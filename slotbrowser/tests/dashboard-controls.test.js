@@ -126,3 +126,10 @@ test('earnings estimates use balance history, the real minimum, and an eligible 
   assert.match(source, /while\(projected\.amount<300&&pesosPerHour>0/);
   assert.match(source, /historyRate>0\?historyRate:pointsRate/);
 });
+
+test('ECNL speed uses a stable five-minute rolling average with decimals', () => {
+  assert.match(source, /function rollingPointsPerMinute\(history, nowMs, windowMs = 300000\)/);
+  assert.match(source, /rollingPointsPerMinute\(sc\.pointsHistory \|\| slot\.pointsHistory \|\| \[\], nowMs\)/);
+  assert.match(source, /Math\.round\(\(gained \/ elapsedMinutes\) \* 100\) \/ 100/);
+  assert.doesNotMatch(source, /displayPpm = Math\.min\(9, Math\.max\(0, Math\.trunc\(displayPpm\)\)\)/);
+});

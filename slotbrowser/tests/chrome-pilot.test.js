@@ -88,3 +88,14 @@ test('ECNL submission delays are staggered across the five accounts', () => {
   assert.match(source, /clarencebopis: 900/);
   assert.match(source, /connormofu: 1100/);
 });
+
+test('ECNL advances after a short 500ms post-submit settle without changing PMath', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
+  assert.match(source, /this\.nextIterationAt = Date\.now\(\) \+ 500/);
+  assert.match(source, /SUBMIT_DELAYS = \{ adaihbi: 0, temi: 300, axceling1001: 600, clarencebopis: 900, connormofu: 1100, kyaiko: 0 \}/);
+  assert.match(source, /ready\?\.checking && TASK_MODE !== 'math'/);
+  assert.match(source, /Waiting for ECNL to present the next task/);
+  assert.match(source, /consecutiveDetectFails >= 5/);
+  assert.match(source, /consecutiveNoImage >= 8/);
+  assert.match(source, /Waiting for ECNL task transition/);
+});
