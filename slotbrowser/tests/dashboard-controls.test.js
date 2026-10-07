@@ -94,13 +94,14 @@ test('top dashboard shows live weekday and monthly earnings forecasts', () => {
 });
 
 test('balance history heading shows when each balance last changed', () => {
-  assert.match(source, /function balanceHistoryChangeInterval\(history\)/);
-  assert.match(source, /Changed after '\+parts\.slice\(0,2\)\.join\(' '\)/);
+  assert.match(source, /function balanceHistoryTimerStart\(history\)/);
+  assert.match(source, /function formatBalanceChangeTimer\(startTime,now\)/);
+  assert.match(source, /Changed after '\+parts\.slice\(0,3\)\.join\(' '\)/);
   assert.match(source, /class="bcol-hd-row"/);
   assert.match(source, /class="balance-age"/);
-  assert.match(source, /balanceHistoryChangeInterval\(balHist\)/);
-  assert.doesNotMatch(source, /relativeBalanceAge|Changed just now|ago'/);
-  assert.match(source, /Current time, polling, and restarts do not affect it/);
+  assert.match(source, /data-balance-start/);
+  assert.match(source, /function refreshBalanceChangeTimers\(\)/);
+  assert.match(source, /refreshBalanceChangeTimers\(\)/);
 });
 
 test('top mini dashboard summarizes every slot cash-out detail', () => {
@@ -109,7 +110,7 @@ test('top mini dashboard summarizes every slot cash-out detail', () => {
   assert.match(source, /Current balance/);
   assert.match(source, /Next cash-out/);
   assert.match(source, /<b>When:<\/b>/);
-  assert.match(source, /balanceHistoryChangeInterval\(history\)/);
+  assert.match(source, /balanceHistoryTimerStart\(history\)/);
   assert.match(source, /nextCashoutProjection\(slot,now\)/);
   assert.match(source, /renderMiniSummary\(slots,new Date\(\)\)/);
   assert.match(source, /whenText:whenText/);

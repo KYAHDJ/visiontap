@@ -777,20 +777,33 @@ function updateEarningsForecast(slots){
   if(month)month.innerHTML=format(monthlyTotal);
 }
 
-function balanceHistoryChangeInterval(history){
+function balanceHistoryTimerStart(history){
   var entries=Array.isArray(history)?history:[];
-  if(entries.length<2)return 'First record';
+  if(!entries.length)return 0;
   for(var i=entries.length-1;i>0;i--){
     if(Number(entries[i].value)===Number(entries[i-1].value))continue;
-    var seconds=Math.max(0,Math.round((Number(entries[i].time||0)-Number(entries[i-1].time||0))/1000));
-    var days=Math.floor(seconds/86400),hours=Math.floor((seconds%86400)/3600),minutes=Math.floor((seconds%3600)/60),secs=seconds%60,parts=[];
-    if(days)parts.push(days+'d');
-    if(hours)parts.push(hours+'h');
-    if(minutes)parts.push(minutes+'m');
-    if(secs||!parts.length)parts.push(secs+'s');
-    return 'Changed after '+parts.slice(0,2).join(' ');
+    return Number(entries[i-1].time||0);
   }
-  return 'No distinct change';
+  return Number(entries[0].time||0);
+}
+
+function formatBalanceChangeTimer(startTime,now){
+  var started=Number(startTime||0);
+  if(!started)return 'No history yet';
+  var seconds=Math.max(0,Math.floor((Number(now||Date.now())-started)/1000));
+  var days=Math.floor(seconds/86400),hours=Math.floor((seconds%86400)/3600),minutes=Math.floor((seconds%3600)/60),secs=seconds%60,parts=[];
+  if(days)parts.push(days+'d');
+  if(hours)parts.push(hours+'h');
+  if(minutes)parts.push(minutes+'m');
+  parts.push(secs+'s');
+  return 'Changed after '+parts.slice(0,3).join(' ');
+}
+
+function refreshBalanceChangeTimers(){
+  var now=Date.now();
+  document.querySelectorAll('[data-balance-start]').forEach(function(element){
+    element.textContent=formatBalanceChangeTimer(element.getAttribute('data-balance-start'),now);
+  });
 }
 
 function renderMiniSummary(slots,now){
@@ -800,10 +813,10 @@ function renderMiniSummary(slots,now){
     var account=String(slot.accountName||slot.name||'Unknown'),key=account.toLowerCase(),isPmath=String(slot.id)==='14'||key==='kyaiko';
     var current=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
     var projection=nextCashoutProjection(slot,now),estimate=projection?projection.amount:current;
-    var history=Array.isArray(slot.balanceHistory)?slot.balanceHistory:[],change=balanceHistoryChangeInterval(history);
+    var history=Array.isArray(slot.balanceHistory)?slot.balanceHistory:[],changeStart=balanceHistoryTimerStart(history),change=formatBalanceChangeTimer(changeStart,now);
     var theme=slotTheme(account),eligibility=estimate>=300?'':' · below ₱300';
     return '<article class="mini-slot" style="--mini-accent:'+theme[0]+';--mini-soft:'+theme[1]+'">'
-      +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change">'+esc(change)+'</span></div>'
+      +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change" data-balance-start="'+changeStart+'">'+esc(change)+'</span></div>'
       +'<div class="mini-slot-values"><div class="mini-slot-stat"><small>Current balance</small><strong>&#8369;'+current.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-stat estimate"><small>Next cash-out</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+'</div></div></article>';
@@ -950,7 +963,8 @@ function render(d){
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
         // Measure the actual interval between the two latest distinct Balance
         // History records. Current time, polling, and restarts do not affect it.
-        var balanceAgeText = balanceHistoryChangeInterval(balHist);
+        var balanceTimerStart = balanceHistoryTimerStart(balHist);
+        var balanceAgeText = formatBalanceChangeTimer(balanceTimerStart,Date.now());
         function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
         var histHtml = '';
         if (balHist.length===0) histHtml = '<div style="font-size:9px;color:var(--muted)">-</div>';
@@ -964,7 +978,7 @@ function render(d){
           }
         }
         var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/(isPmathCard?100:250)).toFixed(1) : '0';
-        var leftCol = '<div class="bcol"><div class="bcol-hd-row"><div class="bcol-hd">Balance History (10)</div><span class="balance-age">'+esc(balanceAgeText)+'</span></div><div class="bhist-list">'+histHtml+'</div></div>';
+        var leftCol = '<div class="bcol"><div class="bcol-hd-row"><div class="bcol-hd">Balance History (10)</div><span class="balance-age" data-balance-start="'+balanceTimerStart+'">'+esc(balanceAgeText)+'</span></div><div class="bhist-list">'+histHtml+'</div></div>';
         var avgSecondsPerPoint = ptsPerMin>0 ? (60/ptsPerMin) : 0;
         var rightCol;
         if (isPmathCard) {
@@ -1034,6 +1048,7 @@ function poll(){
 // Live clock ticks every second even if fetch stalls — proves JS is running
 // Per-slot timers 1:1 copy of overlay - increment live every second from last render value
 setInterval(function(){
+  refreshBalanceChangeTimers();
   // 1:1 live - recalculate from loopStartTime via last render data
   // We store last slots data in window._lastSlots
   if(window._lastSlots){
