@@ -136,3 +136,13 @@ test('ECNL speed uses a stable five-minute rolling average with decimals', () =>
   assert.match(source, /Math\.round\(\(gained \/ elapsedMinutes\) \* 100\) \/ 100/);
   assert.doesNotMatch(source, /displayPpm = Math\.min\(9, Math\.max\(0, Math\.trunc\(displayPpm\)\)\)/);
 });
+
+test('dashboard has a final compact responsive layer for phones and tablets', () => {
+  assert.match(source, /Final compact responsive layer/);
+  assert.match(source, /@media\(max-width:900px\)/);
+  assert.match(source, /@media\(max-width:620px\)/);
+  assert.match(source, /@media\(max-width:360px\)/);
+  assert.match(source, /\.mini-summary-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(source, /\.bhist-row:nth-child\(n\+6\)\{display:none\}/);
+  assert.match(source, /\.crow\{grid-template-columns:1fr 1fr!important/);
+});
