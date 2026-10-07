@@ -70,3 +70,14 @@ test('Kyaiko balance mirrors the live PMath coin count', () => {
   assert.match(source, /const dashboardWithdrawable = currentWithdrawable/);
   assert.match(source, /pointsDone = currentWithdrawable/);
 });
+
+test('every slot shows a live next cash-out earnings estimate after ETA', () => {
+  assert.match(source, /function nextCashoutProjection\(/);
+  assert.match(source, /Next cash-out estimate:/);
+  assert.match(source, /cashoutProjection\.amount/);
+  assert.match(source, /pointsPerHour/);
+  assert.match(source, /below &#8369;300 minimum/);
+  const etaIndex = source.indexOf('ETA: <span');
+  const estimateIndex = source.indexOf('nextCashoutLine', etaIndex);
+  assert.ok(etaIndex >= 0 && estimateIndex > etaIndex);
+});

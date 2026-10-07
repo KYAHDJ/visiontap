@@ -728,6 +728,29 @@ function nextEncashment(slots,now){
   return candidates[0]||null;
 }
 
+function nextCashoutProjection(slot,now){
+  var parts=new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(now).reduce(function(out,item){out[item.type]=item.value;return out},{});
+  var weekdays={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6},today=weekdays[parts.weekday],minutes=(Number(parts.hour)%24)*60+Number(parts.minute)+Number(parts.second)/60;
+  var account=String(slot.accountName||slot.name||'').toLowerCase(),isPmath=String(slot.id)==='14'||account==='kyaiko';
+  var schedule=slot.encashmentSchedule||{},scheduledDay=weekdays[schedule.weekday],start=Number(schedule.startHour),end=Number(schedule.endHour);
+  var days=0;
+  if(isPmath){
+    start=8;end=10;
+    if(today>=1&&today<=5&&minutes<end*60)scheduledDay=today;
+    else { scheduledDay=today; do{days++;scheduledDay=(scheduledDay+1)%7}while(scheduledDay===0||scheduledDay===6); }
+  }else{
+    if(scheduledDay==null||!Number.isFinite(start)||!Number.isFinite(end))return null;
+    days=(scheduledDay-today+7)%7;
+    if(days===0&&minutes>=end*60)days=7;
+  }
+  var minutesUntil=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
+  var hoursUntil=Math.max(0,minutesUntil/60);
+  var currentPesos=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
+  var pesosPerHour=Number(slot.pointsPerHour||0)*(isPmath?1/100:3/250);
+  var amount=Math.max(0,currentPesos+pesosPerHour*hoursUntil);
+  return {amount:amount,hoursUntil:hoursUntil,eligible:amount>=300};
+}
+
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function pilotControl(account,action){fetch('/chrome-pilot-control?account='+encodeURIComponent(account)+'&action='+encodeURIComponent(action),{method:'POST'}).catch(function(){})}
 
@@ -859,6 +882,10 @@ function render(d){
           pesosNeeded = ptsUntilMid / 100;
         }
         var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
+        var cashoutProjection = nextCashoutProjection(s,new Date());
+        var cashoutAmount = cashoutProjection ? cashoutProjection.amount : (isPmathCard?Number(s.withdrawable||0)/100:Number(s.withdrawable||0));
+        var cashoutNote = cashoutProjection && !cashoutProjection.eligible ? ' <span style="color:var(--muted)">(below &#8369;300 minimum)</span>' : '';
+        var nextCashoutLine = '<div class="bcalc-line">Next cash-out estimate: <span class="bcalc-em" style="color:#10b981">&#8369;'+Number(cashoutAmount).toFixed(2)+'</span>'+cashoutNote+'</div>';
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
         function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
         var histHtml = '';
@@ -882,13 +909,15 @@ function render(d){
             +'<div class="bcalc-line">Remaining: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' coins</span> (&#8369;'+Number(pesosNeeded).toFixed(2)+')</div>'
             +'<div class="bcalc-line">Rate: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' coins/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
             +'<div class="bcalc-line">Average: <span class="bcalc-em">'+(avgSecondsPerPoint>0?avgSecondsPerPoint.toFixed(2)+' sec/coin':'—')+'</span></div>'
-            +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div></div>';
+            +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
+            +nextCashoutLine+'</div>';
         } else {
           rightCol = '<div class="bcol"><div class="bcol-hd">Calculation (250=3&#8369;)</div>'
             +'<div class="bcalc-line">&#8369;'+targetPesos+': <span class="bcalc-em">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span></div>'
             +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
             +'<div class="bcalc-line">Getting: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' pts/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
-            +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div></div>';
+            +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
+            +nextCashoutLine+'</div>';
         }
         var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
         return grid;
