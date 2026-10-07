@@ -549,6 +549,10 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;backgrou
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:24px}.hero-copy h1{text-align:left;font-size:34px;line-height:1;color:var(--midnight);letter-spacing:-.055em;margin:7px 0 8px}.hero-copy h1 em{font-style:normal;color:var(--accent)}.hero-copy p{font-size:12px;color:var(--muted)}.eyebrow{font-size:9px;letter-spacing:.16em;color:var(--accent);font-weight:850;text-transform:uppercase}
 .ph-clock{margin:0;padding:11px 14px;min-width:285px;max-width:none;text-align:left;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;column-gap:16px}.ph-clock-time{font-size:16px;color:var(--midnight);grid-column:1}.ph-clock-date{font-size:9px;grid-column:1;margin-top:2px}.ph-clock-label{grid-column:2;grid-row:1/3;align-self:center;background:#eceaff;color:var(--accent);border-radius:6px;padding:5px 7px;font-size:8px}
 .hero-live{display:grid;grid-template-columns:minmax(285px,1fr) minmax(285px,1fr);gap:10px}.earnings-forecast{padding:11px 14px;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}.forecast-label{display:block;color:#85839d;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}.forecast-values{display:grid;grid-template-columns:1fr 1fr;gap:12px}.forecast-values div+div{border-left:1px solid var(--border);padding-left:12px}.forecast-values strong{display:block;color:var(--midnight);font-size:16px;font-variant-numeric:tabular-nums}.forecast-values small{display:block;color:#85839d;font-size:8px;margin-top:2px}.forecast-note{display:block;color:#85839d;font-size:7px;margin-top:5px}
+.mini-summary-wrap{margin:0 0 18px}.mini-summary-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;color:#f5f3ff;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.09em}.mini-summary-title span{color:#85839d;font-size:8px;font-weight:650;letter-spacing:0;text-transform:none}.mini-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.mini-slot{position:relative;overflow:hidden;padding:12px 13px;border:1px solid color-mix(in srgb,var(--mini-accent) 65%,#292844);border-left:4px solid var(--mini-accent);border-radius:13px;background:linear-gradient(145deg,var(--mini-soft),#111126 62%);box-shadow:0 8px 20px rgba(0,0,0,.2)}.mini-slot-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}.mini-slot-name{color:#fff;font-size:13px;font-weight:900}.mini-slot-change{color:#aaa7c3;font-size:8px;font-weight:700;white-space:nowrap}.mini-slot-values{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mini-slot-stat small{display:block;color:#85839d;font-size:7px;font-weight:750;text-transform:uppercase;letter-spacing:.05em}.mini-slot-stat strong{display:block;margin-top:2px;color:#f7f5ff;font-size:14px;font-variant-numeric:tabular-nums}.mini-slot-stat.estimate strong{color:#55e5af}.mini-slot-when{grid-column:1/-1;margin-top:2px;padding-top:7px;border-top:1px solid rgba(255,255,255,.08);color:#c6c2d7;font-size:8px;line-height:1.35}.mini-slot-when b{color:#fff}
+@media(max-width:860px){.mini-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.mini-summary-grid{grid-template-columns:1fr 1fr;gap:7px}.mini-slot{padding:10px}.mini-slot-head{align-items:flex-start;flex-direction:column;gap:2px}.mini-slot-values{grid-template-columns:1fr}.mini-slot-when{grid-column:1}}
+@media(max-width:390px){.mini-summary-grid{grid-template-columns:1fr}.mini-slot-head{align-items:center;flex-direction:row}}
 .overview{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}.ov{min-height:110px;background:#fff;border:1px solid var(--border);border-radius:17px;padding:16px;box-shadow:var(--shadow);display:flex;flex-direction:column}.ov.primary{background:var(--accent);border-color:var(--accent);color:#fff}.ov small{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}.ov.primary small{color:#dcd8ff}.ov strong{font-size:26px;letter-spacing:-.05em;margin-top:auto}.ov span{font-size:9px;color:var(--muted);margin-top:3px}.ov.primary span{color:#d7d3ff}.ov.next strong{font-size:18px}.ovicon{width:29px;height:29px;border-radius:9px;background:#eceaff;color:var(--accent);display:grid;place-items:center;font-size:14px;margin-bottom:12px}.primary .ovicon{background:rgba(255,255,255,.16);color:#fff}.ov.health .ovicon{background:#e7f7ef;color:var(--green)}.ov.next .ovicon{background:#fff0e5;color:#d96f2e}
 .pills{justify-content:flex-start;margin:0 0 12px}.pill{background:#fff;border-color:var(--border);box-shadow:0 3px 10px rgba(25,17,77,.03);color:#4b4a68;padding:6px 10px;border-radius:8px}
 .stitle{font-size:11px;color:var(--midnight);margin:30px 0 11px;letter-spacing:.08em}.section-aiko-title,.section-danica-title,.section-darlene-title{color:var(--midnight);background:transparent;border:0;border-bottom:1px solid #dcdaeb;border-radius:0;padding:0 0 10px}.section-aiko-title:before,.section-danica-title:before,.section-darlene-title:before{content:'';display:inline-block;width:3px;height:14px;border-radius:4px;background:var(--accent);margin-right:8px;vertical-align:-2px}.section-danica-title:before{background:var(--coral)}.section-darlene-title:before{background:var(--green)}
@@ -679,6 +683,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 <header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span></div></header>
 <div class="wrap">
   <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Live-rate projection · PMath approximate</span></div></div></section>
+  <section class="mini-summary-wrap" aria-live="polite"><div class="mini-summary-title">Account snapshot <span>Live balance · change speed · next cash-out</span></div><div class="mini-summary-grid" id="mini-summary"></div></section>
   <section class="daily-payouts" id="daily-payout" hidden aria-live="polite"></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
@@ -752,7 +757,10 @@ function nextCashoutProjection(slot,now){
   var currentPesos=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
   var pesosPerHour=Number(slot.pointsPerHour||0)*(isPmath?1/100:3/250);
   var amount=Math.max(0,currentPesos+pesosPerHour*hoursUntil);
-  return {amount:amount,hoursUntil:hoursUntil,eligible:amount>=300};
+  var dayNames=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var dayLabel=days===0?'Today':days===1?'Tomorrow':dayNames[scheduledDay];
+  var whenText=dayLabel+' · '+start+':00–'+end+':00 AM PH';
+  return {amount:amount,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
 }
 
 function updateEarningsForecast(slots){
@@ -783,6 +791,23 @@ function balanceHistoryChangeInterval(history){
     return 'Changed after '+parts.slice(0,2).join(' ');
   }
   return 'No distinct change';
+}
+
+function renderMiniSummary(slots,now){
+  var root=document.getElementById('mini-summary');
+  if(!root)return;
+  root.innerHTML=(slots||[]).map(function(slot){
+    var account=String(slot.accountName||slot.name||'Unknown'),key=account.toLowerCase(),isPmath=String(slot.id)==='14'||key==='kyaiko';
+    var current=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
+    var projection=nextCashoutProjection(slot,now),estimate=projection?projection.amount:current;
+    var history=Array.isArray(slot.balanceHistory)?slot.balanceHistory:[],change=balanceHistoryChangeInterval(history);
+    var theme=slotTheme(account),eligibility=estimate>=300?'':' · below ₱300';
+    return '<article class="mini-slot" style="--mini-accent:'+theme[0]+';--mini-soft:'+theme[1]+'">'
+      +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change">'+esc(change)+'</span></div>'
+      +'<div class="mini-slot-values"><div class="mini-slot-stat"><small>Current balance</small><strong>&#8369;'+current.toFixed(2)+'</strong></div>'
+      +'<div class="mini-slot-stat estimate"><small>Next cash-out</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
+      +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+'</div></div></article>';
+  }).join('');
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -858,6 +883,7 @@ function render(d){
   document.getElementById('ov-next-day').textContent=next?(next.days===0?'Today':dayNames[next.schedule.weekday])+' · '+String(next.slot.accountName||next.slot.name):'Not scheduled';
   document.getElementById('ov-next-time').textContent=next?next.dateText+' · '+next.schedule.startHour+':00–'+next.schedule.endHour+':00 AM PH':'No payout schedule configured';
   updateEarningsForecast(slots);
+  renderMiniSummary(slots,new Date());
   document.getElementById('pills').innerHTML=
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
