@@ -106,17 +106,27 @@ test('balance history heading shows when each balance last changed', () => {
 
 test('top mini dashboard summarizes every slot cash-out detail', () => {
   assert.match(source, /id="mini-summary"/);
-  assert.match(source, /function renderMiniSummary\(slots,now\)/);
+  assert.match(source, /function renderMiniSummary\(slots,pilots,now\)/);
   assert.match(source, /Current balance/);
   assert.match(source, /Next cash-out/);
   assert.match(source, /<b>When:<\/b>/);
   assert.match(source, /balanceHistoryTimerStart\(history\)/);
   assert.match(source, /nextCashoutProjection\(slot,now\)/);
-  assert.match(source, /renderMiniSummary\(slots,new Date\(\)\)/);
+  assert.match(source, /renderMiniSummary\(slots,pilots,new Date\(\)\)/);
   assert.match(source, /whenText:whenText/);
   assert.match(source, /Points'\)\+' \/ minute/);
   assert.match(source, /liveRate\.toFixed\(2\)/);
   assert.match(source, /mini-slot-stat rate/);
+});
+
+test('top summary highlights slot errors and attention states', () => {
+  assert.match(source, /class="mini-slot-alert"/);
+  assert.match(source, /class="mini-slot-alert warning"/);
+  assert.match(source, /pilot\.verificationHold\|\|pilot\.paused\|\|pilot\.running===false/);
+  assert.match(source, /error\|failed\|offline\|server down\|runtime/);
+  assert.match(source, /Number\(pilot\.errors\|\|0\)/);
+  assert.match(source, /has-error/);
+  assert.match(source, /has-warning/);
 });
 
 test('earnings estimates use balance history, the real minimum, and an eligible schedule', () => {

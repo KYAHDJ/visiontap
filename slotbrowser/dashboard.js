@@ -589,6 +589,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;backgrou
 .ph-clock{margin:0;padding:11px 14px;min-width:285px;max-width:none;text-align:left;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;column-gap:16px}.ph-clock-time{font-size:16px;color:var(--midnight);grid-column:1}.ph-clock-date{font-size:9px;grid-column:1;margin-top:2px}.ph-clock-label{grid-column:2;grid-row:1/3;align-self:center;background:#eceaff;color:var(--accent);border-radius:6px;padding:5px 7px;font-size:8px}
 .hero-live{display:grid;grid-template-columns:minmax(285px,1fr) minmax(285px,1fr);gap:10px}.earnings-forecast{padding:11px 14px;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}.forecast-label{display:block;color:#85839d;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}.forecast-values{display:grid;grid-template-columns:1fr 1fr;gap:12px}.forecast-values div+div{border-left:1px solid var(--border);padding-left:12px}.forecast-values strong{display:block;color:var(--midnight);font-size:16px;font-variant-numeric:tabular-nums}.forecast-values small{display:block;color:#85839d;font-size:8px;margin-top:2px}.forecast-note{display:block;color:#85839d;font-size:7px;margin-top:5px}
 .mini-summary-wrap{margin:0 0 18px}.mini-summary-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;color:#f5f3ff;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.09em}.mini-summary-title span{color:#85839d;font-size:8px;font-weight:650;letter-spacing:0;text-transform:none}.mini-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.mini-slot{position:relative;overflow:hidden;padding:12px 13px;border:1px solid color-mix(in srgb,var(--mini-accent) 65%,#292844);border-left:4px solid var(--mini-accent);border-radius:13px;background:linear-gradient(145deg,var(--mini-soft),#111126 62%);box-shadow:0 8px 20px rgba(0,0,0,.2)}.mini-slot-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}.mini-slot-name{color:#fff;font-size:13px;font-weight:900}.mini-slot-change{color:#aaa7c3;font-size:8px;font-weight:700;white-space:nowrap}.mini-slot-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-slot-stat small{display:block;color:#85839d;font-size:7px;font-weight:750;text-transform:uppercase;letter-spacing:.05em}.mini-slot-stat strong{display:block;margin-top:2px;color:#f7f5ff;font-size:14px;font-variant-numeric:tabular-nums}.mini-slot-stat.estimate strong{color:#55e5af}.mini-slot-stat.rate strong{color:#facc15}.mini-slot-when{grid-column:1/-1;margin-top:2px;padding-top:7px;border-top:1px solid rgba(255,255,255,.08);color:#c6c2d7;font-size:8px;line-height:1.35}.mini-slot-when b{color:#fff}
+.mini-slot.has-error{border-color:#ff6f8c;box-shadow:0 8px 22px rgba(255,45,92,.18)}.mini-slot.has-warning{border-color:#ff9b55}.mini-slot-alert{grid-column:1/-1;margin-top:1px;padding:6px 7px;border-radius:7px;background:#481827;color:#ff9aae;font-size:7px;font-weight:800;line-height:1.35}.mini-slot-alert.warning{background:#4a2a18;color:#ffb47d}.mini-slot-alert b{color:#fff;text-transform:uppercase;margin-right:4px}
 @media(max-width:860px){.mini-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.mini-summary-grid{grid-template-columns:1fr 1fr;gap:7px}.mini-slot{padding:10px}.mini-slot-head{align-items:flex-start;flex-direction:column;gap:2px}.mini-slot-values{grid-template-columns:1fr}.mini-slot-when{grid-column:1}}
 @media(max-width:390px){.mini-summary-grid{grid-template-columns:1fr}.mini-slot-head{align-items:center;flex-direction:row}}
@@ -869,22 +870,27 @@ function refreshBalanceChangeTimers(){
   });
 }
 
-function renderMiniSummary(slots,now){
+function renderMiniSummary(slots,pilots,now){
   var root=document.getElementById('mini-summary');
   if(!root)return;
   root.innerHTML=(slots||[]).map(function(slot){
     var account=String(slot.accountName||slot.name||'Unknown'),key=account.toLowerCase(),isPmath=String(slot.id)==='14'||key==='kyaiko';
+    var pilot=(pilots||[]).find(function(item){return item&&String(item.slot)===String(slot.id)})||{};
     var current=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
     var liveRate=Number(slot.pointsPerMinute||0);
     var projection=nextCashoutProjection(slot,now),estimate=projection?projection.amount:current;
     var history=Array.isArray(slot.balanceHistory)?slot.balanceHistory:[],changeStart=balanceHistoryTimerStart(history),change=formatBalanceChangeTimer(changeStart,now);
     var theme=slotTheme(account),eligibility=estimate>=300?'':' · below ₱300';
-    return '<article class="mini-slot" style="--mini-accent:'+theme[0]+';--mini-soft:'+theme[1]+'">'
+    var status=String(pilot.status||''),errors=Number(pilot.errors||0),problem=/error|failed|offline|server down|runtime/i.test(status);
+    var warning=!problem&&(pilot.verificationHold||pilot.paused||pilot.running===false),cardState=problem||errors>0?' has-error':warning?' has-warning':'';
+    var alertHtml=problem||errors>0?'<div class="mini-slot-alert"><b>Error'+(errors>0?' '+errors:'')+'</b>'+esc(status||'A slot error occurred.')+'</div>'
+      :warning?'<div class="mini-slot-alert warning"><b>'+(pilot.verificationHold?'Verify':pilot.paused?'Paused':'Offline')+'</b>'+esc(status||'This slot needs attention.')+'</div>':'';
+    return '<article class="mini-slot'+cardState+'" style="--mini-accent:'+theme[0]+';--mini-soft:'+theme[1]+'">'
       +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change" data-balance-start="'+changeStart+'">'+esc(change)+'</span></div>'
       +'<div class="mini-slot-values"><div class="mini-slot-stat"><small>Current balance</small><strong>&#8369;'+current.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-stat estimate"><small>Next cash-out</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-stat rate"><small>'+(isPmath?'Coins':'Points')+' / minute</small><strong>'+liveRate.toFixed(2)+'</strong></div>'
-      +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+'</div></div></article>';
+      +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+'</div>'+alertHtml+'</div></article>';
   }).join('');
 }
 
@@ -961,7 +967,7 @@ function render(d){
   document.getElementById('ov-next-day').textContent=next?(next.days===0?'Today':dayNames[next.schedule.weekday])+' · '+String(next.slot.accountName||next.slot.name):'Not scheduled';
   document.getElementById('ov-next-time').textContent=next?next.dateText+' · '+next.schedule.startHour+':00–'+next.schedule.endHour+':00 AM PH':'No payout schedule configured';
   updateEarningsForecast(slots);
-  renderMiniSummary(slots,new Date());
+  renderMiniSummary(slots,pilots,new Date());
   document.getElementById('pills').innerHTML=
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
