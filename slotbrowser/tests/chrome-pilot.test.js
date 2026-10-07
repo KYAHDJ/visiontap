@@ -45,6 +45,15 @@ test('PMath restores the Electron 60-second inactivity restart and host signal',
   assert.match(pilot.installPageRuntime.toString(), /__vtHost/);
 });
 
+test('PMath host failures use a clean retry screen and exponential backoff', () => {
+  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
+  assert.match(pilot.detectPmathHostError.toString(), /520\|521\|522\|523\|524/);
+  assert.match(pilot.showPmathOutageScreen.toString(), /PMath is temporarily unavailable/);
+  assert.match(pilot.schedulePmathHostRetry.toString(), /PMATH_OUTAGE_RETRY_MAX_MS/);
+  assert.match(pilot.guardPmathHost.toString(), /PMath host recovered/);
+  assert.match(pilot.restartStalledWorker.toString(), /pmathHostOutage/);
+});
+
 test('pilot loads the shared ad blocker and never disables cleanup', () => {
   const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
   assert.match(pilot.adBlockSource, /VisionTap - Minimal Ad Blocker/);

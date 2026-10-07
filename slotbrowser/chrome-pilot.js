@@ -16,6 +16,8 @@ const WORK_URL = TASK_MODE === 'math' ? 'https://pmath100.com/games-mathproblem#
 const PMATH_CONVERT_URL = 'https://pmath100.com/convert-coins';
 const PMATH_CONVERT_THRESHOLD = 30000;
 const PMATH_CONVERT_RETRY_MS = 300000;
+const PMATH_OUTAGE_RETRY_BASE_MS = 15000;
+const PMATH_OUTAGE_RETRY_MAX_MS = 300000;
 const SUBMIT_DELAYS = { adaihbi: 0, temi: 300, axceling1001: 600, clarencebopis: 900, connormofu: 1100, kyaiko: 0 };
 const SUBMIT_DELAY_MS = Number(process.env.VT_SUBMIT_DELAY_MS ?? SUBMIT_DELAYS[ACCOUNT] ?? 0);
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu']);
@@ -103,6 +105,9 @@ class ChromePilot {
     this.pointsTotal = 250;
     this.withdrawable = null;
     this.pmathConversion = { status:'waiting', lastAttemptAt:0, coinsBefore:null, coinsAfter:null, message:'' };
+    this.pmathHostOutage = false;
+    this.pmathHostOutageAttempts = 0;
+    this.nextPmathHostRetryAt = 0;
     this.statusText = `Starting ${ACCOUNT} Chrome pilot…`;
     this.injectSource = fs.readFileSync(INJECT_PATH, 'utf8');
     this.adBlockSource = fs.readFileSync(AD_BLOCK_PATH, 'utf8');
@@ -226,13 +231,73 @@ class ChromePilot {
   }
 
   async restartStalledWorker(reason) {
-    if (this.paused || this.verificationHold || await this.detectVerification()) return false;
+    if (this.paused || this.verificationHold || this.pmathHostOutage || await this.detectVerification()) return false;
     this.log(`INACTIVITY-GUARD: no PMath progress for 60 seconds (${reason}); restarting only ${ACCOUNT}.`);
     process.exitCode = 75;
     this.running = false;
     await this.setStatus(`Restarting ${ACCOUNT} after 60 seconds without PMath progress…`);
     await this.context?.close().catch(() => {});
     return true;
+  }
+
+  async detectPmathHostError() {
+    if (TASK_MODE !== 'math' || !this.page || this.page.isClosed()) return null;
+    return this.page.evaluate(() => {
+      const title = document.title || '';
+      const text = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+      const match = `${title} ${text}`.match(/(?:error\s*code\s*)?(520|521|522|523|524)|web server is returning an unknown error|host error/i);
+      if (!match) return null;
+      return { code: (match[1] || '5xx').toUpperCase(), title, text: text.slice(0, 500) };
+    }).catch(() => null);
+  }
+
+  async showPmathOutageScreen(delayMs, code) {
+    const retrySeconds = Math.max(1, Math.ceil(delayMs / 1000));
+    await this.page.evaluate(({ retrySeconds, code }) => {
+      document.title = 'VisionTap · PMath retrying';
+      document.documentElement.innerHTML = `<head><meta charset="utf-8"><style>
+        *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1020;color:#f8fafc;font-family:Inter,system-ui,sans-serif;padding:24px}
+        .card{width:min(440px,100%);padding:28px;border:1px solid #334155;border-radius:18px;background:linear-gradient(145deg,#111a31,#0b1020);box-shadow:0 18px 55px #0008;text-align:center}
+        .mark{width:54px;height:54px;margin:0 auto 16px;display:grid;place-items:center;border-radius:16px;background:#8b5cf6;font-size:28px;font-weight:900}
+        h1{margin:0 0 10px;font-size:22px}p{margin:0;color:#cbd5e1;line-height:1.55}.status{margin-top:18px;padding:10px 12px;border-radius:10px;background:#17213b;color:#c4b5fd;font-weight:800}
+      </style></head><body><main class="card"><div class="mark">↻</div><h1>PMath is temporarily unavailable</h1><p>VisionTap detected a PMath host problem and is handling it automatically. No action is needed.</p><div class="status">Retrying in ${retrySeconds}s · ${code}</div></main></body>`;
+    }, { retrySeconds, code }).catch(() => {});
+  }
+
+  async schedulePmathHostRetry(problem) {
+    this.pmathHostOutage = true;
+    this.pmathHostOutageAttempts++;
+    const delayMs = Math.min(PMATH_OUTAGE_RETRY_MAX_MS, PMATH_OUTAGE_RETRY_BASE_MS * (2 ** Math.min(this.pmathHostOutageAttempts - 1, 5)));
+    this.nextPmathHostRetryAt = Date.now() + delayMs;
+    this.lastActivityAt = Date.now();
+    this.lastProgressAt = this.lastActivityAt;
+    this.pending = null;
+    this.log(`PMATH-HOST-GUARD: ${problem?.code || 'host error'}; retry ${this.pmathHostOutageAttempts} in ${Math.ceil(delayMs / 1000)} seconds.`);
+    await this.showPmathOutageScreen(delayMs, problem?.code || 'Host error');
+    await this.setStatus(`PMath host is temporarily unavailable. Automatic retry in ${Math.ceil(delayMs / 1000)} seconds…`);
+    return true;
+  }
+
+  async guardPmathHost() {
+    if (TASK_MODE !== 'math') return false;
+    if (this.pmathHostOutage) {
+      if (Date.now() < this.nextPmathHostRetryAt) return true;
+      this.log(`PMATH-HOST-GUARD: retrying PMath (${this.pmathHostOutageAttempts}).`);
+      await this.page.goto(WORK_URL, { waitUntil:'domcontentloaded', timeout:30000 }).catch(() => {});
+      const retryProblem = await this.detectPmathHostError();
+      if (retryProblem) return this.schedulePmathHostRetry(retryProblem);
+      this.pmathHostOutage = false;
+      this.pmathHostOutageAttempts = 0;
+      this.nextPmathHostRetryAt = 0;
+      this.lastActivityAt = Date.now();
+      this.lastProgressAt = this.lastActivityAt;
+      this.recoveryReloads = 0;
+      await this.installPageRuntime();
+      await this.setStatus('PMath host recovered. Resuming automatically…');
+      return false;
+    }
+    const problem = await this.detectPmathHostError();
+    return problem ? this.schedulePmathHostRetry(problem) : false;
   }
 
   async positionWindow() {
@@ -395,6 +460,7 @@ class ChromePilot {
 
   async safeReload(reason) {
     if (!this.page || this.page.isClosed()) return false;
+    if (this.pmathHostOutage) return false;
     if (this.verificationHold || await this.detectVerification()) {
       this.verificationHold = true;
       await this.setStatus(`Reload blocked during verification (${reason}).`);
@@ -542,6 +608,7 @@ class ChromePilot {
   async iteration() {
     if (this.encashment?.busy) return;
     if (Date.now() < this.nextIterationAt) return;
+    if (await this.guardPmathHost()) return;
     const verification = await this.detectVerification();
     if (verification) {
       const firstDetection = !this.verificationHold;
