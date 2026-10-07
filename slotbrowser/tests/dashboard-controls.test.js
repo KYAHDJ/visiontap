@@ -101,5 +101,8 @@ test('balance history heading shows when each balance last changed', () => {
   assert.match(source, /Changed '\+hours\+'h ago/);
   assert.match(source, /class="bcol-hd-row"/);
   assert.match(source, /class="balance-age"/);
-  assert.match(source, /s\.lastBalanceUpdate/);
+  assert.match(source, /function latestBalanceHistoryChange\(history\)/);
+  assert.match(source, /latestBalanceHistoryChange\(balHist\)/);
+  assert.doesNotMatch(source, /latestBalanceChange = Number\(s\.lastBalanceUpdate/);
+  assert.match(source, /Dashboard restarts,[\s\S]*must never reset this relative-change clock/);
 });

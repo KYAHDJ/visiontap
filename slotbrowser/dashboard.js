@@ -783,6 +783,15 @@ function relativeBalanceAge(timestamp,now){
   return 'Changed '+days+'d ago';
 }
 
+function latestBalanceHistoryChange(history){
+  var entries=Array.isArray(history)?history:[];
+  if(!entries.length)return 0;
+  for(var i=entries.length-1;i>0;i--){
+    if(Number(entries[i].value)!==Number(entries[i-1].value))return Number(entries[i].time||0);
+  }
+  return Number(entries[0].time||0);
+}
+
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function pilotControl(account,action){fetch('/chrome-pilot-control?account='+encodeURIComponent(account)+'&action='+encodeURIComponent(action),{method:'POST'}).catch(function(){})}
 
@@ -920,7 +929,9 @@ function render(d){
         var cashoutNote = cashoutProjection && !cashoutProjection.eligible ? ' <span style="color:var(--muted)">(below &#8369;300 minimum)</span>' : '';
         var nextCashoutLine = '<div class="bcalc-line next-cashout-line">Next cash-out estimate: <span class="bcalc-em" style="color:#10b981">&#8369;'+Number(cashoutAmount).toFixed(2)+'</span>'+cashoutNote+'</div>';
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
-        var latestBalanceChange = Number(s.lastBalanceUpdate||0) || (balHist.length ? Number(balHist[balHist.length-1].time||0) : 0);
+        // Use the persisted Balance History event itself. Dashboard restarts,
+        // refreshes, and polling must never reset this relative-change clock.
+        var latestBalanceChange = latestBalanceHistoryChange(balHist);
         var balanceAgeText = relativeBalanceAge(latestBalanceChange,Date.now());
         function fmtPH(ts){ try{ return new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true})+' PH'; }catch(e){ return new Date(ts).toLocaleString(); } }
         var histHtml = '';
