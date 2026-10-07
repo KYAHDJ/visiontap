@@ -881,9 +881,9 @@ function renderMiniSummary(slots,pilots,now){
     var projection=nextCashoutProjection(slot,now),estimate=projection?projection.amount:current;
     var history=Array.isArray(slot.balanceHistory)?slot.balanceHistory:[],changeStart=balanceHistoryTimerStart(history),change=formatBalanceChangeTimer(changeStart,now);
     var theme=slotTheme(account),eligibility=estimate>=300?'':' · below ₱300';
-    var status=String(pilot.status||''),errors=Number(pilot.errors||0),problem=/error|failed|offline|server down|runtime/i.test(status);
-    var warning=!problem&&(pilot.verificationHold||pilot.paused||pilot.running===false),cardState=problem||errors>0?' has-error':warning?' has-warning':'';
-    var alertHtml=problem||errors>0?'<div class="mini-slot-alert"><b>Error'+(errors>0?' '+errors:'')+'</b>'+esc(status||'A slot error occurred.')+'</div>'
+    var status=String(pilot.status||''),errors=Number(pilot.errors||0),problem=/\berror\b|failed|offline|server down|runtime|scanner could not|restarting .* after/i.test(status);
+    var warning=!problem&&(pilot.verificationHold||pilot.paused||pilot.running===false),cardState=problem?' has-error':warning?' has-warning':'';
+    var alertHtml=problem?'<div class="mini-slot-alert"><b>Error'+(errors>0?' '+errors:'')+'</b>'+esc(status||'A slot error occurred.')+'</div>'
       :warning?'<div class="mini-slot-alert warning"><b>'+(pilot.verificationHold?'Verify':pilot.paused?'Paused':'Offline')+'</b>'+esc(status||'This slot needs attention.')+'</div>':'';
     return '<article class="mini-slot'+cardState+'" style="--mini-accent:'+theme[0]+';--mini-soft:'+theme[1]+'">'
       +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change" data-balance-start="'+changeStart+'">'+esc(change)+'</span></div>'
