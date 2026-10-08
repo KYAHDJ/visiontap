@@ -75,6 +75,22 @@ class ChromeEncashmentController {
     this.timer = null;
   }
   config() { return readJson(this.configFile, { enabled:false }); }
+  effectiveConfig(now = new Date(), base = this.config()) {
+    const ph = phParts(now), override = base && base.oneTimeOverride;
+    if (override && String(override.date || '') < ph.key) {
+      const cleaned = Object.assign({}, base); delete cleaned.oneTimeOverride; writeJson(this.configFile, cleaned);
+      return cleaned;
+    }
+    return override && String(override.date || '') === ph.key
+      ? Object.assign({}, base, override, { __oneTime:true })
+      : base;
+  }
+  clearOneTimeOverride(state) {
+    const base = this.config();
+    if (!base.oneTimeOverride || String(base.oneTimeOverride.date || '') !== String(state.date || '')) return;
+    delete base.oneTimeOverride; writeJson(this.configFile, base);
+    this.save(state, 'One-time schedule completed; recurring schedule restored.');
+  }
   state() {
     const state = Object.assign(defaultState(), readJson(this.stateFile, {}));
     if (!state.historyCheckedAt && state.lastCheckAt && state.reference) {
@@ -93,7 +109,8 @@ class ChromeEncashmentController {
   stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
   async tick(now = new Date()) {
     if (this.busy || this.pilot.verificationHold || this.pilot.paused || !this.pilot.page || this.pilot.page.isClosed()) return;
-    const cfg = this.config(); if (!cfg.enabled) return;
+    const baseCfg = this.config(); if (!baseCfg.enabled) return;
+    const cfg = this.effectiveConfig(now, baseCfg);
     const ph = phParts(now), start = Number(cfg.startHour || 8), end = Number(cfg.endHour || 10), kind = cfg.type === 'task' ? 'task' : 'network';
     let state = this.state();
     if (/submitted|pending|processing/i.test(`${state.status} ${state.payoutStatus}`) && state.date === ph.key) {
@@ -104,7 +121,7 @@ class ChromeEncashmentController {
     if (state.date !== ph.key || state.kind !== kind) { state = defaultState(); state.date = ph.key; state.kind = kind; this.save(state, `${kind === 'task' ? 'Task' : 'Network'} schedule opened for ${ph.key}`); }
     if (/approved|paid|transferred/i.test(`${state.status} ${state.payoutStatus}`)) return;
     const available = Number(this.pilot.withdrawable);
-    if (!Number.isFinite(available) || available < MIN_CASHOUT_PESOS) {
+    if (kind === 'task' && (!Number.isFinite(available) || available < MIN_CASHOUT_PESOS)) {
       const message = `Cash-out locked: ₱${Number.isFinite(available) ? available.toFixed(3).replace(/\.?0+$/, '') : '0'} is below the ₱${MIN_CASHOUT_PESOS} minimum.`;
       if (state.status !== 'below_minimum' || state.message !== message) {
         state.status = 'below_minimum'; state.message = message; state.observedBalance = Number.isFinite(available) ? available : 0;
@@ -112,7 +129,7 @@ class ChromeEncashmentController {
       }
       return;
     }
-    if (ph.hour >= start && ph.hour < end) { if (!state.lastAttemptAt || Date.now() - state.lastAttemptAt >= FIVE_MINUTES) await this.attempt(); return; }
+    if (ph.hour >= start && ph.hour < end) { if (!state.lastAttemptAt || Date.now() - state.lastAttemptAt >= FIVE_MINUTES) await this.attempt(now); return; }
     if (ph.hour >= end && !state.lastAttemptAt && state.status === 'scheduled') { state.status = 'window_closed'; state.message = `No withdrawal was submitted before ${end}:00 AM PH.`; this.save(state, state.message); }
   }
   async capture(state) { try { await this.pilot.page.screenshot({ path:this.imageFile, fullPage:false }); state.screenshot = path.basename(this.imageFile); } catch (error) { this.pilot.log(`ENCASH screenshot failed: ${error.message}`); } }
@@ -121,10 +138,11 @@ class ChromeEncashmentController {
     try { return await work(); }
     finally { await this.pilot.page.goto(this.pilot.workUrl, { waitUntil:'domcontentloaded', timeout:30000 }).catch(() => {}); await this.pilot.installPageRuntime(); this.pilot.lastActivityAt = Date.now(); this.busy = false; await this.pilot.setStatus('Color work resumed.'); }
   }
-  async attempt() {
-    const cfg = this.config(); if (!cfg.enabled) return;
+  async attempt(now = new Date()) {
+    const cfg = this.effectiveConfig(now); if (!cfg.enabled) return;
     const available = Number(this.pilot.withdrawable);
-    if (!Number.isFinite(available) || available < MIN_CASHOUT_PESOS) return;
+    const requestedKind = cfg.type === 'task' ? 'task' : 'network';
+    if (requestedKind === 'task' && (!Number.isFinite(available) || available < MIN_CASHOUT_PESOS)) return;
     const state = this.state(); if (state.lastAttemptAt && Date.now() - state.lastAttemptAt < FIVE_MINUTES) return;
     state.lastAttemptAt = Date.now(); state.nextAttemptAt = state.lastAttemptAt + FIVE_MINUTES; state.attempts = Number(state.attempts || 0) + 1; state.status = 'attempting'; this.save(state, `Attempt ${state.attempts} started`);
     await this.withResume('Withdrawal attempt in progress…', async () => {
@@ -141,12 +159,14 @@ class ChromeEncashmentController {
         }, { receiverName:cfg.receiverName||'', email:cfg.email||'', mobile:cfg.mobile||'', payment:cfg.payment||'GCash' });
         state.amount = prepared.amount || state.amount || ''; state.gateway = prepared.gateway || cfg.payment || 'GCash'; state.payoutNumber = cfg.mobile || state.payoutNumber || ''; state.requestedAt = new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,dateStyle:'medium',timeStyle:'medium'}).format(new Date());
         if (!prepared.ready) throw new Error(`Form not ready: ${prepared.missing.join(', ')}`);
+        const formAmount = Number(String(prepared.amount || '').replace(/[^0-9.-]/g, ''));
+        if (!Number.isFinite(formAmount) || formAmount < MIN_CASHOUT_PESOS) { state.status='below_minimum';state.message=`Cash-out locked: ${kind === 'task' ? 'Task' : 'Network'} Earnings amount is below the ₱${MIN_CASHOUT_PESOS} minimum.`;state.nextAttemptAt=Date.now()+FIVE_MINUTES;this.save(state,state.message);return; }
         await this.pilot.page.evaluate(() => { window.confirm=()=>true;window.alert=m=>{window.__vtAlert=String(m||'');};const submit=document.querySelector('#btnSubmit,[name="encash"]');if(submit?.form?.requestSubmit)submit.form.requestSubmit(submit);else submit?.click(); });
         await sleep(1200);
         for (let i=0;i<3;i++) { await this.pilot.page.evaluate(() => { const button=[...document.querySelectorAll('.swal2-confirm,.modal button,button,[role="button"],input[type="submit"]')].find(el=>/^(yes|confirm|continue|submit|ok|request|proceed)$/i.test((el.innerText||el.value||'').trim())&&!el.disabled);if(button)button.click(); }).catch(()=>{}); await sleep(1200); }
         await sleep(2500);
         const result = await this.pilot.page.evaluate(() => { const text=`${window.__vtAlert||''} ${document.body?.innerText||''}`.replace(/\s+/g,' ').trim(),failed=/failed|error|invalid|unable|try again|insufficient|required field/i.test(text),success=(/success(?:ful|fully)?|submitted|pending|processing|request received/i.test(text)||!document.querySelector('[name="recipient_name"]'))&&!failed,reference=(text.match(/(?:reference(?: number| no\.?| #)?|ref no\.?)\s*[:#-]\s*([A-Z0-9-]{5,})/i)||[])[1]||'';return{submitted:success,failed,reference,url:location.href,text:text.slice(0,1800)}; });
-        state.lastUrl=result.url;state.reference=result.reference||state.reference;state.message=compact(result.text);state.status=result.submitted?'submitted':'failed';state.payoutStatus=result.submitted?'Pending':state.payoutStatus;state.nextAttemptAt=result.submitted?0:Date.now()+FIVE_MINUTES;await this.capture(state);this.save(state,result.submitted?'Withdrawal submitted; retries stopped':'Attempt failed; retry after five minutes');
+        state.lastUrl=result.url;state.reference=result.reference||state.reference;state.message=compact(result.text);state.status=result.submitted?'submitted':'failed';state.payoutStatus=result.submitted?'Pending':state.payoutStatus;state.nextAttemptAt=result.submitted?0:Date.now()+FIVE_MINUTES;await this.capture(state);this.save(state,result.submitted?'Withdrawal submitted; retries stopped':'Attempt failed; retry after five minutes');if(result.submitted&&cfg.__oneTime)this.clearOneTimeOverride(state);
       } catch (error) { state.status='failed';state.message=compact(error.message);state.nextAttemptAt=Date.now()+FIVE_MINUTES;this.save(state,`Attempt error: ${error.message}`); }
     });
   }

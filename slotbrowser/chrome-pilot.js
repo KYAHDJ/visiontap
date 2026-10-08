@@ -20,6 +20,7 @@ const SUBMIT_DELAYS = { deartheodosia: 0, aaronburr: 300, danicajgb: 3900, darle
 const SUBMIT_DELAY_MS = Number(process.env.VT_SUBMIT_DELAY_MS ?? SUBMIT_DELAYS[ACCOUNT] ?? 0);
 const ENCASHMENT_ACCOUNTS = new Set(['danicajgb', 'nnnikkikim', 'darlenejoyce', 'deartheodosia', 'aaronburr']);
 const STALL_RESET_MS = 15000;
+const ECNL_PROGRESS_TIMEOUT_MS = 20000;
 const SCANNER_URL = 'http://127.0.0.1:5566';
 const IS_WIN = process.platform === 'win32';
 const DEFAULT_USER_DATA = IS_WIN
@@ -106,7 +107,12 @@ class ChromePilot {
     this.statusText = `Starting ${ACCOUNT} Chrome pilot…`;
     this.injectSource = fs.readFileSync(INJECT_PATH, 'utf8');
     this.adBlockSource = fs.readFileSync(AD_BLOCK_PATH, 'utf8');
-    this.lastCommandNonce = null;
+    // A command file can survive a service restart. Treat its current nonce as
+    // already consumed so an old watchdog/manual reload is never replayed.
+    this.lastCommandNonce = (() => {
+      try { return JSON.parse(fs.readFileSync(PILOT_COMMAND_FILE, 'utf8')).nonce || null; }
+      catch (_) { return null; }
+    })();
     this.verificationClearStreak = 0;
     this.lastHoldScreenshotAt = 0;
     this.resumeArmed = false;
@@ -445,7 +451,7 @@ class ChromePilot {
     const command = (() => { try { return JSON.parse(fs.readFileSync(PILOT_COMMAND_FILE, 'utf8')); } catch (_) { return null; } })();
     if (!command || !command.nonce || command.nonce === this.lastCommandNonce) return;
     this.lastCommandNonce = command.nonce;
-    if (['pause', 'resume', 'reload', 'stop'].includes(command.action)) {
+    if (['pause', 'resume', 'reload', 'watchdog-reload', 'stop'].includes(command.action)) {
       this.log(`Dashboard control received: ${command.action}`);
       await this.handleControl(command.action);
     }
@@ -466,6 +472,7 @@ class ChromePilot {
         : 'Resuming solver…');
     }
     if (action === 'reload') await this.safeReload('manual control');
+    if (action === 'watchdog-reload') await this.safeReload('watchdog: no task progress for 25 seconds');
     if (action === 'stop') { this.stopped = true; this.running = false; await this.setStatus('Stopping…'); }
     await this.page?.evaluate(({ epoch, enabled }) => { window.__vtAutomation = { epoch, enabled }; }, { epoch: this.epoch, enabled: !this.paused && !this.verificationHold }).catch(() => {});
     return { ok: true, action };
@@ -717,6 +724,10 @@ class ChromePilot {
     await this.syncDashboardMeta();
     const ready = await this.callApi('checkInputReady');
     if (ready?.checking && TASK_MODE !== 'math') {
+      if (Date.now() - this.lastProgressAt >= ECNL_PROGRESS_TIMEOUT_MS) {
+        await this.safeReload('ECNL checking-state stalled for 20 seconds');
+        return;
+      }
       this.nextIterationAt = Date.now() + 750;
       await this.setStatus('Waiting for ECNL to present the next task…');
       return;
@@ -831,7 +842,7 @@ class ChromePilot {
     this.taskCount++; this.lastSubmittedHash = imageHash; this.lastActivityAt = Date.now(); this.lastProgressAt = this.lastActivityAt;
     await this.syncDashboardMeta(true);
     await this.report({ correct: true, color: this.pending.answer, taskNum: this.taskCount });
-    this.log(`Submitted task ${this.taskCount}: ${this.pending.answer}`);
+    this.log(`Submitted task ${this.taskCount}: ${this.pending.answer} (configured delay ${SUBMIT_DELAY_MS}ms, measured ${Number(filled.elapsedMs || 0)}ms)`);
     this.pending = null;
     // ECNL can present the next task quickly. A short settle period keeps the
     // page reliable without wasting two seconds after every correct answer.

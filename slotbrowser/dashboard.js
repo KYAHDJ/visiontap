@@ -13,6 +13,9 @@ const DASHBOARD_ADMIN_PASSWORD = String(process.env.VT_DASHBOARD_ADMIN_PASSWORD 
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const adminSessions = new Map();
 const PMATH_CONVERT_THRESHOLD = 30000;
+const ECNL_PESOS_PER_CYCLE = 3;
+const ECNL_POINTS_PER_CYCLE = 250;
+const MAX_REASONABLE_ECNL_PPM = 6;
 const PH_TIME_ZONE = "Asia/Manila";
 const STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
 const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
@@ -24,6 +27,7 @@ const CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','darlenejoyce','deartheodosia'
 const ENCASHMENT_ACCOUNTS = new Set(['danicajgb','nnnikkikim','darlenejoyce','deartheodosia','aaronburr']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, `encashment_${account}_config.json`); }
+function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).reduce((out,item)=>{out[item.type]=item.value;return out;},{});return `${parts.year}-${parts.month}-${parts.day}`; }
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
@@ -418,9 +422,14 @@ function getMergedSlots(status) {
       displayPph = Math.round(displayPpm * 60 * 100) / 100;
     }
 
-    // Use actual balance growth for money projections. The 60-second points
-    // rate remains visible, but it is too volatile for cash-out forecasting.
-    const estimatedPesosPerHour = balanceHistoryPesosPerHour(ms.balanceHistory, isPmath);
+    // ECNL balance changes only at cycle completion. A first observation near
+    // the end of a cycle makes a partial cycle look impossibly fast, so never
+    // annualize that short balance interval. Project ECNL money from its live
+    // points rate and the fixed 250 points = ₱3 conversion instead.
+    const safeEcnlPpm = Math.min(MAX_REASONABLE_ECNL_PPM, Math.max(0, Number(displayPpm) || 0));
+    const estimatedPesosPerHour = isPmath
+      ? balanceHistoryPesosPerHour(ms.balanceHistory, true)
+      : Math.round((safeEcnlPpm * 60 * ECNL_PESOS_PER_CYCLE / ECNL_POINTS_PER_CYCLE) * 10000) / 10000;
 
     // ETA — live adjusting from the persisted peso/coin balance history.
     let etaHours = 0;
@@ -487,7 +496,7 @@ function getMergedSlots(status) {
       _windowActive: ms.windowStart > 0,
       _cooldownActive: ms.cooldownStart > 0,
       encashment: (()=>{const account=String(slot.accountName || name).toLowerCase();return ENCASHMENT_ACCOUNTS.has(account)?readJson(encashmentStateFile(account),null):null;})(),
-      encashmentSchedule: (()=>{const account=String(slot.accountName || name).toLowerCase();if(!ENCASHMENT_ACCOUNTS.has(account))return null;const c=readJson(encashmentConfigFile(account),{});return {type:c.type||'',weekday:c.weekday||'',startHour:c.startHour==null?null:Number(c.startHour),endHour:c.endHour==null?null:Number(c.endHour),retryMinutes:5};})()
+      encashmentSchedule: (()=>{const account=String(slot.accountName || name).toLowerCase();if(!ENCASHMENT_ACCOUNTS.has(account))return null;const c=readJson(encashmentConfigFile(account),{}),o=c.oneTimeOverride,a=o&&String(o.date||'')===currentPhDateKey()?Object.assign({},c,o):c;return {type:a.type||'',weekday:a.weekday||'',startHour:a.startHour==null?null:Number(a.startHour),endHour:a.endHour==null?null:Number(a.endHour),retryMinutes:5,oneTime:!!(o&&String(o.date||'')===currentPhDateKey())};})()
     };
     merged.push(mergedSlot);
   }
@@ -823,8 +832,10 @@ function nextCashoutProjection(slot,now){
     if(days===0&&minutes>=end*60)days=7;
   }
   var currentPesos=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
-  var fallbackRate=Number(slot.pointsPerHour||0)*(isPmath?1/100:3/250);
-  var pesosPerHour=Number(slot.estimatedPesosPerHour||0)>0?Number(slot.estimatedPesosPerHour):fallbackRate;
+  var pointRate=Math.max(0,Number(slot.pointsPerHour||0))*(isPmath?1/100:3/250);
+  if(!isPmath)pointRate=Math.min(4.32,pointRate);
+  var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0));
+  var pesosPerHour=isPmath?(historyRate>0?historyRate:pointRate):pointRate;
   function candidate(){
     var candidateMinutes=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
     var candidateHours=Math.max(0,candidateMinutes/60);
@@ -849,8 +860,9 @@ function nextCashoutProjection(slot,now){
 function updateEarningsForecast(slots){
   var pesosPerHour=(slots||[]).reduce(function(total,slot){
     var account=String(slot.accountName||slot.name||'').toLowerCase(),isPmath=String(slot.id)==='14'||account==='kyaiko';
-    var historyRate=Number(slot.estimatedPesosPerHour||0),pointsRate=Number(slot.pointsPerHour||0)*(isPmath?1/100:3/250);
-    var rate=historyRate>0?historyRate:pointsRate;
+    var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0)),pointsRate=Math.max(0,Number(slot.pointsPerHour||0))*(isPmath?1/100:3/250);
+    if(!isPmath)pointsRate=Math.min(4.32,pointsRate);
+    var rate=isPmath?(historyRate>0?historyRate:pointsRate):pointsRate;
     return total+(Number.isFinite(rate)?rate:0);
   },0);
   var weekdayTotal=Math.max(0,pesosPerHour*24*5);
@@ -950,6 +962,15 @@ function slotTheme(account){
   return themes[String(account||'').toLowerCase()]||['#64748b','rgba(100,116,139,.15)','rgba(100,116,139,.25)'];
 }
 function phDayParts(now){return new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'}).formatToParts(now).reduce(function(out,item){out[item.type]=item.value;return out},{})}
+function uniqueAccounts(items){
+  var seen={};
+  return (items||[]).filter(function(item){
+    var key=String(item&&((item.accountName||item.name)||item.account)||item&&item.id||'').toLowerCase();
+    if(!key||seen[key])return false;
+    seen[key]=true;
+    return true;
+  });
+}
 function renderDailyPayout(slots,pmathPayouts,now){
   var parts=phDayParts(now),today=parts.weekday,dateKey=parts.year+'-'+parts.month+'-'+parts.day;
   var wrap=document.getElementById('daily-payout');
@@ -982,11 +1003,13 @@ function render(d){
   var groupKey=groups[requestedGroup]?requestedGroup:'danica-niki';
   var allowed=groups[groupKey];
   var inView=function(account){return allowed.indexOf(String(account||'').toLowerCase())>=0;};
-  var slots=(d.slots||[]).filter(function(s){return String(s.id)!=="17"&&inView(s.accountName||s.name)});
-  var pilots=(d.chromePilots||[]).filter(function(p){return inView(p&&p.account)}),pilot=d.chromePilot||{};
+  var slots=uniqueAccounts((d.slots||[]).filter(function(s){return String(s.id)!=="17"&&inView(s.accountName||s.name)}));
+  var pilots=uniqueAccounts((d.chromePilots||[]).filter(function(p){return inView(p&&p.account)})),pilot=d.chromePilot||{};
   var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
-  var runningPilots=pilots.filter(function(p){return p&&p.running}).length,activeCount=runningPilots||slots.filter(function(x){return !x.paused}).length,workerUp=runningPilots>0||!!pilot.running,healthy=d.scannerUp&&workerUp&&!d.loopPaused;
+  var runningPilots=pilots.filter(function(p){return p&&p.running&&!p.paused}).length,activeCount=runningPilots,workerUp=runningPilots>0||!!pilot.running;
+  var allSlotsHealthy=slots.length>0&&slots.every(function(slot){var p=pilots.find(function(item){return item&&String(item.slot)===String(slot.id)});return !!(p&&p.running&&!p.paused&&!p.verificationHold&&!/error|failed|offline|server down|runtime|restarting/i.test(String(p.status||'')))});
+  var healthy=d.scannerUp&&allSlotsHealthy&&!d.loopPaused;
   document.getElementById('ov-total').textContent=String(slots.length).padStart(2,'0');
   document.getElementById('ov-active').textContent=String(activeCount).padStart(2,'0');
   document.getElementById('ov-active-note').textContent=activeCount+' of '+slots.length+' running';

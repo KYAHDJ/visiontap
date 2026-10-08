@@ -266,6 +266,19 @@
       return { status: "task-changed" };
     }
     if (!allowed()) return { status: 'cancelled' };
+    // Wait before revealing or submitting the answer. This makes each account's
+    // configured delay visible and prevents every slot from appearing instant.
+    const delayStartedAt = performance.now();
+    const deadline = delayStartedAt + delayMs;
+    while (performance.now() < deadline) {
+      if (!allowed()) return { status: 'cancelled' };
+      await sleep(Math.max(1, deadline - performance.now()));
+    }
+    if (findAnswerInput() !== inputBox || !isUIFullyLoaded() || isCheckingState()) return { status: "input-changed" };
+    if (options.expectedImage && await grabTaskImage() !== options.expectedImage) {
+      return { status: "task-changed" };
+    }
+    if (!allowed()) return { status: 'cancelled' };
     // Preserve an existing correct answer; replace a different answer only once.
     if (inputBox.value !== answerColor) {
       const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -273,24 +286,11 @@
       inputBox.dispatchEvent(new Event('input', { bubbles: true }));
       inputBox.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    // Start the full delay only once the verified answer is in the input.
-    const filledAt = performance.now();
-    const deadline = filledAt + delayMs;
-    while (performance.now() < deadline) {
-      if (!allowed()) return { status: 'cancelled' };
-      await sleep(Math.max(1, deadline - performance.now()));
-    }
-    if (findAnswerInput() !== inputBox || inputBox.value !== answerColor ||
-        !isUIFullyLoaded() || isCheckingState()) return { status: "input-changed" };
-    if (options.expectedImage && await grabTaskImage() !== options.expectedImage) {
-      return { status: "task-changed" };
-    }
-    if (!allowed()) return { status: 'cancelled' };
     const btn = findSubmitButton();
     if (!btn || btn.disabled || inputBox.disabled) return { status: "not-ready" };
     if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' };
     btn.click();
-    return { status: "filled", delayMs: 0, elapsedMs: Math.round(performance.now() - filledAt) };
+    return { status: "filled", delayMs, elapsedMs: Math.round(performance.now() - delayStartedAt) };
   }
 
   // ---- EXACT Chrome extension: 60-Second Inactivity Reload Watchdog ----
