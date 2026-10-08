@@ -17,6 +17,7 @@ const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, account === 'adaihbi' ? 'encashment_config.json' : `encashment_${account}_config.json`); }
+function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).reduce((out,item)=>{out[item.type]=item.value;return out;},{});return `${parts.year}-${parts.month}-${parts.day}`; }
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
@@ -472,7 +473,7 @@ function getMergedSlots(status) {
       _windowActive: ms.windowStart > 0,
       _cooldownActive: ms.cooldownStart > 0,
       encashment: (()=>{const account=String(slot.accountName || name).toLowerCase();return ENCASHMENT_ACCOUNTS.has(account)?readJson(encashmentStateFile(account),null):null;})(),
-      encashmentSchedule: (()=>{const account=String(slot.accountName || name).toLowerCase();if(!ENCASHMENT_ACCOUNTS.has(account))return null;const c=readJson(encashmentConfigFile(account),{});return {type:c.type||'',weekday:c.weekday||'',startHour:c.startHour==null?null:Number(c.startHour),endHour:c.endHour==null?null:Number(c.endHour),retryMinutes:5};})()
+      encashmentSchedule: (()=>{const account=String(slot.accountName || name).toLowerCase();if(!ENCASHMENT_ACCOUNTS.has(account))return null;const c=readJson(encashmentConfigFile(account),{}),o=c.oneTimeOverride,a=o&&String(o.date||'')===currentPhDateKey()?Object.assign({},c,o):c;return {type:a.type||'',weekday:a.weekday||'',startHour:a.startHour==null?null:Number(a.startHour),endHour:a.endHour==null?null:Number(a.endHour),retryMinutes:5,oneTime:!!(o&&String(o.date||'')===currentPhDateKey())};})()
     };
     merged.push(mergedSlot);
   }

@@ -43,6 +43,7 @@ credentials.json
 cred_history.json
 *.tar.gz
 .codex-runner-check
+.contabo/
 OUTPUT/
 TASK/
 android-app/local.properties
