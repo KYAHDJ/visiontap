@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VisionTap Accounts Auto Start
+Comment=Open the fitted five-account ECNL view when the desktop starts
+Exec=/home/opc/.local/bin/visiontap-accounts-viewer
+Icon=computer
+Terminal=false
+Hidden=false
+X-GNOME-Autostart-enabled=true
+X-XFCE-Autostart-enabled=true

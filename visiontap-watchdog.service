@@ -1,11 +1,10 @@
 [Unit]
-Description=VisionTap Watchdog - auto-restart Chrome pilots and shared services
+Description=VisionTap ECNL-only service health check
 After=network.target
 
 [Service]
 Type=simple
-User=opc
-Environment=DISPLAY=:1
+User=root
 ExecStart=/home/opc/VisionTap/watchdog.sh
 Restart=always
 RestartSec=10

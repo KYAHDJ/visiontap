@@ -1,0 +1,1 @@
+opc ALL=(root) NOPASSWD: /usr/bin/systemctl enable --now chrome-remote-desktop@opc

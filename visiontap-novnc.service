@@ -1,0 +1,14 @@
+[Unit]
+Description=VisionTap responsive local viewer
+After=visiontap-vnc.service
+Requires=visiontap-vnc.service
+
+[Service]
+Type=simple
+User=opc
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc 127.0.0.1:6080 127.0.0.1:1919
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

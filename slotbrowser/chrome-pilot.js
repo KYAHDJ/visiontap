@@ -16,9 +16,9 @@ const WORK_URL = TASK_MODE === 'math' ? 'https://pmath100.com/games-mathproblem#
 const PMATH_CONVERT_URL = 'https://pmath100.com/convert-coins';
 const PMATH_CONVERT_THRESHOLD = 30000;
 const PMATH_CONVERT_RETRY_MS = 300000;
-const SUBMIT_DELAYS = { adaihbi: 0, temi: 300, axceling1001: 600, clarencebopis: 900, connormofu: 1100, kyaiko: 0 };
+const SUBMIT_DELAYS = { deartheodosia: 0, aaronburr: 300, danicajgb: 3900, darlenejoyce: 4000, nnnikkikim: 4100, kyaiko: 0 };
 const SUBMIT_DELAY_MS = Number(process.env.VT_SUBMIT_DELAY_MS ?? SUBMIT_DELAYS[ACCOUNT] ?? 0);
-const ENCASHMENT_ACCOUNTS = new Set(['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu']);
+const ENCASHMENT_ACCOUNTS = new Set(['danicajgb', 'nnnikkikim', 'darlenejoyce', 'deartheodosia', 'aaronburr']);
 const STALL_RESET_MS = 15000;
 const SCANNER_URL = 'http://127.0.0.1:5566';
 const IS_WIN = process.platform === 'win32';
@@ -185,6 +185,10 @@ class ChromePilot {
     const pages = this.context.pages();
     this.page = pages.find(p => /ecnlmediamarket\.com|pmath100\.com/i.test(p.url())) || pages[0] || await this.context.newPage();
     for (const extra of pages) if (extra !== this.page && extra.url() === 'about:blank') await extra.close().catch(() => {});
+    // Keep every narrow ECNL slot at normal browser zoom. A saved per-site
+    // zoom level makes the responsive site render as a tiny desktop page.
+    await this.page.bringToFront().catch(() => {});
+    await this.page.keyboard.press('Control+0').catch(() => {});
     await this.positionWindow();
 
     this.log('Dashboard file controls are connected.');
@@ -664,9 +668,13 @@ class ChromePilot {
       }
       if (readiness.loginReady) {
         this.verificationClearStreak = 0;
+        if (!this.loadCredentials()) {
+          await this.setStatus(`Login required for ${ACCOUNT}. Credentials have not been added.`);
+          return;
+        }
         await this.setStatus(`Verification cleared. Signing in with the saved ${ACCOUNT} account…`);
         const submitted = await this.tryLogin();
-        if (!submitted) await this.setStatus('Saved credentials exist, but the login form is not ready yet.');
+        if (!submitted) await this.setStatus('Credentials are present, but the login form is not ready yet.');
         return;
       }
       if (readiness.authenticatedHome) {

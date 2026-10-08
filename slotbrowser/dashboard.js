@@ -2,9 +2,16 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const crypto = require("crypto");
 const { execSync } = require("child_process");
 
 const PORT = 6260;
+const DASHBOARD_USER = String(process.env.VT_DASHBOARD_USER || 'visiontap');
+const DASHBOARD_PASSWORD = String(process.env.VT_DASHBOARD_PASSWORD || '');
+const DASHBOARD_READ_ONLY = process.env.VT_DASHBOARD_READ_ONLY === '1';
+const DASHBOARD_ADMIN_PASSWORD = String(process.env.VT_DASHBOARD_ADMIN_PASSWORD || '');
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const adminSessions = new Map();
 const PMATH_CONVERT_THRESHOLD = 30000;
 const PH_TIME_ZONE = "Asia/Manila";
 const STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
@@ -13,24 +20,33 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu'];
-const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu']);
+const CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','darlenejoyce','deartheodosia','aaronburr'];
+const ENCASHMENT_ACCOUNTS = new Set(['danicajgb','nnnikkikim','darlenejoyce','deartheodosia','aaronburr']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
-function encashmentConfigFile(account) { return path.join(STATE_DIR, account === 'adaihbi' ? 'encashment_config.json' : `encashment_${account}_config.json`); }
+function encashmentConfigFile(account) { return path.join(STATE_DIR, `encashment_${account}_config.json`); }
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu' };
-function sendChromeControl(action, slot = 'all') {
+const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '11':'darlenejoyce', '12':'deartheodosia', '15':'aaronburr' };
+const DASHBOARD_GROUPS = {
+  'danica-niki':['danicajgb','nnnikkikim'],
+  'darlene':['darlenejoyce'],
+  'theodosia-aaron':['deartheodosia','aaronburr']
+};
+function resolveChromeAccounts(slot = 'all', group = '') {
+  if (slot === 'group') return DASHBOARD_GROUPS[group] || DASHBOARD_GROUPS['danica-niki'];
+  return slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
+}
+function sendChromeControl(action, slot = 'all', group = '') {
   const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
   if (!['pause','resume','reload','stop'].includes(mapped)) throw new Error('Invalid control action');
-  const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
+  const accounts = resolveChromeAccounts(slot, group);
   if (accounts.length === 0) throw new Error('Unknown account slot');
   for (const account of accounts) writeJson(chromePilotCommandFile(account), { action:mapped, nonce:`${Date.now()}-${Math.random()}` });
   return { action: mapped, accounts };
 }
-function restartChromeServices(slot = 'all') {
-  const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
+function restartChromeServices(slot = 'all', group = '') {
+  const accounts = resolveChromeAccounts(slot, group);
   if (accounts.length === 0) throw new Error('Unknown account slot');
   const units = accounts.map(account => `visiontap-chrome@${account}`).join(' ');
   execSync(`sudo systemctl restart ${units}`, { timeout: 30000 });
@@ -182,7 +198,6 @@ function getMergedSlots(status) {
   for (const slot of (configuredSlots.active || [])) {
     const id = String(slot.id);
     const name = slot.accountName || slot.name || `Slot ${Number(id) + 1}`;
-    if (id === '17' || String(name).toLowerCase() === 'darlenejoyce') continue;
     const account = String(slot.accountName || name).toLowerCase();
     const pilotState = readJson(chromePilotStateFile(account), {});
     // Strict per-slot personal — no fallback to other slots (prevents history leaking)
@@ -437,7 +452,7 @@ function getMergedSlots(status) {
     const mergedSlot = {
       id, name, accountName: slot.accountName || "",
       paused: !!(slot.paused || slot.stopRequested),
-      user: cred.user || "", pass: cred.pass || "",
+      user: "", pass: "",
       correctCount: sc.correctCount || 0,
       wrongCount: sc.wrongCount || 0,
       errorCount: sc.errorCount || 0,
@@ -479,7 +494,7 @@ function getMergedSlots(status) {
   return merged;
 }
 
-function buildPage() {
+function buildPage(isAdmin = false) {
   const history = getHistory();
   const historyOpts = history.users.map(v => `<option value="${v}">`).join("");
 
@@ -699,6 +714,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 .confirmmodal{display:none;position:fixed;inset:0;z-index:80;background:rgba(2,0,12,.82);padding:16px;align-items:center;justify-content:center;backdrop-filter:blur(8px)}.confirmmodal.show{display:flex}.confirmpanel{width:min(100%,390px);background:linear-gradient(145deg,#18172e,#0f0f21);border:1px solid #353251;border-radius:18px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.62);text-align:center;animation:confirm-in .18s ease}.confirmicon{width:42px;height:42px;margin:0 auto 13px;border-radius:13px;display:grid;place-items:center;background:#2e285a;color:#d8d3ff;font-size:20px;font-weight:900}.confirmpanel h2{font-size:17px;color:#fff;margin:0}.confirmpanel p{font-size:11px;line-height:1.55;color:#b7b3ca;margin:9px 0 19px}.confirmactions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.confirmactions button{height:42px;border-radius:9px;font-size:10px;font-weight:850;cursor:pointer}.confirmcancel{border:1px solid #3b3857;background:#1a192e;color:#c4c0d4}.confirmaccept{border:0;background:#6857ff;color:#fff}.confirmaccept.danger{background:#ff3b61}.confirmaccept.warning{background:#ff9f0a;color:#160b00}@keyframes confirm-in{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}@media(max-width:390px){.confirmpanel{padding:18px}.confirmactions{grid-template-columns:1fr}.confirmactions button{height:44px}}
 /* Compact, balanced Global Controls layout */
 .global-controls-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;padding:12px!important}
+.read-only .global-controls-grid,.read-only .sacts,.read-only .slotverify-actions,.read-only .crow{display:none!important}
+.admin-access{margin-left:10px;padding:7px 10px;border:1px solid #474263;border-radius:8px;color:#d9d5ed;text-decoration:none;font-size:9px;font-weight:850;white-space:nowrap}.admin-mode .admin-access{border-color:#00b87a;color:#78edc3;background:rgba(0,184,122,.12)}
+@media(max-width:620px){.appstate{gap:4px}.admin-access{margin-left:3px;padding:6px 7px;font-size:7px}#app-state-text{display:none}}
 .global-controls-grid .btn{display:flex!important;align-items:center;justify-content:center;width:100%!important;min-width:0!important;min-height:42px;margin:0!important;padding:10px 12px!important}
 @media(max-width:760px){.global-controls-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;padding:10px!important}}
 @media(max-width:350px){.global-controls-grid{grid-template-columns:1fr!important}}
@@ -729,20 +747,20 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 }
 </style>
 </head>
-<body>
-<header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span></div></header>
+<body class="${isAdmin ? 'admin-mode' : 'read-only'}">
+<header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span><a class="admin-access" href="${isAdmin ? '/admin-logout' : '/admin-login'}" id="admin-access">${isAdmin ? 'Sign out' : 'Admin sign in'}</a></div></header>
 <div class="wrap">
-  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Live-rate projection · PMath approximate</span></div></div></section>
+  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Live ECNL rate projection</span></div></div></section>
   <section class="mini-summary-wrap" aria-live="polite"><div class="mini-summary-title">Account snapshot <span>Live balance · change speed · next cash-out</span></div><div class="mini-summary-grid" id="mini-summary"></div></section>
   <section class="daily-payouts" id="daily-payout" hidden aria-live="polite"></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
   <div class="stitle">Global Controls</div>
   <div class="ggrid global-controls-grid">
-    <a class="btn bgrn" href="/cmd?action=resume&slot=all" onclick="return confirmControl(event,'resume','all',&quot;Resume every account?&quot;,&quot;All paused accounts will resume automation.&quot;,&quot;Resume all&quot;)">Resume All</a>
-    <a class="btn bred" href="/cmd?action=pause&slot=all" onclick="return confirmControl(event,'pause','all',&quot;Pause every account?&quot;,&quot;All account automation will pause until resumed.&quot;,&quot;Pause all&quot;)">Pause All</a>
-    <a class="btn byel" href="/cmd?action=restart&slot=all" onclick="return confirmControl(event,'restart','all',&quot;Restart every account?&quot;,&quot;All account workers and windows will restart.&quot;,&quot;Restart all&quot;)">Restart All</a>
-    <a class="btn bpur" href="/cmd?action=refresh&slot=all" onclick="return confirmControl(event,'refresh','all',&quot;Refresh every account?&quot;,&quot;All account pages will reload.&quot;,&quot;Refresh all&quot;)">Refresh All</a>
+    <a class="btn bgrn" href="#" onclick="return confirmControl(event,'resume','group',&quot;Resume shown accounts?&quot;,&quot;The accounts on this dashboard will resume automation.&quot;,&quot;Resume shown&quot;)">Resume Shown</a>
+    <a class="btn bred" href="#" onclick="return confirmControl(event,'pause','group',&quot;Pause shown accounts?&quot;,&quot;The accounts on this dashboard will pause until resumed.&quot;,&quot;Pause shown&quot;)">Pause Shown</a>
+    <a class="btn byel" href="#" onclick="return confirmControl(event,'restart','group',&quot;Restart shown accounts?&quot;,&quot;The account workers shown here will restart.&quot;,&quot;Restart shown&quot;)">Restart Shown</a>
+    <a class="btn bpur" href="#" onclick="return confirmControl(event,'refresh','group',&quot;Refresh shown accounts?&quot;,&quot;The account pages shown here will reload.&quot;,&quot;Refresh shown&quot;)">Refresh Shown</a>
   </div>
   <div class="stitle section-aiko-title"><span>ACCOUNTS — <span id="scnt-aiko">0</span> slots</span></div>
   <div id="slots-aiko"></div>
@@ -757,6 +775,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 <datalist id="hu">${historyOpts}</datalist>
 <script>
 var POLL=2000,LD='',PH_TIME_ZONE=${JSON.stringify(PH_TIME_ZONE)};
+var adminAccess=document.getElementById('admin-access');
+if(adminAccess){var here=location.pathname+location.search;adminAccess.href=(adminAccess.textContent.indexOf('Sign out')>=0?'/admin-logout':'/admin-login')+'?return='+encodeURIComponent(here)}
 
 function formatPHTime(now){
   return new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}).format(now);
@@ -911,7 +931,8 @@ function confirmLink(event,element,title,message,label,tone){if(event)event.prev
 function controlFeedback(message,ok){var el=document.getElementById('app-state-text'),dot=document.getElementById('app-live-dot');if(el)el.textContent=message;if(dot)dot.style.background=ok===false?'#ff3b61':'#00d68f'}
 function runDashboardControl(action,slot,label){
   controlFeedback((label||'Control')+'…');
-  return fetch('/dashboard-control?action='+encodeURIComponent(action)+'&slot='+encodeURIComponent(slot),{method:'POST',cache:'no-store'})
+  var group=new URLSearchParams(location.search).get('group')||'danica-niki';
+  return fetch('/dashboard-control?action='+encodeURIComponent(action)+'&slot='+encodeURIComponent(slot)+'&group='+encodeURIComponent(group),{method:'POST',cache:'no-store'})
     .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||'Control failed');return body})})
     .then(function(body){controlFeedback((label||'Control')+' sent to '+body.accounts.length+' account'+(body.accounts.length===1?'':'s'));setTimeout(poll,350);return body})
     .catch(function(error){controlFeedback(error.message||'Control failed',false);throw error});
@@ -920,11 +941,11 @@ function confirmControl(event,action,slot,title,message,label,tone){if(event)eve
 function slotTheme(account){
   var themes={
     kyaiko:['#8b5cf6','rgba(139,92,246,.15)','rgba(139,92,246,.25)'],
-    clarencebopis:['#0ea5e9','rgba(14,165,233,.15)','rgba(14,165,233,.25)'],
-    connormofu:['#14b8a6','rgba(20,184,166,.15)','rgba(20,184,166,.25)'],
-    adaihbi:['#22c55e','rgba(34,197,94,.15)','rgba(34,197,94,.25)'],
-    temi:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
-    axceling1001:['#ec4899','rgba(236,72,153,.15)','rgba(236,72,153,.25)']
+    danicajgb:['#0ea5e9','rgba(14,165,233,.15)','rgba(14,165,233,.25)'],
+    nnnikkikim:['#14b8a6','rgba(20,184,166,.15)','rgba(20,184,166,.25)'],
+    darlenejoyce:['#22c55e','rgba(34,197,94,.15)','rgba(34,197,94,.25)'],
+    deartheodosia:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
+    aaronburr:['#ec4899','rgba(236,72,153,.15)','rgba(236,72,153,.25)']
   };
   return themes[String(account||'').toLowerCase()]||['#64748b','rgba(100,116,139,.15)','rgba(100,116,139,.25)'];
 }
@@ -952,8 +973,17 @@ function renderDailyPayout(slots,pmathPayouts,now){
   wrap.hidden=false;
 }
 function render(d){
-  var slots=(d.slots||[]).filter(function(s){return String(s.id)!=="17"&&String(s.accountName||'').toLowerCase()!=='darlenejoyce'});
-  var pilots=d.chromePilots||[],pilot=d.chromePilot||{};
+  var requestedGroup=new URLSearchParams(location.search).get('group');
+  var groups={
+    'danica-niki':['danicajgb','nnnikkikim'],
+    'darlene':['darlenejoyce'],
+    'theodosia-aaron':['deartheodosia','aaronburr']
+  };
+  var groupKey=groups[requestedGroup]?requestedGroup:'danica-niki';
+  var allowed=groups[groupKey];
+  var inView=function(account){return allowed.indexOf(String(account||'').toLowerCase())>=0;};
+  var slots=(d.slots||[]).filter(function(s){return String(s.id)!=="17"&&inView(s.accountName||s.name)});
+  var pilots=(d.chromePilots||[]).filter(function(p){return inView(p&&p.account)}),pilot=d.chromePilot||{};
   var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
   var runningPilots=pilots.filter(function(p){return p&&p.running}).length,activeCount=runningPilots||slots.filter(function(x){return !x.paused}).length,workerUp=runningPilots>0||!!pilot.running,healthy=d.scannerUp&&workerUp&&!d.loopPaused;
@@ -1156,8 +1186,100 @@ console.log('VisionTap dashboard live poll started v'+Date.now());
 </body></html>`;
 }
 
-const server = http.createServer((req, res) => {
+function parseCookies(req) {
+  return String(req.headers.cookie || '').split(';').reduce((out, part) => {
+    const at = part.indexOf('=');
+    if (at > 0) out[part.slice(0, at).trim()] = decodeURIComponent(part.slice(at + 1).trim());
+    return out;
+  }, {});
+}
+function isAdminRequest(req) {
+  const token = parseCookies(req).vt_admin;
+  const expiresAt = token && adminSessions.get(token);
+  if (!expiresAt || expiresAt <= Date.now()) {
+    if (token) adminSessions.delete(token);
+    return false;
+  }
+  adminSessions.set(token, Date.now() + ADMIN_SESSION_TTL_MS);
+  return true;
+}
+function passwordMatches(value) {
+  if (!DASHBOARD_ADMIN_PASSWORD) return false;
+  const actual = crypto.createHash('sha256').update(String(value || '')).digest();
+  const expected = crypto.createHash('sha256').update(DASHBOARD_ADMIN_PASSWORD).digest();
+  return crypto.timingSafeEqual(actual, expected);
+}
+function safeReturnPath(value) {
+  const target = String(value || '/');
+  return target.startsWith('/') && !target.startsWith('//') ? target : '/';
+}
+function readRequestBody(req, maxBytes = 8192) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > maxBytes) { reject(new Error('Request too large')); req.destroy(); }
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+}
+function loginPage(returnTo = '/', error = '') {
+  const safeReturn = safeReturnPath(returnTo);
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>VisionTap Admin</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:18px;background:#0c0c1d;color:#fff;font-family:system-ui,-apple-system,sans-serif}.login{width:min(100%,380px);padding:26px;border:1px solid #302d4c;border-radius:20px;background:linear-gradient(145deg,#17162b,#101021);box-shadow:0 28px 80px #0008}.mark{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#725cff,#ff4f78);display:grid;place-items:center;font-weight:900;margin-bottom:18px}h1{font-size:23px;margin:0 0 6px}p{color:#aaa6bd;font-size:12px;line-height:1.5;margin:0 0 18px}label{display:block;font-size:10px;font-weight:800;color:#c8c4da;margin-bottom:7px}input{width:100%;height:46px;border:1px solid #3b3758;border-radius:10px;background:#0b0b19;color:#fff;padding:0 13px;font-size:15px;outline:none}input:focus{border-color:#725cff}button,.back{display:flex;width:100%;height:44px;align-items:center;justify-content:center;border-radius:10px;font-weight:850;font-size:11px;text-decoration:none}button{margin-top:12px;border:0;background:#725cff;color:#fff}.back{margin-top:8px;color:#b8b4ca;border:1px solid #302d4c}.error{padding:9px 11px;margin-bottom:13px;border-radius:9px;background:#471a28;color:#ff9db3;font-size:10px}</style></head><body><form class="login" method="post" action="/admin-login"><div class="mark">VT</div><h1>Admin controls</h1><p>Sign in to reveal Pause, Resume, Restart, and Refresh. Monitoring stays public and view-only.</p>${error ? `<div class="error">${error}</div>` : ''}<input type="hidden" name="return" value="${safeReturn.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"><label for="password">ADMIN PASSWORD</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus><button type="submit">Sign in</button><a class="back" href="${safeReturn}">Back to dashboard</a></form></body></html>`;
+}
+
+const server = http.createServer(async (req, res) => {
+  if (DASHBOARD_PASSWORD) {
+    const expected = `Basic ${Buffer.from(`${DASHBOARD_USER}:${DASHBOARD_PASSWORD}`).toString('base64')}`;
+    if (req.headers.authorization !== expected) {
+      res.writeHead(401, {
+        "WWW-Authenticate": 'Basic realm="VisionTap Dashboard"',
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store"
+      });
+      res.end("Authentication required");
+      return;
+    }
+  }
   const url = new URL(req.url, `http://${req.headers.host}`);
+  const isAdmin = isAdminRequest(req);
+  if (url.pathname === '/admin-login' && req.method === 'GET') {
+    if (isAdmin) { res.writeHead(302, { Location:safeReturnPath(url.searchParams.get('return')) }); res.end(); return; }
+    res.writeHead(200, { 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store' });
+    res.end(loginPage(url.searchParams.get('return') || '/'));
+    return;
+  }
+  if (url.pathname === '/admin-login' && req.method === 'POST') {
+    try {
+      const form = new URLSearchParams(await readRequestBody(req));
+      const returnTo = safeReturnPath(form.get('return'));
+      if (!passwordMatches(form.get('password'))) {
+        res.writeHead(401, { 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store' });
+        res.end(loginPage(returnTo, 'Incorrect password. Please try again.'));
+        return;
+      }
+      const token = crypto.randomBytes(32).toString('base64url');
+      adminSessions.set(token, Date.now() + ADMIN_SESSION_TTL_MS);
+      res.writeHead(302, { Location:returnTo, 'Set-Cookie':`vt_admin=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${ADMIN_SESSION_TTL_MS / 1000}` });
+      res.end();
+    } catch (error) {
+      res.writeHead(400, { 'Content-Type':'text/plain; charset=utf-8' }); res.end('Sign-in request could not be processed.');
+    }
+    return;
+  }
+  if (url.pathname === '/admin-logout' && req.method === 'GET') {
+    const token = parseCookies(req).vt_admin;
+    if (token) adminSessions.delete(token);
+    res.writeHead(302, { Location:safeReturnPath(url.searchParams.get('return')), 'Set-Cookie':'vt_admin=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0' });
+    res.end();
+    return;
+  }
+  if (DASHBOARD_READ_ONLY && !isAdmin && !(req.method === "GET" && (url.pathname === "/" || url.pathname === "/api/stats"))) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    res.end("Public dashboard is read-only");
+    return;
+  }
 
   if (url.pathname === "/debug-images" && req.method === "GET") {
     const debugDir = path.join(__dirname, "..", "debug_images");
@@ -1188,8 +1310,7 @@ const server = http.createServer((req, res) => {
     const chromePilots = getChromePilots();
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    const pmathPayoutsRaw = readJson(PMATH_PAYOUT_HISTORY_FILE, []);
-    const pmathPayouts = Array.isArray(pmathPayoutsRaw) ? pmathPayoutsRaw : (Array.isArray(pmathPayoutsRaw.records) ? pmathPayoutsRaw.records : []);
+    const pmathPayouts = [];
     res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
@@ -1208,13 +1329,14 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/dashboard-control" && req.method === "POST") {
     const action = String(url.searchParams.get("action") || "").toLowerCase();
     const slot = String(url.searchParams.get("slot") || "all").toLowerCase();
+    const group = String(url.searchParams.get("group") || "danica-niki").toLowerCase();
     if (!['pause','resume','refresh','restart'].includes(action)) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok:false, error:'Invalid control action' }));
       return;
     }
     try {
-      const result = action === 'restart' ? restartChromeServices(slot) : sendChromeControl(action, slot);
+      const result = action === 'restart' ? restartChromeServices(slot, group) : sendChromeControl(action, slot, group);
       log(`DASHBOARD CONTROL: action=${action} accounts=${result.accounts.join(',')}`);
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "no-store");
@@ -1281,7 +1403,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu");
+    run("sudo systemctl restart visiontap-chrome@danicajgb visiontap-chrome@nnnikkikim visiontap-chrome@darlenejoyce visiontap-chrome@deartheodosia visiontap-chrome@aaronburr");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");
@@ -1297,7 +1419,7 @@ const server = http.createServer((req, res) => {
   // Dashboard GET
   res.setHeader("Content-Type", "text/html");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.end(buildPage());
+  res.end(buildPage(isAdmin));
 });
 
 server.listen(PORT, "0.0.0.0", () => {

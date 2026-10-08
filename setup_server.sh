@@ -1,65 +1,47 @@
 #!/bin/bash
-set -e
-LOG=/tmp/visiontap_setup.log
-exec > >(tee -a $LOG) 2>&1
-echo "=== VisionTap Setup Started at $(date) ==="
+set -euo pipefail
 
-# Keep Oracle synchronized with Philippine Standard Time (Quezon City).
-sudo timedatectl set-timezone Asia/Manila
-sudo timedatectl set-ntp true
+APP_DIR=/home/opc/VisionTap
+OPC_HOME=/home/opc
 
-# Wait for dnf update to finish
-echo "Waiting for dnf update..."
-while pgrep -x dnf > /dev/null 2>&1; do sleep 5; done
-echo "dnf update done."
-
-# Install system deps
-echo "Installing system packages..."
-sudo dnf install -y git python3 python3-pip python3-devel tesseract gcc-c++ cmake \
-  libX11-devel libXcomposite-devel libXdamage-devel libXrandr-devel libXtst-devel \
-  alsa-lib-devel cups-devel libdrm-devel gtk3-devel nss-devel dbus-devel \
-  libnotify-devel libsecret-devel libxkbcommon-devel xorg-x11-server-Xvfb \
-  x11vnc fluxbox wget 2>&1 | tail -5
-
-# Install Node.js 20
-echo "Installing Node.js..."
-if ! command -v node &> /dev/null; then
-  sudo dnf module install nodejs:20 -y 2>&1 | tail -3
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run this installer with sudo."
+  exit 1
 fi
-echo "Node: $(node -v)  NPM: $(npm -v)"
-
-# Clone repo
-echo "Cloning repo..."
-cd /home/opc
-if [ ! -d "VisionTap" ]; then
-  git clone https://github.com/KYAHDJ/visiontap.git VisionTap
+if ! id opc >/dev/null 2>&1; then
+  echo "The required opc user does not exist."
+  exit 1
 fi
-cd VisionTap
+if [ ! -f "$APP_DIR/slotbrowser/dashboard.js" ]; then
+  echo "Expected repository at $APP_DIR."
+  exit 1
+fi
 
-# Python deps
-echo "Installing Python deps..."
-pip3 install --user flask opencv-python-headless pytesseract Pillow numpy 2>&1 | tail -3
+apt-get update
+apt-get install -y python3-venv python3-pip tesseract-ocr xvfb openbox x11vnc novnc websockify nodejs npm
 
-# Check tesseract
-echo "Tesseract: $(tesseract --version 2>&1 | head -1)"
+python3 -m venv "$APP_DIR/.venv"
+"$APP_DIR/.venv/bin/pip" install --upgrade pip
+"$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+npm --prefix "$APP_DIR/slotbrowser" ci --omit=dev
 
-# Kill existing processes on ports
-fuser -k 5566/tcp 2>/dev/null || true
+install -d -m 0700 -o opc -g opc "$OPC_HOME/.config/VisionTap-Chrome" "$OPC_HOME/.config/VisionTap-Dashboard"
+install -d -m 0755 -o opc -g opc "$OPC_HOME/.config/VisionTap Slots/state"
+install -m 0600 -o opc -g opc "$APP_DIR"/config/chrome-*.env "$OPC_HOME/.config/VisionTap-Chrome/"
+install -m 0644 -o opc -g opc "$APP_DIR/config/slots.json" "$OPC_HOME/.config/VisionTap Slots/state/slots.json"
 
-# Node dependencies (Chrome pilot only)
-npm --prefix slotbrowser ci --omit=dev
+install -m 0644 "$APP_DIR"/visiontap-*.service /etc/systemd/system/
+install -d -m 0755 /etc/systemd/system/visiontap-dashboard.service.d
+install -m 0644 "$APP_DIR/visiontap-dashboard-admin.conf" /etc/systemd/system/visiontap-dashboard.service.d/admin.conf
+install -m 0440 "$APP_DIR/visiontap-dashboard-sudoers" /etc/sudoers.d/visiontap-dashboard
+install -m 0755 "$APP_DIR/watchdog.sh" "$APP_DIR/visiontap-accounts-viewer"
+chown -R opc:opc "$APP_DIR"
 
-# Install Chrome-only services and account configuration.
-sudo install -m 0644 visiontap-xvfb.service visiontap-openbox.service visiontap-vnc.service \
-  visiontap-scanner.service visiontap-dashboard.service visiontap-watchdog.service \
-  visiontap-chrome@.service /etc/systemd/system/
-mkdir -p "$HOME/.config/VisionTap-Chrome"/{kyaiko,adaihbi,temi,axceling1001,clarencebopis,connormofu}
-for account in kyaiko adaihbi temi axceling1001 clarencebopis connormofu; do
-  install -m 0600 "chrome-$account.env" "$HOME/.config/VisionTap-Chrome/$account.env"
+systemctl daemon-reload
+systemctl enable --now visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-novnc visiontap-scanner visiontap-dashboard
+for account in danicajgb nnnikkikim darlenejoyce deartheodosia aaronburr; do
+  systemctl enable --now "visiontap-chrome@$account"
 done
-sudo systemctl disable --now visiontap-electron.service 2>/dev/null || true
-sudo systemctl daemon-reload
-sudo systemctl enable visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-scanner visiontap-dashboard visiontap-watchdog
-sudo systemctl enable visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu
+systemctl enable --now visiontap-watchdog
 
-echo "=== Setup complete at $(date) ==="
+echo "VisionTap Contabo services installed. Add private account sessions, payout settings, and admin password separately."

@@ -1,12 +1,12 @@
 [Unit]
-Description=x11vnc VNC Server
-After=network.target visiontap-xvfb.service
+Description=VisionTap Local Automation Viewer
+After=visiontap-xvfb.service visiontap-openbox.service
 Requires=visiontap-xvfb.service
 
 [Service]
 Type=simple
 User=opc
-ExecStart=/usr/bin/x11vnc -display :1 -forever -nopw -rfbport 1919 -shared
+ExecStart=/usr/bin/x11vnc -display :1 -localhost -forever -shared -nopw -rfbport 1919
 Restart=always
 RestartSec=5
 

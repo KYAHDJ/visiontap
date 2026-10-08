@@ -8,7 +8,7 @@ User=opc
 WorkingDirectory=/home/opc/VisionTap/pcapp/scanner
 Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Asia/Manila
-ExecStart=/usr/bin/python3 server.py
+ExecStart=/home/opc/VisionTap/.venv/bin/python server.py
 Restart=always
 RestartSec=5
 
