@@ -27,6 +27,16 @@ const CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','darlenejoyce','deartheodosia'
 const ENCASHMENT_ACCOUNTS = new Set(['danicajgb','nnnikkikim','darlenejoyce','deartheodosia','aaronburr']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, `encashment_${account}_config.json`); }
+function publicEncashmentState(account) {
+  const state = readJson(encashmentStateFile(account), null);
+  if (!state) return null;
+  const safe = Object.assign({}, state);
+  delete safe.payoutNumber;
+  delete safe.lastUrl;
+  delete safe.screenshot;
+  delete safe.message;
+  return safe;
+}
 function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).reduce((out,item)=>{out[item.type]=item.value;return out;},{});return `${parts.year}-${parts.month}-${parts.day}`; }
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
@@ -495,7 +505,7 @@ function getMergedSlots(status) {
       balanceHistory: Array.isArray(ms.balanceHistory) ? ms.balanceHistory.slice(-10) : [],
       _windowActive: ms.windowStart > 0,
       _cooldownActive: ms.cooldownStart > 0,
-      encashment: (()=>{const account=String(slot.accountName || name).toLowerCase();return ENCASHMENT_ACCOUNTS.has(account)?readJson(encashmentStateFile(account),null):null;})(),
+      encashment: (()=>{const account=String(slot.accountName || name).toLowerCase();return ENCASHMENT_ACCOUNTS.has(account)?publicEncashmentState(account):null;})(),
       encashmentSchedule: (()=>{const account=String(slot.accountName || name).toLowerCase();if(!ENCASHMENT_ACCOUNTS.has(account))return null;const c=readJson(encashmentConfigFile(account),{}),o=c.oneTimeOverride,a=o&&String(o.date||'')===currentPhDateKey()?Object.assign({},c,o):c;return {type:a.type||'',weekday:a.weekday||'',startHour:a.startHour==null?null:Number(a.startHour),endHour:a.endHour==null?null:Number(a.endHour),retryMinutes:5,oneTime:!!(o&&String(o.date||'')===currentPhDateKey())};})()
     };
     merged.push(mergedSlot);
@@ -759,8 +769,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 <body class="${isAdmin ? 'admin-mode' : 'read-only'}">
 <header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span><a class="admin-access" href="${isAdmin ? '/admin-logout' : '/admin-login'}" id="admin-access">${isAdmin ? 'Sign out' : 'Admin sign in'}</a></div></header>
 <div class="wrap">
-  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Sum of next cash-outs · monthly approximate</span></div></div></section>
-  <section class="mini-summary-wrap" aria-live="polite"><div class="mini-summary-title">Account snapshot <span>Live balance · change speed · next cash-out</span></div><div class="mini-summary-grid" id="mini-summary"></div></section>
+  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Sum of next payouts · monthly approximate</span></div></div></section>
+  <section class="mini-summary-wrap" aria-live="polite"><div class="mini-summary-title">Account snapshot <span>Live balance · change speed · next payout</span></div><div class="mini-summary-grid" id="mini-summary"></div></section>
   <section class="daily-payouts" id="daily-payout" hidden aria-live="polite"></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
@@ -778,7 +788,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
     <a class="btn bgrn bful" href="/restart" onclick="return confirmLink(event,this,&quot;Restart VisionTap?&quot;,&quot;The dashboard and automation services may be briefly unavailable.&quot;,&quot;Restart VisionTap&quot;)">Restart VisionTap</a>
   </div>
   <div class="ftr"><span class="livedot"></span><span id="ltxt">Connecting...</span></div>
-  <div class="encmodal" id="encmodal" onclick="if(event.target===this)closeEncash()"><div class="encpanel"><div class="enchd"><div class="enctitle" id="enctitle">Payout</div><button class="encclose" onclick="closeEncash()">Close</button></div><div id="encbody"></div></div></div>
+  <div class="encmodal" id="encmodal" onclick="if(event.target===this)closeEncash()"><div class="encpanel"><div class="enchd"><div class="enctitle" id="enctitle">Payout Information</div><button class="encclose" onclick="closeEncash()">Close</button></div><div id="encbody"></div></div></div>
   <div class="confirmmodal" id="confirmmodal" onclick="if(event.target===this)closeConfirm()"><div class="confirmpanel" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><div class="confirmicon">!</div><h2 id="confirm-title">Confirm action</h2><p id="confirm-message"></p><div class="confirmactions"><button type="button" class="confirmcancel" onclick="closeConfirm()">Cancel</button><button type="button" class="confirmaccept" id="confirm-accept" onclick="acceptConfirm()">Confirm</button></div></div></div>
 </div>
 <datalist id="hu">${historyOpts}</datalist>
@@ -919,7 +929,7 @@ function renderMiniSummary(slots,pilots,now){
     return '<article class="mini-slot'+cardState+'" style="--mini-accent:'+theme[0]+';--mini-soft:'+theme[1]+'">'
       +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change" data-balance-start="'+changeStart+'">'+esc(change)+'</span></div>'
       +'<div class="mini-slot-values"><div class="mini-slot-stat"><small>Current balance</small><strong>&#8369;'+current.toFixed(2)+'</strong></div>'
-      +'<div class="mini-slot-stat estimate"><small>Next cash-out</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
+      +'<div class="mini-slot-stat estimate"><small>Next payout</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-stat rate"><small>'+(isPmath?'Coins':'Points')+' / minute</small><strong>'+liveRate.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+'</div>'+alertHtml+'</div></article>';
   }).join('');
@@ -986,9 +996,9 @@ function renderDailyPayout(slots,pmathPayouts,now){
     var title=String(record.account)+' · '+record.platform+schedule,amountText='₱'+(Number.isFinite(numeric)?numeric.toFixed(2):'0.00');
     var statusText=received?'Received':belowMinimum?'Waiting For ₱300':status.replace(/_/g,' ').replace(/\b\w/g,function(ch){return ch.toUpperCase()});
     var detail=state.transactionId||state.reference||state.trxCode||'';
-    var reminder=received?'Payout receipt is confirmed.':belowMinimum?'Cash-out is locked until this account reaches at least ₱300.':'Not received yet? Sign in online and check the payout history or GCash status.';
+    var reminder=received?'Payout receipt is confirmed.':belowMinimum?'Payout becomes available when this account reaches at least ₱300.':'Not received yet? Sign in online and check the payout history or GCash status.';
     if(detail)reminder+=' Reference: '+detail+'.';
-    return '<article class="daily-payout'+(received?' received':'')+'"><div class="daily-payout-icon">₱</div><div class="daily-payout-copy"><small>Today’s cash-out</small><strong>'+esc(title)+'</strong><span>'+esc(reminder)+'</span></div><div class="daily-payout-amount"><b>'+esc(amountText)+'</b><span>'+esc(statusText)+'</span></div></article>';
+    return '<article class="daily-payout'+(received?' received':'')+'"><div class="daily-payout-icon">₱</div><div class="daily-payout-copy"><small>Today’s Payout Information</small><strong>'+esc(title)+'</strong><span>'+esc(reminder)+'</span></div><div class="daily-payout-amount"><b>'+esc(amountText)+'</b><span>'+esc(statusText)+'</span></div></article>';
   }).join('');
   wrap.hidden=false;
 }
@@ -1082,7 +1092,7 @@ function render(d){
         var cashoutProjection = nextCashoutProjection(s,new Date());
         var cashoutAmount = cashoutProjection ? cashoutProjection.amount : (isPmathCard?Number(s.withdrawable||0)/100:Number(s.withdrawable||0));
         var cashoutNote = cashoutProjection && !cashoutProjection.eligible ? ' <span style="color:var(--muted)">(below &#8369;300 minimum)</span>' : '';
-        var nextCashoutLine = '<div class="bcalc-line next-cashout-line">Next cash-out estimate: <span class="bcalc-em" style="color:#10b981">&#8369;'+Number(cashoutAmount).toFixed(2)+'</span>'+cashoutNote+'</div>';
+        var nextCashoutLine = '<div class="bcalc-line next-cashout-line">Next payout estimate: <span class="bcalc-em" style="color:#10b981">&#8369;'+Number(cashoutAmount).toFixed(2)+'</span>'+cashoutNote+'</div>';
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
         // Measure the actual interval between the two latest distinct Balance
         // History records. Current time, polling, and restarts do not affect it.
@@ -1128,7 +1138,7 @@ function render(d){
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
       '</form>'+
       eh+
-      '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001','clarencebopis','connormofu'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Cash-out</button></span><span class="action-break"></span>'})()+
+      '<div class="sacts">'+        (function(){if(!s.encashmentSchedule)return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'})()+
         controlsHtml+
       '</div></div>';
     hAiko+=cardHtml;
@@ -1141,14 +1151,14 @@ function liveTimerText(start,fallback){if(!start)return fallback||'00:00';var el
 function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
 function showEncash(id){
   var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{};
-  document.getElementById('enctitle').textContent=String(slot&&slot.accountName||'Account')+' Payout';
+  document.getElementById('enctitle').textContent=String(slot&&slot.accountName||'Account')+' Payout Information';
   var mask=function(v){v=String(v||'');return v.length>4?'•••• '+v.slice(-4):(v||'—')};
   var money=function(v){v=String(v||'—');return v==='—'?v:(/[₱P]/.test(v)?v:'₱'+v)};
   var kind=String(e.kind||'unknown').toLowerCase(),upcoming=String(q.type||'').toLowerCase(),day=({Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'})[q.weekday]||q.weekday||'Not scheduled';
   var logs=(e.eventLog||[]).filter(function(x){return !/history check|payout status/i.test(x.text||'')}).slice(-3).reverse().map(function(x){return '<div>'+esc(fmtWhen(x.at))+' · '+esc(x.text)+'</div>'}).join('');
   document.getElementById('encbody').innerHTML='<div class="enchero"><div><small>'+esc(kind==='task'?'Task payout':'Network payout')+'</small><strong>'+esc(money(e.netAmount||e.amount))+'</strong></div></div>'+
     '<div class="encsummary"><div class="encsum"><b>Gross</b><span>'+esc(money(e.amount))+'</span></div><div class="encsum"><b>Fee / tax</b><span>'+esc(money(e.tax))+'</span></div><div class="encsum net"><b>You receive</b><span>'+esc(money(e.netAmount||e.amount))+'</span></div></div>'+
-    '<div class="encdetails"><div class="encdetail"><b>GCash account</b>'+esc(mask(e.payoutNumber))+'</div><div class="encdetail"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encdetail"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encdetail"><b>Transaction ID</b>'+esc(e.transactionId||'—')+'</div><div class="encdetail"><b>Source</b>Payout history</div></div>'+
+    '<div class="encdetails"><div class="encdetail"><b>Payment method</b>'+esc(e.gateway||'GCash')+'</div><div class="encdetail"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encdetail"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encdetail"><b>Transaction ID</b>'+esc(e.transactionId||'—')+'</div><div class="encdetail"><b>Source</b>Payout history</div></div>'+ 
     '<div class="encschedule"><b>Next: '+esc(upcoming==='task'?'Task Encashment':upcoming==='network'?'Network Encashment':'Not configured')+'</b><span>'+esc(day)+(q.startHour!=null&&q.endHour!=null?' · '+esc(q.startHour)+':00–'+esc(q.endHour)+':00 AM PH':'')+'</span></div>'+
     (logs?'<div class="encactivity">'+logs+'</div>':'');
   document.getElementById('encmodal').classList.add('show');
