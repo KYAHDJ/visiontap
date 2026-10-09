@@ -20,7 +20,7 @@ function phParts(now = new Date()) {
   let hour = Number(parts.hour); if (hour === 24) hour = 0;
   return { key:`${parts.year}-${parts.month}-${parts.day}`, weekday:parts.weekday, hour, minute:Number(parts.minute), second:Number(parts.second) };
 }
-function defaultState() { return { date:'', kind:'', status:'scheduled', attempts:0, lastAttemptAt:0, nextAttemptAt:0, historyCheckedAt:0, historyCaptured:false, reference:'', amount:'', tax:'', netAmount:'', gateway:'', payoutNumber:'', requestedAt:'', transactionId:'', payoutStatus:'', message:'', lastUrl:'', screenshot:'', eventLog:[] }; }
+function defaultState() { return { date:'', kind:'', status:'scheduled', attempts:0, lastAttemptAt:0, nextAttemptAt:0, historyCheckedAt:0, finalHistoryCheckedAt:0, historyCaptured:false, reference:'', amount:'', tax:'', netAmount:'', gateway:'', payoutNumber:'', requestedAt:'', transactionId:'', payoutStatus:'', message:'', lastUrl:'', screenshot:'', eventLog:[] }; }
 function cleanMoney(value) {
   const match = String(value || '').replace(/,/g, '').match(/-?[0-9]+(?:\.[0-9]+)?/);
   return match ? match[0] : '';
@@ -115,6 +115,7 @@ class ChromeEncashmentController {
     let state = this.state();
     if (/submitted|pending|processing/i.test(`${state.status} ${state.payoutStatus}`) && state.date === ph.key) {
       if (!state.historyCheckedAt) await this.checkHistory();
+      else if (ph.hour >= 9 && !state.finalHistoryCheckedAt) await this.checkHistory(true);
       return;
     }
     if (ph.weekday !== (cfg.weekday || 'Wed')) return;
@@ -170,8 +171,11 @@ class ChromeEncashmentController {
       } catch (error) { state.status='failed';state.message=compact(error.message);state.nextAttemptAt=Date.now()+FIVE_MINUTES;this.save(state,`Attempt error: ${error.message}`); }
     });
   }
-  async checkHistory() {
-    const state=this.state();state.historyCheckedAt=Date.now();state.lastCheckAt=state.historyCheckedAt;state.nextCheckAt=0;this.save(state,'One-time payout history capture started');
+  async checkHistory(finalCheck = false) {
+    const state=this.state(),checkedAt=Date.now();
+    if(finalCheck)state.finalHistoryCheckedAt=checkedAt;else state.historyCheckedAt=checkedAt;
+    state.lastCheckAt=checkedAt;state.nextCheckAt=0;
+    this.save(state,finalCheck?'Final 9:00 AM payout history check started':'Initial payout history capture started');
     await this.withResume('Checking payout status…',async()=>{
       try {
         await this.pilot.page.goto(HISTORY_URL,{waitUntil:'domcontentloaded',timeout:30000});
@@ -204,7 +208,7 @@ class ChromeEncashmentController {
         state.historyCaptured=!!result.found;
         state.status=/approved|paid|transferred|completed|success/i.test(state.payoutStatus)?'approved':/failed|declined/i.test(state.payoutStatus)?'failed':'pending';
         await this.capture(state);
-        this.save(state,result.found?`Payout history captured once: ${state.payoutStatus||'unknown'}`:'One-time payout-history check found no matching row');
+        this.save(state,result.found?`${finalCheck?'Final':'Initial'} payout history captured: ${state.payoutStatus||'unknown'}`:`${finalCheck?'Final 9:00 AM':'Initial'} payout-history check found no matching row`);
       }catch(error){state.message=compact(error.message);this.save(state,`History check error: ${error.message}`);}
     });
   }

@@ -34,3 +34,11 @@ test('cash-out is hard-locked below 300 pesos', () => {
   assert.match(ChromeEncashmentController.prototype.tick.toString(), /available < MIN_CASHOUT_PESOS/);
   assert.match(ChromeEncashmentController.prototype.attempt.toString(), /available < MIN_CASHOUT_PESOS/);
 });
+
+test('submitted payouts receive one final history refresh at or after 9 AM', () => {
+  const source = ChromeEncashmentController.prototype.tick.toString();
+  assert.match(source, /ph\.hour >= 9/);
+  assert.match(source, /!state\.finalHistoryCheckedAt/);
+  assert.match(source, /checkHistory\(true\)/);
+  assert.match(ChromeEncashmentController.prototype.checkHistory.toString(), /Final 9:00 AM payout history check started/);
+});

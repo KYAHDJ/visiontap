@@ -58,10 +58,10 @@ test('dashboard highlights todays payout and pending receipt reminder', () => {
   assert.match(source, /function renderDailyPayout\(/);
   assert.match(source, /pmathPayouts/);
   assert.match(source, /records\.map/);
-  assert.match(source, /Today’s cash-out/);
+  assert.match(source, /Today’s Payout Information/);
   assert.match(source, /Not received yet\? Sign in online and check the payout history or GCash status\./);
   assert.match(source, /Payout receipt is confirmed\./);
-  assert.match(source, /Cash-out is locked until this account reaches at least ₱300\./);
+  assert.match(source, /Payout becomes available when this account reaches at least ₱300\./);
   assert.match(source, /Waiting For ₱300/);
 });
 
@@ -71,9 +71,9 @@ test('Kyaiko balance mirrors the live PMath coin count', () => {
   assert.match(source, /pointsDone = currentWithdrawable/);
 });
 
-test('every slot shows a live next cash-out earnings estimate after ETA', () => {
+test('every slot shows a live next payout earnings estimate after ETA', () => {
   assert.match(source, /function nextCashoutProjection\(/);
-  assert.match(source, /Next cash-out estimate:/);
+  assert.match(source, /Next payout estimate:/);
   assert.match(source, /cashoutProjection\.amount/);
   assert.match(source, /pointsPerHour/);
   assert.match(source, /below &#8369;300 minimum/);
@@ -83,7 +83,7 @@ test('every slot shows a live next cash-out earnings estimate after ETA', () => 
   assert.match(source, /next-cashout-line/);
 });
 
-test('top dashboard sums visible next cash-outs for weekday and monthly forecasts', () => {
+test('top dashboard sums visible next payouts for weekday and monthly forecasts', () => {
   assert.match(source, /id="forecast-week"/);
   assert.match(source, /id="forecast-month"/);
   assert.match(source, /function updateEarningsForecast\(slots,now\)/);
@@ -91,7 +91,7 @@ test('top dashboard sums visible next cash-outs for weekday and monthly forecast
   assert.match(source, /total\+\(projection&&Number\.isFinite/);
   assert.doesNotMatch(source, /pesosPerHour\*24\*5/);
   assert.match(source, /weekdayTotal\*\(52\/12\)/);
-  assert.match(source, /Sum of next cash-outs/);
+  assert.match(source, /Sum of next payouts/);
   assert.match(source, /updateEarningsForecast\(slots,now\)/);
   assert.match(source, /var now=new Date\(\),next=nextEncashment\(slots,now\)/);
 });
@@ -109,11 +109,11 @@ test('balance history heading shows when each balance last changed', () => {
   assert.match(source, /refreshBalanceChangeTimers\(\)/);
 });
 
-test('top mini dashboard summarizes every slot cash-out detail', () => {
+test('top mini dashboard summarizes every slot payout detail', () => {
   assert.match(source, /id="mini-summary"/);
   assert.match(source, /function renderMiniSummary\(slots,pilots,now\)/);
   assert.match(source, /Current balance/);
-  assert.match(source, /Next cash-out/);
+  assert.match(source, /Next payout/);
   assert.match(source, /<b>When:<\/b>/);
   assert.match(source, /balanceHistoryTimerStart\(history\)/);
   assert.match(source, /nextCashoutProjection\(slot,now\)/);
