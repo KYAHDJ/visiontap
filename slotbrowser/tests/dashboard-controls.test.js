@@ -83,14 +83,17 @@ test('every slot shows a live next cash-out earnings estimate after ETA', () => 
   assert.match(source, /next-cashout-line/);
 });
 
-test('top dashboard shows live weekday and monthly earnings forecasts', () => {
+test('top dashboard sums visible next cash-outs for weekday and monthly forecasts', () => {
   assert.match(source, /id="forecast-week"/);
   assert.match(source, /id="forecast-month"/);
-  assert.match(source, /function updateEarningsForecast\(slots\)/);
-  assert.match(source, /pesosPerHour\*24\*5/);
+  assert.match(source, /function updateEarningsForecast\(slots,now\)/);
+  assert.match(source, /projection=nextCashoutProjection\(slot,now\|\|new Date\(\)\)/);
+  assert.match(source, /total\+\(projection&&Number\.isFinite/);
+  assert.doesNotMatch(source, /pesosPerHour\*24\*5/);
   assert.match(source, /weekdayTotal\*\(52\/12\)/);
-  assert.match(source, /PMath approximate/);
-  assert.match(source, /updateEarningsForecast\(slots\)/);
+  assert.match(source, /Sum of next cash-outs/);
+  assert.match(source, /updateEarningsForecast\(slots,now\)/);
+  assert.match(source, /var now=new Date\(\),next=nextEncashment\(slots,now\)/);
 });
 
 test('balance history heading shows when each balance last changed', () => {
@@ -114,7 +117,7 @@ test('top mini dashboard summarizes every slot cash-out detail', () => {
   assert.match(source, /<b>When:<\/b>/);
   assert.match(source, /balanceHistoryTimerStart\(history\)/);
   assert.match(source, /nextCashoutProjection\(slot,now\)/);
-  assert.match(source, /renderMiniSummary\(slots,pilots,new Date\(\)\)/);
+  assert.match(source, /renderMiniSummary\(slots,pilots,now\)/);
   assert.match(source, /whenText:whenText/);
   assert.match(source, /Points'\)\+' \/ minute/);
   assert.match(source, /liveRate\.toFixed\(2\)/);
@@ -133,15 +136,18 @@ test('top summary highlights slot errors and attention states', () => {
   assert.match(source, /has-warning/);
 });
 
-test('earnings estimates use balance history, the real minimum, and an eligible schedule', () => {
+test('earnings estimates reject short-history spikes and use the real minimum schedule', () => {
   assert.match(source, /function balanceHistoryPesosPerHour\(history, isPmath\)/);
-  assert.match(source, /const estimatedPesosPerHour = balanceHistoryPesosPerHour\(ms\.balanceHistory, isPmath\)/);
+  assert.match(source, /MAX_REASONABLE_ECNL_PPM = 6/);
+  assert.match(source, /MAX_REASONABLE_PMATH_CPM = 6/);
+  assert.match(source, /const estimatedPesosPerHour = Math\.round/);
+  assert.match(source, /pointRate=Math\.min\(isPmath\?3\.6:4\.32,pointRate\)/);
   assert.match(source, /etaHours = pesosNeeded \/ estimatedPesosPerHour/);
   assert.match(source, /estimatedPesosPerHour: estimatedPesosPerHour/);
   assert.match(source, /const tp = 300/);
   assert.doesNotMatch(source, /while \(currentWithdrawable >= tp\)/);
   assert.match(source, /while\(projected\.amount<300&&pesosPerHour>0/);
-  assert.match(source, /historyRate>0\?historyRate:pointsRate/);
+  assert.match(source, /pointRate>0\?pointRate:Math\.min/);
 });
 
 test('ECNL speed uses a stable five-minute rolling average with decimals', () => {

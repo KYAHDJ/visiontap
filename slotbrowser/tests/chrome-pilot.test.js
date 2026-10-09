@@ -110,3 +110,10 @@ test('ECNL advances after a short 500ms post-submit settle without changing PMat
   assert.match(source, /consecutiveNoImage >= 8/);
   assert.match(source, /Waiting for ECNL task transition/);
 });
+
+test('ECNL checking state reloads only after a genuine 30-second stall', () => {
+  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
+  const source = pilot.iteration.toString();
+  assert.match(source, /ECNL_CHECKING_STALL_MS/);
+  assert.match(source, /ECNL checking state stalled for 30 seconds/);
+});
