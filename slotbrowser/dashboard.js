@@ -759,7 +759,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 <body class="${isAdmin ? 'admin-mode' : 'read-only'}">
 <header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span><a class="admin-access" href="${isAdmin ? '/admin-logout' : '/admin-login'}" id="admin-access">${isAdmin ? 'Sign out' : 'Admin sign in'}</a></div></header>
 <div class="wrap">
-  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Live ECNL rate projection</span></div></div></section>
+  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Sum of next cash-outs · monthly approximate</span></div></div></section>
   <section class="mini-summary-wrap" aria-live="polite"><div class="mini-summary-title">Account snapshot <span>Live balance · change speed · next cash-out</span></div><div class="mini-summary-grid" id="mini-summary"></div></section>
   <section class="daily-payouts" id="daily-payout" hidden aria-live="polite"></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
@@ -857,15 +857,14 @@ function nextCashoutProjection(slot,now){
   return {amount:amount,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
 }
 
-function updateEarningsForecast(slots){
-  var pesosPerHour=(slots||[]).reduce(function(total,slot){
-    var account=String(slot.accountName||slot.name||'').toLowerCase(),isPmath=String(slot.id)==='14'||account==='kyaiko';
-    var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0)),pointsRate=Math.max(0,Number(slot.pointsPerHour||0))*(isPmath?1/100:3/250);
-    if(!isPmath)pointsRate=Math.min(4.32,pointsRate);
-    var rate=isPmath?(historyRate>0?historyRate:pointsRate):pointsRate;
-    return total+(Number.isFinite(rate)?rate:0);
+function updateEarningsForecast(slots,now){
+  now=now||new Date();
+  // Match the values users can verify below: add each visible account's next
+  // cash-out estimate once. Do not create a second total from a volatile rate.
+  var weekdayTotal=(slots||[]).reduce(function(total,slot){
+    var projection=nextCashoutProjection(slot,now);
+    return total+(projection&&Number.isFinite(Number(projection.amount))?Math.max(0,Number(projection.amount)):0);
   },0);
-  var weekdayTotal=Math.max(0,pesosPerHour*24*5);
   var monthlyTotal=weekdayTotal*(52/12);
   var format=function(value){return '&#8369;'+value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
   var week=document.getElementById('forecast-week'),month=document.getElementById('forecast-month');
@@ -1016,16 +1015,16 @@ function render(d){
   document.getElementById('ov-health').textContent=healthy?'Healthy':'Attention';
   document.getElementById('app-state-text').textContent=healthy?'System Online':'System Needs Attention';
   document.getElementById('app-live-dot').style.background=healthy?'var(--green)':'var(--red)';
-  var next=nextEncashment(slots,new Date()),dayNames={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
+  var now=new Date(),next=nextEncashment(slots,now),dayNames={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
   document.getElementById('ov-next-day').textContent=next?(next.days===0?'Today':dayNames[next.schedule.weekday])+' · '+String(next.slot.accountName||next.slot.name):'Not scheduled';
   document.getElementById('ov-next-time').textContent=next?next.dateText+' · '+next.schedule.startHour+':00–'+next.schedule.endHour+':00 AM PH':'No payout schedule configured';
-  updateEarningsForecast(slots);
-  renderMiniSummary(slots,pilots,new Date());
+  updateEarningsForecast(slots,now);
+  renderMiniSummary(slots,pilots,now);
   document.getElementById('pills').innerHTML=
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.loopPaused?'var(--yellow)':'var(--green)')+'"></div>Loop '+(d.loopPaused?'Paused':'Running')+'</div>';
-  renderDailyPayout(slots,d.pmathPayouts||[],new Date());
+  renderDailyPayout(slots,d.pmathPayouts||[],now);
   var hAiko='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
