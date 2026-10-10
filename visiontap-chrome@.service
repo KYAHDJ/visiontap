@@ -1,0 +1,22 @@
+[Unit]
+Description=VisionTap Chrome pilot (%i)
+After=network-online.target visiontap-xvfb.service visiontap-openbox.service visiontap-scanner.service
+Wants=network-online.target
+Requires=visiontap-xvfb.service visiontap-openbox.service
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/home/opc/VisionTap/slotbrowser
+Environment=DISPLAY=:1
+Environment=VT_CHROME_PROFILE=Default
+Environment=VT_CHROME_PATH=/opt/google/chrome/chrome
+EnvironmentFile=/home/opc/.config/VisionTap-Chrome/%i.env
+ExecStart=/usr/bin/node /home/opc/VisionTap/slotbrowser/chrome-pilot.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

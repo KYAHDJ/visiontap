@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "VisionTap ECNL",
+  "version": "1.0.0",
+  "description": "ECNL color-task assistant with manual login and local VisionTap scanner support.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://ecnlmediamarket.com/*",
+    "http://127.0.0.1:5566/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://ecnlmediamarket.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "VisionTap ECNL",
+    "default_popup": "popup.html"
+  }
+}
