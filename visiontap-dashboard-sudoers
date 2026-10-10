@@ -1,8 +1,10 @@
 opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@danicajgb
 opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@nnnikkikim
+opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@dianajanelle
 opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@darlenejoyce
 opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@deartheodosia
 opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@aaronburr
 opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@danicajgb visiontap-chrome@nnnikkikim
+opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@darlenejoyce visiontap-chrome@dianajanelle
 opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@deartheodosia visiontap-chrome@aaronburr
-opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@danicajgb visiontap-chrome@nnnikkikim visiontap-chrome@darlenejoyce visiontap-chrome@deartheodosia visiontap-chrome@aaronburr
+opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-chrome@danicajgb visiontap-chrome@nnnikkikim visiontap-chrome@dianajanelle visiontap-chrome@darlenejoyce visiontap-chrome@deartheodosia visiontap-chrome@aaronburr

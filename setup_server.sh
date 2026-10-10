@@ -39,7 +39,7 @@ chown -R opc:opc "$APP_DIR"
 
 systemctl daemon-reload
 systemctl enable --now visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-novnc visiontap-scanner visiontap-dashboard
-for account in danicajgb nnnikkikim darlenejoyce deartheodosia aaronburr; do
+for account in danicajgb nnnikkikim dianajanelle darlenejoyce deartheodosia aaronburr; do
   systemctl enable --now "visiontap-chrome@$account"
 done
 systemctl enable --now visiontap-watchdog

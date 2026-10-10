@@ -23,8 +23,8 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','darlenejoyce','deartheodosia','aaronburr'];
-const ENCASHMENT_ACCOUNTS = new Set(['danicajgb','nnnikkikim','darlenejoyce','deartheodosia','aaronburr']);
+const CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dianajanelle','darlenejoyce','deartheodosia','aaronburr'];
+const ENCASHMENT_ACCOUNTS = new Set(['danicajgb','nnnikkikim','dianajanelle','darlenejoyce','deartheodosia','aaronburr']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, `encashment_${account}_config.json`); }
 function publicEncashmentState(account) {
@@ -41,10 +41,11 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '11':'darlenejoyce', '12':'deartheodosia', '15':'aaronburr' };
+const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '17':'dianajanelle', '11':'darlenejoyce', '12':'deartheodosia', '15':'aaronburr' };
 const DASHBOARD_GROUPS = {
   'danica-niki':['danicajgb','nnnikkikim'],
-  'darlene':['darlenejoyce'],
+  'darlene':['darlenejoyce','dianajanelle'],
+  'diana':['dianajanelle'],
   'theodosia-aaron':['deartheodosia','aaronburr']
 };
 function resolveChromeAccounts(slot = 'all', group = '') {
@@ -964,6 +965,7 @@ function slotTheme(account){
     kyaiko:['#8b5cf6','rgba(139,92,246,.15)','rgba(139,92,246,.25)'],
     danicajgb:['#0ea5e9','rgba(14,165,233,.15)','rgba(14,165,233,.25)'],
     nnnikkikim:['#14b8a6','rgba(20,184,166,.15)','rgba(20,184,166,.25)'],
+    dianajanelle:['#a855f7','rgba(168,85,247,.15)','rgba(168,85,247,.25)'],
     darlenejoyce:['#22c55e','rgba(34,197,94,.15)','rgba(34,197,94,.25)'],
     deartheodosia:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
     aaronburr:['#ec4899','rgba(236,72,153,.15)','rgba(236,72,153,.25)']
@@ -1006,13 +1008,14 @@ function render(d){
   var requestedGroup=new URLSearchParams(location.search).get('group');
   var groups={
     'danica-niki':['danicajgb','nnnikkikim'],
-    'darlene':['darlenejoyce'],
+    'darlene':['darlenejoyce','dianajanelle'],
+    'diana':['dianajanelle'],
     'theodosia-aaron':['deartheodosia','aaronburr']
   };
   var groupKey=groups[requestedGroup]?requestedGroup:'danica-niki';
   var allowed=groups[groupKey];
   var inView=function(account){return allowed.indexOf(String(account||'').toLowerCase())>=0;};
-  var slots=uniqueAccounts((d.slots||[]).filter(function(s){return String(s.id)!=="17"&&inView(s.accountName||s.name)}));
+  var slots=uniqueAccounts((d.slots||[]).filter(function(s){return inView(s.accountName||s.name)}));
   var pilots=uniqueAccounts((d.chromePilots||[]).filter(function(p){return inView(p&&p.account)})),pilot=d.chromePilot||{};
   var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
@@ -1435,7 +1438,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@danicajgb visiontap-chrome@nnnikkikim visiontap-chrome@darlenejoyce visiontap-chrome@deartheodosia visiontap-chrome@aaronburr");
+    run("sudo systemctl restart visiontap-chrome@danicajgb visiontap-chrome@nnnikkikim visiontap-chrome@dianajanelle visiontap-chrome@darlenejoyce visiontap-chrome@deartheodosia visiontap-chrome@aaronburr");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");
