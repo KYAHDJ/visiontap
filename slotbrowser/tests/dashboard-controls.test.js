@@ -35,12 +35,13 @@ test('Kyaiko uses balance history without a duplicate earnings history', () => {
   assert.match(source, /Balance History \(10\)/);
 });
 
-test('dashboard includes all five ECNL slots and their controls', () => {
-  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu']) {
+test('dashboard includes all six ECNL slots and their controls', () => {
+  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu', 'jinninijin']) {
     assert.match(source, new RegExp(account));
   }
   assert.match(source, /'13':'clarencebopis'/);
   assert.match(source, /'16':'connormofu'/);
+  assert.match(source, /'17':'jinninijin'/);
   assert.doesNotMatch(source, /\["13","16","17"\]/);
 });
 

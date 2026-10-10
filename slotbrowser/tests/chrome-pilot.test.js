@@ -84,26 +84,27 @@ test('Kyaiko auto-converts PMath coins at the 30,000 threshold', () => {
   assert.match(pilot.convertPmathCoins.toString(), /PMATH_CONVERT_RETRY_MS/);
 });
 
-test('all five ECNL accounts have isolated payout controllers', () => {
+test('all six ECNL accounts have isolated payout controllers', () => {
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
-  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu']) {
+  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu', 'jinninijin']) {
     assert.match(source, new RegExp(account));
   }
 });
 
-test('ECNL submission delays are staggered across the five accounts', () => {
+test('ECNL submission delays are staggered across the six accounts', () => {
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
   assert.match(source, /adaihbi: 0/);
   assert.match(source, /temi: 300/);
   assert.match(source, /axceling1001: 600/);
   assert.match(source, /clarencebopis: 900/);
   assert.match(source, /connormofu: 1100/);
+  assert.match(source, /jinninijin: 450/);
 });
 
 test('ECNL advances after a short 500ms post-submit settle without changing PMath', () => {
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
   assert.match(source, /this\.nextIterationAt = Date\.now\(\) \+ 500/);
-  assert.match(source, /SUBMIT_DELAYS = \{ adaihbi: 0, temi: 300, axceling1001: 600, clarencebopis: 900, connormofu: 1100, kyaiko: 0 \}/);
+  assert.match(source, /SUBMIT_DELAYS = \{ adaihbi: 0, temi: 300, axceling1001: 600, clarencebopis: 900, connormofu: 1100, jinninijin: 450, kyaiko: 0 \}/);
   assert.match(source, /ready\?\.checking && TASK_MODE !== 'math'/);
   assert.match(source, /Waiting for ECNL to present the next task/);
   assert.match(source, /consecutiveDetectFails >= 5/);
