@@ -899,7 +899,7 @@ function renderMiniSummary(slots,pilots,now){
     var projection=nextCashoutProjection(slot,now),estimate=projection?projection.amount:current;
     var history=Array.isArray(slot.balanceHistory)?slot.balanceHistory:[],changeStart=balanceHistoryTimerStart(history),change=formatBalanceChangeTimer(changeStart,now);
     var theme=slotTheme(account),eligibility=estimate>=300?'':' · below ₱300';
-    var status=String(pilot.status||''),errors=Number(pilot.errors||0),problem=/\berror\b|failed|offline|server down|runtime|scanner could not|restarting .* after/i.test(status);
+    var status=String(pilot.status||''),errors=Number(pilot.errors||0),problem=/\berror\b|failed|offline|server down|recovering|runtime|scanner could not|restarting .* after/i.test(status);
     var warning=!problem&&(pilot.verificationHold||pilot.paused||pilot.running===false),cardState=problem?' has-error':warning?' has-warning':'';
     var alertHtml=problem?'<div class="mini-slot-alert"><b>Error'+(errors>0?' '+errors:'')+'</b>'+esc(status||'A slot error occurred.')+'</div>'
       :warning?'<div class="mini-slot-alert warning"><b>'+(pilot.verificationHold?'Verify':pilot.paused?'Paused':'Offline')+'</b>'+esc(status||'This slot needs attention.')+'</div>':'';
@@ -975,7 +975,9 @@ function render(d){
   var pilots=d.chromePilots||[],pilot=d.chromePilot||{};
   var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
-  var runningPilots=pilots.filter(function(p){return p&&p.running}).length,activeCount=runningPilots||slots.filter(function(x){return !x.paused}).length,workerUp=runningPilots>0||!!pilot.running,healthy=d.scannerUp&&workerUp&&!d.loopPaused;
+  var runningPilots=pilots.filter(function(p){return p&&p.running&&!p.paused}).length,activeCount=runningPilots,workerUp=runningPilots>0||!!pilot.running;
+  var allSlotsHealthy=slots.length>0&&slots.every(function(slot){var p=pilots.find(function(item){return item&&String(item.slot)===String(slot.id)});return !!(p&&p.running&&!p.paused&&!p.verificationHold&&!p.browserRecoveryActive&&!/error|failed|offline|server down|recovering|runtime|restarting/i.test(String(p.status||'')))});
+  var healthy=d.scannerUp&&allSlotsHealthy&&!d.loopPaused;
   document.getElementById('ov-total').textContent=String(slots.length).padStart(2,'0');
   document.getElementById('ov-active').textContent=String(activeCount).padStart(2,'0');
   document.getElementById('ov-active-note').textContent=activeCount+' of '+slots.length+' running';

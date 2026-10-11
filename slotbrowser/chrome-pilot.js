@@ -2,6 +2,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { guardBrowserRecovery, recordProgress } = require('./browser-recovery');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
@@ -97,6 +98,7 @@ class ChromePilot {
     this.nextIterationAt = 0;
     this.lastActivityAt = Date.now();
     this.lastProgressAt = this.lastActivityAt;
+    this.lastConfirmedProgressAt = this.lastActivityAt;
     this.lastReloadAt = 0;
     this.recoveryReloads = 0;
     this.startedAt = Date.now();
@@ -445,6 +447,8 @@ class ChromePilot {
         resumeArmed: this.resumeArmed,
         status: this.statusText, tasks: this.taskCount, errors: this.errorCount,
         time, elapsed, loopStartTime:this.loopStartTime, updatedAt: Date.now(), lastProgressAt: this.lastProgressAt,
+        lastConfirmedProgressAt: this.lastConfirmedProgressAt, browserRecoveryActive: !!this.browserRecoveryActive,
+        encashmentBusy: !!this.encashment?.busy,
         lastReloadAt: this.lastReloadAt, recoveryReloads: this.recoveryReloads,
         pmathConversion: TASK_MODE === 'math' ? this.pmathConversion : undefined
       }, null, 2));
@@ -614,12 +618,14 @@ class ChromePilot {
   }
 
   async syncDashboardMeta(force = false) {
+    const previousPoints = this.pointsDone, previousBalance = this.withdrawable;
     const meta = await this.callApi('getTaskMeta').catch(() => null);
     if (meta) {
       if (meta.pointsDone != null && !Number.isNaN(Number(meta.pointsDone))) this.pointsDone = Number(meta.pointsDone);
       if (meta.pointsTotal != null && Number(meta.pointsTotal) > 0) this.pointsTotal = Number(meta.pointsTotal);
       if (meta.withdrawable != null && !Number.isNaN(Number(meta.withdrawable))) this.withdrawable = Number(meta.withdrawable);
     }
+    recordProgress(this, previousPoints, previousBalance);
     const key = `${this.pointsDone}|${this.pointsTotal}|${this.withdrawable}|${this.taskCount}|${this.errorCount}`;
     if (!force && key === this.lastDashboardMetaKey && Date.now() - this.lastDashboardSyncAt < 5000) return;
     this.lastDashboardMetaKey = key;
@@ -631,6 +637,7 @@ class ChromePilot {
     if (this.encashment?.busy) return;
     if (Date.now() < this.nextIterationAt) return;
     if (this.paused) { await this.updateOverlay(); return; }
+    if (await guardBrowserRecovery(this, WORK_URL)) return;
     if (await this.guardServerRuntimeError()) return;
     if (await this.guardPmathHost()) return;
     const verification = await this.detectVerification();

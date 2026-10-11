@@ -129,7 +129,7 @@ test('top summary highlights slot errors and attention states', () => {
   assert.match(source, /class="mini-slot-alert"/);
   assert.match(source, /class="mini-slot-alert warning"/);
   assert.match(source, /pilot\.verificationHold\|\|pilot\.paused\|\|pilot\.running===false/);
-  assert.match(source, /failed\|offline\|server down\|runtime\|scanner could not/);
+  assert.match(source, /failed\|offline\|server down\|recovering\|runtime\|scanner could not/);
   assert.match(source, /Number\(pilot\.errors\|\|0\)/);
   assert.doesNotMatch(source, /cardState=problem\|\|errors>0/);
   assert.doesNotMatch(source, /alertHtml=problem\|\|errors>0/);
