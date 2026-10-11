@@ -32,9 +32,9 @@ restart_allowed() {
   last=${restart_time[$name]:-0}
   count=${restart_count[$name]:-0}
   if [ $((now - last)) -gt "$RESTART_WINDOW" ]; then count=0; fi
+  if [ "$count" -eq 0 ]; then restart_time[$name]=$now; fi
   count=$((count + 1))
   restart_count[$name]=$count
-  restart_time[$name]=$now
   if [ "$count" -gt "$MAX_RESTARTS" ]; then
     log "$name restart suppressed: crash-loop protection ($count attempts in ${RESTART_WINDOW}s)"
     return 1
@@ -67,11 +67,13 @@ except Exception:
 status = str(state.get('status') or '').lower()
 protected = (
     state.get('paused') or state.get('verificationHold') or
-    any(word in status for word in ('verification', 'login required', 'cash-out', 'encash'))
+    state.get('encashmentBusy')
 )
 updated = int(state.get('updatedAt') or 0)
 fresh = updated > 0 and int(time.time() * 1000) - updated < threshold
-raise SystemExit(0 if protected or fresh else 1)
+progress = int(state.get('lastConfirmedProgressAt') or updated)
+progressing = int(time.time() * 1000) - progress < 180000
+raise SystemExit(0 if state.get('paused') or (fresh and (protected or progressing)) else 1)
 PY
 }
 
@@ -106,6 +108,12 @@ while true; do
     restart_service visiontap-scanner 'service stopped'
   fi
 
+  if systemctl cat visiontap-pmath-scanner.service >/dev/null 2>&1; then
+    if ! curl -fsS --max-time 5 http://127.0.0.1:5567/health 2>/dev/null | grep -qi online; then
+      restart_service visiontap-pmath-scanner 'dedicated scanner health endpoint failed'
+    fi
+  fi
+
   if ! /usr/bin/node --check "$APP_DIR/dashboard.js" >/dev/null 2>&1; then
     log 'dashboard syntax check failed; automatic restart skipped'
   elif ! curl -fsS --max-time 5 http://127.0.0.1:6260/api/stats 2>/dev/null | grep -q '"scannerUp"'; then
@@ -126,7 +134,7 @@ while true; do
       if ! service_active "$service"; then
         restart_service "$service" 'service stopped'
       elif ! worker_protected_or_fresh "$account"; then
-        restart_service "$service" "state heartbeat stale for ${WORKER_HEARTBEAT_MS}ms"
+        restart_service "$service" 'heartbeat stale or no confirmed point progress for 180 seconds'
       fi
     done
   fi
