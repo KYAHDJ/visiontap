@@ -390,7 +390,7 @@
     });
   }
   function scheduleAdScan(records) {
-    if (onlyHudChanges(records) || adScanTimer !== null) return;
+    if (onlyHudChanges(records) || onlyTextChanges(records) || adScanTimer !== null) return;
     // Coalesce page mutation bursts instead of rescanning on every DOM update.
     adScanTimer = setTimeout(() => {
       adScanTimer = null;
@@ -1059,8 +1059,13 @@
     }
   }
   let centerTimer = null;
+  function onlyTextChanges(records) {
+    return records.length > 0 && records.every(record =>
+      record.addedNodes && record.removedNodes &&
+      [...record.addedNodes, ...record.removedNodes].every(node => node.nodeType === 3));
+  }
   function scheduleCenter(records) {
-    if (onlyHudChanges(records) || centerTimer !== null) return;
+    if (onlyHudChanges(records) || onlyTextChanges(records) || centerTimer !== null) return;
     centerTimer = setTimeout(() => { centerTimer = null; centerTaskArea(); }, 200);
   }
   setInterval(centerTaskArea, 1500);

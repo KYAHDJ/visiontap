@@ -6,6 +6,7 @@ const { guardBrowserRecovery, recordProgress } = require('./browser-recovery');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { chromium } = require('playwright-core');
 const { ChromeEncashmentController } = require('./chrome-encashment');
 
@@ -43,11 +44,7 @@ const CREDENTIALS_FILE = path.join(PILOT_STATE_DIR, 'credentials.json');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hashImage = data => {
   if (!data) return null;
-  const s = data.slice(data.indexOf(',') + 1);
-  let h = 0;
-  const step = Math.max(1, Math.floor(s.length / 512));
-  for (let i = 0; i < s.length; i += step) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return h;
+  return createHash('sha256').update(data).digest('hex');
 };
 
 function isVerificationUrl(url) {
@@ -60,7 +57,11 @@ async function fetchJson(url, init = {}, timeoutMs = 10000) {
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.message || body.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(body.message || body.error || `HTTP ${response.status}`);
+      error.retryable = body.retryable === true || response.status === 429 || response.status === 503;
+      throw error;
+    }
     return body;
   } finally {
     clearTimeout(timer);
@@ -129,7 +130,12 @@ class ChromePilot {
   }
 
   async scannerReady() {
-    try { return (await fetchJson(`${SCANNER_URL}/health`, {}, 2500)).status === 'online'; }
+    if (Date.now() < (this.scannerHealthyUntil || 0)) return true;
+    try {
+      const ready = (await fetchJson(`${SCANNER_URL}/health`, {}, 2500)).status === 'online';
+      if (ready) this.scannerHealthyUntil = Date.now() + 5000;
+      return ready;
+    }
     catch (_) { return false; }
   }
 
@@ -378,7 +384,7 @@ class ChromePilot {
         root.querySelector('#vt-errors').textContent = state.errors || 0;
         root.querySelector('#vt-time').textContent = state.time || '00:00';
       };
-      let timer = null; const scan = () => { timer = null; if (!verification()) removeAds(); };
+      let timer = null; const scan = () => { timer = null; if (!window.__vtAdBlockInstalled && !verification()) removeAds(); };
       new MutationObserver(() => { if (timer == null) timer = setTimeout(scan, 250); }).observe(document.documentElement,{childList:true,subtree:true});
       addEventListener('DOMContentLoaded', () => { removeAds(); dashboard(); }, {once:true});
     })();`;
@@ -387,9 +393,14 @@ class ChromePilot {
   async installPageRuntime() {
     if (!this.page || this.page.isClosed()) return;
     if (!isVerificationUrl(this.page.url()) && /ecnlmediamarket\.com|pmath100\.com/i.test(this.page.url())) {
-      await this.page.evaluate(() => { window.__vtHost = { signal: msg => window.__vtSignal(msg) }; }).catch(() => {});
-      await this.page.evaluate(this.adBlockSource).catch(() => {});
-      await this.page.evaluate(this.injectSource).catch(() => {});
+      const installed = await this.page.evaluate(() => {
+        window.__vtHost = { signal: msg => window.__vtSignal(msg) };
+        return !!window.__vtapi && !!window.__vtAdBlockInstalled;
+      }).catch(() => false);
+      if (!installed) {
+        await this.page.evaluate(this.adBlockSource).catch(() => {});
+        await this.page.evaluate(this.injectSource).catch(() => {});
+      }
       await this.page.evaluate(account => { if (!document.title.startsWith(`[${account}] `)) document.title = `[${account}] ${document.title}`; }, ACCOUNT).catch(() => {});
       await this.page.evaluate(({ epoch, enabled }) => { window.__vtAutomation = { epoch, enabled }; }, { epoch: this.epoch, enabled: !this.paused }).catch(() => {});
     }
@@ -525,7 +536,7 @@ class ChromePilot {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         slot: SLOT_ID, slotName: ACCOUNT, taskCount: this.taskCount,
-        correctCount: this.taskCount, wrongCount: 0, errorCount: this.errorCount,
+        countMode: 'observed-points', platform: TASK_MODE, errorCount: this.errorCount,
         pointsDone: this.pointsDone, pointsTotal: this.pointsTotal,
         withdrawable: this.withdrawable, timerText, elapsed,
         loopStartTime: this.loopStartTime, ...meta
@@ -812,8 +823,12 @@ class ChromePilot {
       await this.setStatus('Scanning the current task…');
       const result = await fetchJson(`${SCANNER_URL}/detect`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image })
-      }, 12000).catch(error => ({ error: error.message }));
+      }, 15000).catch(error => ({ error: error.message, retryable: error.retryable || error.name === 'AbortError' }));
       if (!result.color || result.color === 'unknown') {
+        if (result.retryable || /busy|timeout|HTTP 429/i.test(String(result.error || ''))) {
+          await this.setStatus('Scanner is busy; retaining the task for retry…');
+          return;
+        }
         this.consecutiveDetectFails++;
         if (this.lastErrorHash !== imageHash) {
           this.errorCount++;
@@ -854,7 +869,7 @@ class ChromePilot {
     this.notReadySince = 0;
     this.taskCount++; this.lastSubmittedHash = imageHash; this.lastActivityAt = Date.now(); this.lastProgressAt = this.lastActivityAt;
     await this.syncDashboardMeta(true);
-    await this.report({ correct: true, color: this.pending.answer, taskNum: this.taskCount });
+    await this.report({ submitted: true, color: this.pending.answer, taskNum: this.taskCount });
     this.log(`Submitted task ${this.taskCount}: ${this.pending.answer} (configured delay ${SUBMIT_DELAY_MS}ms, measured ${Number(filled.elapsedMs || 0)}ms)`);
     this.pending = null;
     // ECNL can present the next task quickly. A short settle period keeps the
