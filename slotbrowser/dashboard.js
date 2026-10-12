@@ -44,12 +44,19 @@ function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chro
 const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '17':'dianajanelle', '11':'darlenejoyce', '12':'deartheodosia', '15':'aaronburr' };
 const DASHBOARD_GROUPS = {
   'danica-niki':['danicajgb','nnnikkikim'],
-  'darlene':['darlenejoyce','dianajanelle'],
+  'darlene':['darlenejoyce'],
   'diana':['dianajanelle'],
   'theodosia-aaron':['deartheodosia','aaronburr']
 };
+function normalizeDashboardGroup(group = '') {
+  const key = String(group || '').toLowerCase();
+  return Object.prototype.hasOwnProperty.call(DASHBOARD_GROUPS, key) ? key : 'danica-niki';
+}
+function dashboardAccounts(group = '') {
+  return DASHBOARD_GROUPS[normalizeDashboardGroup(group)].slice();
+}
 function resolveChromeAccounts(slot = 'all', group = '') {
-  if (slot === 'group') return DASHBOARD_GROUPS[group] || DASHBOARD_GROUPS['danica-niki'];
+  if (slot === 'group') return dashboardAccounts(group);
   return slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
 }
 function sendChromeControl(action, slot = 'all', group = '') {
@@ -937,7 +944,8 @@ function renderMiniSummary(slots,pilots,now){
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-function pilotControl(account,action){fetch('/chrome-pilot-control?account='+encodeURIComponent(account)+'&action='+encodeURIComponent(action),{method:'POST'}).catch(function(){})}
+function currentDashboardGroup(){var requested=new URLSearchParams(location.search).get('group')||'danica-niki';return ['danica-niki','darlene','diana','theodosia-aaron'].indexOf(requested)>=0?requested:'danica-niki'}
+function pilotControl(account,action){fetch('/chrome-pilot-control?account='+encodeURIComponent(account)+'&action='+encodeURIComponent(action)+'&group='+encodeURIComponent(currentDashboardGroup()),{method:'POST'}).catch(function(){})}
 
 var pendingConfirmAction=null;
 function askConfirm(title,message,label,action,tone){
@@ -953,7 +961,7 @@ function confirmLink(event,element,title,message,label,tone){if(event)event.prev
 function controlFeedback(message,ok){var el=document.getElementById('app-state-text'),dot=document.getElementById('app-live-dot');if(el)el.textContent=message;if(dot)dot.style.background=ok===false?'#ff3b61':'#00d68f'}
 function runDashboardControl(action,slot,label){
   controlFeedback((label||'Control')+'…');
-  var group=new URLSearchParams(location.search).get('group')||'danica-niki';
+  var group=currentDashboardGroup();
   return fetch('/dashboard-control?action='+encodeURIComponent(action)+'&slot='+encodeURIComponent(slot)+'&group='+encodeURIComponent(group),{method:'POST',cache:'no-store'})
     .then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||'Control failed');return body})})
     .then(function(body){controlFeedback((label||'Control')+' sent to '+body.accounts.length+' account'+(body.accounts.length===1?'':'s'));setTimeout(poll,350);return body})
@@ -1008,7 +1016,7 @@ function render(d){
   var requestedGroup=new URLSearchParams(location.search).get('group');
   var groups={
     'danica-niki':['danicajgb','nnnikkikim'],
-    'darlene':['darlenejoyce','dianajanelle'],
+    'darlene':['darlenejoyce'],
     'diana':['dianajanelle'],
     'theodosia-aaron':['deartheodosia','aaronburr']
   };
@@ -1058,9 +1066,9 @@ function render(d){
       ? '<button class="ibtn" type="button" title="Pause" onclick="runDashboardControl(&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause&quot;).catch(function(){})">&#9646;&#9646;</button>'+
         '<button class="ibtn" type="button" title="Play" onclick="runDashboardControl(&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Play&quot;).catch(function(){})">&#9654;</button>'+
         '<button class="ibtn" type="button" title="Restart" onclick="runDashboardControl(&quot;restart&quot;,&quot;'+sid+'&quot;,&quot;Restart&quot;).catch(function(){})">&#8634;</button>'
-      : '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmControl(event,&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
-        '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume" onclick="return confirmControl(event,&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
-        '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh" onclick="return confirmControl(event,&quot;refresh&quot;,&quot;'+sid+'&quot;,&quot;Refresh this account?&quot;,&quot;The account page will reload.&quot;,&quot;Refresh&quot;)">&#8634;</a>';
+      : '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'&group='+encodeURIComponent(groupKey)+'" title="Pause" onclick="return confirmControl(event,&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
+        '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'&group='+encodeURIComponent(groupKey)+'" title="Resume" onclick="return confirmControl(event,&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
+        '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'&group='+encodeURIComponent(groupKey)+'" title="Refresh" onclick="return confirmControl(event,&quot;refresh&quot;,&quot;'+sid+'&quot;,&quot;Refresh this account?&quot;,&quot;The account page will reload.&quot;,&quot;Refresh&quot;)">&#8634;</a>';
     if(!isKyaikoCard&&s.earningsHistory&&s.earningsHistory.length>0){
       eh='<div class="ehd">Earnings History</div><div class="elst">';
       for(var j=0;j<s.earningsHistory.length;j++){
@@ -1171,7 +1179,7 @@ function closeEncash(){document.getElementById('encmodal').classList.remove('sho
 function openModal(id){ var m=document.getElementById('modal-'+id); if(m) m.classList.add('show'); }
 function closeModal(id){ var m=document.getElementById('modal-'+id); if(m) m.classList.remove('show'); }
 function poll(){
-  fetch('/api/stats?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+  fetch('/api/stats?group='+encodeURIComponent(currentDashboardGroup())+'&t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
     try{ render(d); }catch(e){ console.error('render error',e); }
     LD=JSON.stringify(d);
   }).catch(function(e){
@@ -1340,21 +1348,26 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/stats" && req.method === "GET") {
+    const group = normalizeDashboardGroup(url.searchParams.get('group'));
+    const allowedAccounts = dashboardAccounts(group);
+    const allowed = new Set(allowedAccounts);
     const status = getStatus();
-    const slots = getMergedSlots(status);
-    const chromePilots = getChromePilots();
+    const slots = getMergedSlots(status).filter(slot => allowed.has(String(slot.accountName || slot.name || '').toLowerCase()));
+    const chromePilots = getChromePilots().filter(pilot => allowed.has(String(pilot && pilot.account || '').toLowerCase()));
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
     const pmathPayouts = [];
-    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
+    res.end(JSON.stringify({ group, accounts:allowedAccounts, scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots[0] || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
 
   if (url.pathname === "/chrome-pilot-control" && req.method === "POST") {
     const action = String(url.searchParams.get("action") || "");
     const account = String(url.searchParams.get("account") || "adaihbi").toLowerCase();
+    const group = normalizeDashboardGroup(url.searchParams.get('group'));
     if (!["pause", "resume", "reload", "stop"].includes(action)) { res.writeHead(400); res.end("Invalid action"); return; }
     if (!CHROME_ACCOUNTS.includes(account)) { res.writeHead(400); res.end("Invalid account"); return; }
+    if (!dashboardAccounts(group).includes(account)) { res.writeHead(403); res.end("Account is not part of this dashboard"); return; }
     writeJson(chromePilotCommandFile(account), { action, nonce: `${Date.now()}-${Math.random()}` });
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ ok: true, account, action }));
@@ -1368,6 +1381,13 @@ const server = http.createServer(async (req, res) => {
     if (!['pause','resume','refresh','restart'].includes(action)) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok:false, error:'Invalid control action' }));
+      return;
+    }
+    const requestedAccounts = resolveChromeAccounts(slot, group);
+    const allowedAccounts = dashboardAccounts(group);
+    if (!requestedAccounts.length || !requestedAccounts.every(account => allowedAccounts.includes(account))) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok:false, error:'Account is not part of this dashboard' }));
       return;
     }
     try {
@@ -1400,10 +1420,13 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/cmd") {
     const action = url.searchParams.get("action");
     const slot = url.searchParams.get("slot");
+    const group = normalizeDashboardGroup(url.searchParams.get('group'));
     log(`CMD: action=${action} slot=${slot}`);
-    try { sendChromeControl(action, slot || 'all'); }
+    const account = CHROME_SLOT_ACCOUNTS[String(slot)];
+    if (!account || !dashboardAccounts(group).includes(account)) { res.writeHead(403); res.end('Account is not part of this dashboard'); return; }
+    try { sendChromeControl(action, slot, group); }
     catch (e) { res.writeHead(400); res.end('Command could not be queued: ' + e.message); return; }
-    res.writeHead(302, { "Location": "/" });
+    res.writeHead(302, { "Location": `/?group=${encodeURIComponent(group)}` });
     res.end();
     return;
   }

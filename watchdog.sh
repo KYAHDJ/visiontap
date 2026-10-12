@@ -67,7 +67,9 @@ except Exception:
 status = str(state.get('status') or '').lower()
 protected = (
     state.get('paused') or state.get('verificationHold') or
-    state.get('encashmentBusy')
+    state.get('encashmentBusy') or
+    int(state.get('siteRecoveryWaitUntil') or 0) > int(time.time() * 1000) or
+    int(state.get('recoveryResumeUntil') or 0) > int(time.time() * 1000)
 )
 updated = int(state.get('updatedAt') or 0)
 fresh = updated > 0 and int(time.time() * 1000) - updated < threshold

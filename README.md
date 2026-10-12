@@ -20,6 +20,7 @@ Automatic cash-out runs only on the assigned weekday from 8:00–9:00 AM Philipp
 
 - `/` or `/?group=danica-niki` — Danica and Nikki
 - `/?group=darlene` — Darlene
+- `/?group=diana` — Diana
 - `/?group=theodosia-aaron` — Theodosia and Aaron
 
 The dashboard is public and view-only by default. **Admin sign in** reveals Pause, Resume, Restart, and Refresh. Group controls affect only the accounts shown in the current view.
