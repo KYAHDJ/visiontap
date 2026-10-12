@@ -1,5 +1,15 @@
 # Browser recovery
 
+Shared website failures now use one probe per website per VPS every ten seconds.
+Task-page retries are spaced 2.5 seconds apart. A healthy login probe does not
+prove that authenticated tasks work; point progress clears each account's failure
+record. Shared failures and unsuccessful probes suppress browser restarts while
+fresh worker heartbeats continue. The watchdog still catches frozen workers.
+Navigation logs capture HTTP status and Chrome network codes without URLs or
+credentials. Normal task submission delays are unchanged.
+
+Run coordinated recovery tests with `node --test site-recovery.test.js`.
+
 Browser error pages are checked every two seconds. Failed pages reopen the known
 task URL with ten-second retry spacing and an eight-second navigation timeout.
 Unexpected non-task pages get twenty seconds to settle. Login expiry reuses the

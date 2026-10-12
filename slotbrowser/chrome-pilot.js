@@ -2,6 +2,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { SiteRecovery } = require('./site-recovery');
 const { guardBrowserRecovery, recordProgress } = require('./browser-recovery');
 const os = require('node:os');
 const path = require('node:path');
@@ -76,6 +77,7 @@ class ChromePilot {
     this.profile = options.profile || process.env.VT_CHROME_PROFILE || 'Default';
     this.executablePath = options.executablePath || process.env.VT_CHROME_PATH || DEFAULT_CHROME;
     this.workUrl = WORK_URL;
+    this.siteRecovery = new SiteRecovery(PILOT_STATE_DIR, ACCOUNT);
     this.headless = options.headless === true;
     this.context = null;
     this.page = null;
@@ -221,6 +223,24 @@ class ChromePilot {
   async guardPage(page) {
     await page.exposeFunction('__vtSignal', msg => this.handlePageSignal(msg)).catch(() => {});
     page.on('dialog', dialog => dialog.dismiss().catch(() => {}));
+    page.on('requestfailed', request => {
+      if (page === this.page && request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+        const code = request.failure()?.errorText || 'Navigation failed';
+        if (code !== 'net::ERR_ABORTED') {
+          this.lastNavigationFailure = { code, at: Date.now() };
+          this.log('NAVIGATION-ERROR: ' + code);
+        }
+      }
+    });
+    page.on('response', response => {
+      const request = response.request();
+      if (page === this.page && request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+        if (response.status() >= 400) {
+          this.lastNavigationFailure = { code: 'HTTP ' + response.status(), at: Date.now() };
+          this.log('NAVIGATION-ERROR: HTTP ' + response.status());
+        } else this.lastNavigationFailure = null;
+      }
+    });
     page.on('framenavigated', frame => {
       if (frame === page.mainFrame()) {
         this.lastActivityAt = Date.now();
@@ -447,6 +467,7 @@ class ChromePilot {
         resumeArmed: this.resumeArmed,
         status: this.statusText, tasks: this.taskCount, errors: this.errorCount,
         time, elapsed, loopStartTime:this.loopStartTime, updatedAt: Date.now(), lastProgressAt: this.lastProgressAt,
+        siteRecoveryWaitUntil: this.siteRecoveryWaitUntil || 0, recoveryResumeUntil: this.recoveryResumeUntil || 0,
         lastConfirmedProgressAt: this.lastConfirmedProgressAt, browserRecoveryActive: !!this.browserRecoveryActive,
         encashmentBusy: !!this.encashment?.busy,
         lastReloadAt: this.lastReloadAt, recoveryReloads: this.recoveryReloads,
@@ -492,9 +513,21 @@ class ChromePilot {
       await this.setStatus(`Reload blocked during verification (${reason}).`);
       return false;
     }
+    if (/no-image|checking state|blank 2026 page/.test(reason)) {
+      const decision = await this.siteRecovery.failure(WORK_URL, reason);
+      this.siteRecoveryWaitUntil = Date.now() + 30000;
+      this.recoveryResumeUntil = Date.now() + 60000;
+      this.taskPageRecoveryPending = true;
+      this.sharedSiteFailure = decision.shared;
+      if (decision.wait) {
+        this.nextBrowserRecoveryAt = Date.now() + 2000;
+        await this.setStatus('Recovering: task page unavailable; ' + decision.detail);
+        return false;
+      }
+    }
     if (Date.now() - this.lastReloadAt < 15000) return false;
     const recovery = !/^manual control/.test(reason);
-    if (recovery && this.recoveryReloads >= 4 && Date.now() - this.lastProgressAt > 60000) {
+    if (recovery && !this.sharedSiteFailure && this.recoveryReloads >= 4 && Date.now() - this.lastProgressAt > 60000) {
       this.log(`Recovery reloads did not restore progress (${reason}); restarting only ${ACCOUNT} with its preserved profile.`);
       process.exitCode = 75;
       this.running = false;
