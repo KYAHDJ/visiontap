@@ -23,7 +23,7 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','deartheodosia','aaronburr'];
+const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','alexander1001','elizabeth1001','deartheodosia','aaronburr'];
 const CHROME_ACCOUNTS = String(process.env.VT_ACCOUNTS || DEFAULT_CHROME_ACCOUNTS.join(','))
   .split(',').map(account => account.trim().toLowerCase()).filter((account, index, all) => account && all.indexOf(account) === index);
 const ENCASHMENT_ACCOUNTS = new Set(CHROME_ACCOUNTS);
@@ -43,12 +43,12 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '12':'deartheodosia', '15':'aaronburr' };
+const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '19':'alexander1001', '20':'elizabeth1001', '12':'deartheodosia', '15':'aaronburr' };
 const DASHBOARD_GROUPS = {
   'danica-niki':['danicajgb','nnnikkikim','dncjnnpabo22'],
   'darlene':['darlenejoyce'],
   'diana':['dianajanelle'],
-  'theodosia-aaron':['deartheodosia','aaronburr']
+  'theodosia-aaron':['alexander1001','elizabeth1001','deartheodosia','aaronburr']
 };
 function normalizeDashboardGroup(group = '') {
   const key = String(group || '').toLowerCase();
@@ -978,6 +978,8 @@ function slotTheme(account){
     dncjnnpabo22:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
     dianajanelle:['#a855f7','rgba(168,85,247,.15)','rgba(168,85,247,.25)'],
     darlenejoyce:['#22c55e','rgba(34,197,94,.15)','rgba(34,197,94,.25)'],
+    alexander1001:['#3b82f6','rgba(59,130,246,.15)','rgba(59,130,246,.25)'],
+    elizabeth1001:['#ec4899','rgba(236,72,153,.15)','rgba(236,72,153,.25)'],
     deartheodosia:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
     aaronburr:['#ec4899','rgba(236,72,153,.15)','rgba(236,72,153,.25)']
   };
@@ -1021,7 +1023,7 @@ function render(d){
     'danica-niki':['danicajgb','nnnikkikim','dncjnnpabo22'],
     'darlene':['darlenejoyce'],
     'diana':['dianajanelle'],
-    'theodosia-aaron':['deartheodosia','aaronburr']
+    'theodosia-aaron':['alexander1001','elizabeth1001','deartheodosia','aaronburr']
   };
   var groupKey=groups[requestedGroup]?requestedGroup:'danica-niki';
   var allowed=groups[groupKey];

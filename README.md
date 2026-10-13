@@ -13,6 +13,8 @@ It intentionally contains no ECNL passwords, Chrome cookies/profiles, SSH keys, 
 | dncjnnpabo22 | Wednesday | 4.3 seconds |
 | darlenejoyce | Wednesday | 4.0 seconds |
 | DianaJanelle | Friday | 3.7 seconds |
+| Alexander1001 | Tuesday | 0.5 seconds |
+| Elizabeth1001 | Wednesday | 0.7 seconds |
 | DearTheodosia | Thursday | instant |
 | AaronBurr | Friday | 0.3 seconds |
 
@@ -23,7 +25,7 @@ Automatic cash-out runs only on the assigned weekday from 8:00–9:00 AM Philipp
 - `/` or `/?group=danica-niki` — Danica, Nikki, and dncjnnpabo22
 - `/?group=darlene` — Darlene
 - `/?group=diana` — Diana
-- `/?group=theodosia-aaron` — Theodosia and Aaron
+- `/?group=theodosia-aaron` — Alexander, Elizabeth, Theodosia, and Aaron
 
 The dashboard is public and view-only by default. **Admin sign in** reveals Pause, Resume, Restart, and Refresh. Group controls affect only the accounts shown in the current view.
 
