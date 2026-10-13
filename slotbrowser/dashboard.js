@@ -23,8 +23,10 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dianajanelle','darlenejoyce','deartheodosia','aaronburr'];
-const ENCASHMENT_ACCOUNTS = new Set(['danicajgb','nnnikkikim','dianajanelle','darlenejoyce','deartheodosia','aaronburr']);
+const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dianajanelle','darlenejoyce','deartheodosia','aaronburr'];
+const CHROME_ACCOUNTS = String(process.env.VT_ACCOUNTS || DEFAULT_CHROME_ACCOUNTS.join(','))
+  .split(',').map(account => account.trim().toLowerCase()).filter((account, index, all) => account && all.indexOf(account) === index);
+const ENCASHMENT_ACCOUNTS = new Set(CHROME_ACCOUNTS);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, `encashment_${account}_config.json`); }
 function publicEncashmentState(account) {
@@ -53,7 +55,7 @@ function normalizeDashboardGroup(group = '') {
   return Object.prototype.hasOwnProperty.call(DASHBOARD_GROUPS, key) ? key : 'danica-niki';
 }
 function dashboardAccounts(group = '') {
-  return DASHBOARD_GROUPS[normalizeDashboardGroup(group)].slice();
+  return DASHBOARD_GROUPS[normalizeDashboardGroup(group)].filter(account => CHROME_ACCOUNTS.includes(account));
 }
 function resolveChromeAccounts(slot = 'all', group = '') {
   if (slot === 'group') return dashboardAccounts(group);
@@ -1461,7 +1463,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@danicajgb visiontap-chrome@nnnikkikim visiontap-chrome@dianajanelle visiontap-chrome@darlenejoyce visiontap-chrome@deartheodosia visiontap-chrome@aaronburr");
+    restartChromeServices('all');
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");

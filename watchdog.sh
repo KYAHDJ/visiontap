@@ -12,7 +12,7 @@ MAX_RESTARTS=8
 RESTART_WINDOW=600
 WORKER_HEARTBEAT_MS=90000
 
-accounts=(danicajgb nnnikkikim dianajanelle darlenejoyce deartheodosia aaronburr)
+IFS=',' read -r -a accounts <<< "${VT_ACCOUNTS:-danicajgb,nnnikkikim,dianajanelle,darlenejoyce,deartheodosia,aaronburr}"
 declare -A restart_count
 declare -A restart_time
 

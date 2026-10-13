@@ -54,3 +54,13 @@ sudo -u opc chmod 600 /home/opc/.config/VisionTap-Dashboard/admin.env
 
 Replace the example password, add each account’s private Chrome session/login, and store cash-out recipient settings privately on the server. Restart the dashboard after changing its password.
 
+## Split-server account assignment
+
+Set the accounts owned by each server in `/etc/default/visiontap` before starting the dashboard and watchdog:
+
+```bash
+VT_ACCOUNTS=danicajgb,nnnikkikim,dianajanelle,darlenejoyce
+```
+
+The dashboard, global controls, installer, and watchdog honor this allowlist. Accounts assigned to another server are neither exposed by the dashboard API nor restarted by the local watchdog.
+

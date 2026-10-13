@@ -3,6 +3,8 @@ set -euo pipefail
 
 APP_DIR=/home/opc/VisionTap
 OPC_HOME=/home/opc
+VT_ACCOUNTS=${VT_ACCOUNTS:-danicajgb,nnnikkikim,dianajanelle,darlenejoyce,deartheodosia,aaronburr}
+IFS=',' read -r -a accounts <<< "$VT_ACCOUNTS"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run this installer with sudo."
@@ -27,19 +29,21 @@ npm --prefix "$APP_DIR/slotbrowser" ci --omit=dev
 
 install -d -m 0700 -o opc -g opc "$OPC_HOME/.config/VisionTap-Chrome" "$OPC_HOME/.config/VisionTap-Dashboard"
 install -d -m 0755 -o opc -g opc "$OPC_HOME/.config/VisionTap Slots/state"
-install -m 0600 -o opc -g opc "$APP_DIR"/config/chrome-*.env "$OPC_HOME/.config/VisionTap-Chrome/"
+for account in "${accounts[@]}"; do
+  install -m 0600 -o opc -g opc "$APP_DIR/config/chrome-$account.env" "$OPC_HOME/.config/VisionTap-Chrome/$account.env"
+done
 install -m 0644 -o opc -g opc "$APP_DIR/config/slots.json" "$OPC_HOME/.config/VisionTap Slots/state/slots.json"
 
 install -m 0644 "$APP_DIR"/visiontap-*.service /etc/systemd/system/
 install -d -m 0755 /etc/systemd/system/visiontap-dashboard.service.d
 install -m 0644 "$APP_DIR/visiontap-dashboard-admin.conf" /etc/systemd/system/visiontap-dashboard.service.d/admin.conf
 install -m 0440 "$APP_DIR/visiontap-dashboard-sudoers" /etc/sudoers.d/visiontap-dashboard
-install -m 0755 "$APP_DIR/watchdog.sh" "$APP_DIR/visiontap-accounts-viewer"
+chmod 0755 "$APP_DIR/watchdog.sh" "$APP_DIR/visiontap-accounts-viewer"
 chown -R opc:opc "$APP_DIR"
 
 systemctl daemon-reload
 systemctl enable --now visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-novnc visiontap-scanner visiontap-dashboard
-for account in danicajgb nnnikkikim dianajanelle darlenejoyce deartheodosia aaronburr; do
+for account in "${accounts[@]}"; do
   systemctl enable --now "visiontap-chrome@$account"
 done
 systemctl enable --now visiontap-watchdog
