@@ -1,0 +1,21 @@
+#!/bin/sh
+
+if pgrep -u "$(id -u)" -f 'VisionTap-Viewer-Chrome' >/dev/null; then
+  exit 0
+fi
+
+attempt=0
+while [ "$attempt" -lt 30 ]; do
+  if ss -ltn | grep -q '127.0.0.1:6080'; then
+    exec /usr/bin/google-chrome \
+      --user-data-dir=/home/opc/.config/VisionTap-Viewer-Chrome \
+      --no-first-run \
+      --disable-session-crashed-bubble \
+      --app=http://127.0.0.1:6080/vnc.html?autoconnect=true\&resize=scale\&view_only=false \
+      --window-size=1280,640
+  fi
+  attempt=$((attempt + 1))
+  sleep 2
+done
+
+exit 1

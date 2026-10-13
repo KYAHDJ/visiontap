@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=VisionTap Accounts
+Comment=Open the five ECNL automation windows
+Exec=/home/opc/.local/bin/visiontap-accounts-viewer
+Icon=computer
+Terminal=false
+Categories=Network;

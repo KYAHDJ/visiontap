@@ -1,0 +1,1 @@
+exec /etc/X11/Xsession 'openbox-session'

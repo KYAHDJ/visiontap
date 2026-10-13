@@ -1,0 +1,14 @@
+[Unit]
+Description=VisionTap ECNL-only service health check
+After=network.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/default/visiontap
+ExecStart=/home/opc/VisionTap/watchdog.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

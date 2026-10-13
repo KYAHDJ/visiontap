@@ -1,0 +1,15 @@
+[Unit]
+Description=Openbox Window Manager
+After=network.target visiontap-xvfb.service
+Requires=visiontap-xvfb.service
+
+[Service]
+Type=simple
+User=opc
+Environment=DISPLAY=:1
+ExecStart=/usr/bin/openbox
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

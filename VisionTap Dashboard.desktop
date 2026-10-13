@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=VisionTap Dashboard
+Comment=Open the local ECNL control dashboard
+Exec=/usr/bin/google-chrome --no-first-run --new-window http://127.0.0.1:6260
+Icon=google-chrome
+Terminal=false
+Categories=Network;
