@@ -23,7 +23,7 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dianajanelle','darlenejoyce','deartheodosia','aaronburr'];
+const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','deartheodosia','aaronburr'];
 const CHROME_ACCOUNTS = String(process.env.VT_ACCOUNTS || DEFAULT_CHROME_ACCOUNTS.join(','))
   .split(',').map(account => account.trim().toLowerCase()).filter((account, index, all) => account && all.indexOf(account) === index);
 const ENCASHMENT_ACCOUNTS = new Set(CHROME_ACCOUNTS);
@@ -43,9 +43,9 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '17':'dianajanelle', '11':'darlenejoyce', '12':'deartheodosia', '15':'aaronburr' };
+const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '12':'deartheodosia', '15':'aaronburr' };
 const DASHBOARD_GROUPS = {
-  'danica-niki':['danicajgb','nnnikkikim'],
+  'danica-niki':['danicajgb','nnnikkikim','dncjnnpabo22'],
   'darlene':['darlenejoyce'],
   'diana':['dianajanelle'],
   'theodosia-aaron':['deartheodosia','aaronburr']
@@ -975,6 +975,7 @@ function slotTheme(account){
     kyaiko:['#8b5cf6','rgba(139,92,246,.15)','rgba(139,92,246,.25)'],
     danicajgb:['#0ea5e9','rgba(14,165,233,.15)','rgba(14,165,233,.25)'],
     nnnikkikim:['#14b8a6','rgba(20,184,166,.15)','rgba(20,184,166,.25)'],
+    dncjnnpabo22:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
     dianajanelle:['#a855f7','rgba(168,85,247,.15)','rgba(168,85,247,.25)'],
     darlenejoyce:['#22c55e','rgba(34,197,94,.15)','rgba(34,197,94,.25)'],
     deartheodosia:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
@@ -1017,7 +1018,7 @@ function renderDailyPayout(slots,pmathPayouts,now){
 function render(d){
   var requestedGroup=new URLSearchParams(location.search).get('group');
   var groups={
-    'danica-niki':['danicajgb','nnnikkikim'],
+    'danica-niki':['danicajgb','nnnikkikim','dncjnnpabo22'],
     'darlene':['darlenejoyce'],
     'diana':['dianajanelle'],
     'theodosia-aaron':['deartheodosia','aaronburr']

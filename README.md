@@ -1,6 +1,6 @@
 # VisionTap — Contabo ECNL system
 
-This branch is the clean deployment source for the live Contabo ECNL system. It contains the five Chrome workers, scanner, responsive dashboard, grouped public views, private admin controls, virtual display, VNC/noVNC viewer, startup services, and watchdog.
+This branch is the clean deployment source for the live Contabo ECNL system. It contains the ECNL Chrome workers, scanner, responsive dashboard, grouped public views, private admin controls, virtual display, VNC/noVNC viewer, startup services, and watchdog.
 
 It intentionally contains no ECNL passwords, Chrome cookies/profiles, SSH keys, payout recipient details, runtime state, or live admin password. Those values stay private on the server.
 
@@ -10,7 +10,9 @@ It intentionally contains no ECNL passwords, Chrome cookies/profiles, SSH keys, 
 | --- | --- | ---: |
 | danicajgb | Monday | 3.9 seconds |
 | nnnikkikim | Tuesday | 4.1 seconds |
+| dncjnnpabo22 | Wednesday | 4.3 seconds |
 | darlenejoyce | Wednesday | 4.0 seconds |
+| DianaJanelle | Friday | 3.7 seconds |
 | DearTheodosia | Thursday | instant |
 | AaronBurr | Friday | 0.3 seconds |
 
@@ -18,7 +20,7 @@ Automatic cash-out runs only on the assigned weekday from 8:00–9:00 AM Philipp
 
 ## Dashboard views
 
-- `/` or `/?group=danica-niki` — Danica and Nikki
+- `/` or `/?group=danica-niki` — Danica, Nikki, and dncjnnpabo22
 - `/?group=darlene` — Darlene
 - `/?group=diana` — Diana
 - `/?group=theodosia-aaron` — Theodosia and Aaron
@@ -29,7 +31,7 @@ The dashboard is public and view-only by default. **Admin sign in** reveals Paus
 
 - `slotbrowser/` — Chrome automation, cash-out workflow, page injection, and dashboard
 - `pcapp/scanner/` — image/color scanner API
-- `config/` — five non-secret worker configurations and slot layout
+- `config/` — non-secret worker configurations and slot layout
 - `visiontap-*.service` — systemd units
 - `watchdog.sh` — service recovery loop
 - `visiontap-accounts-viewer` — responsive local noVNC viewer
@@ -59,7 +61,7 @@ Replace the example password, add each account’s private Chrome session/login,
 Set the accounts owned by each server in `/etc/default/visiontap` before starting the dashboard and watchdog:
 
 ```bash
-VT_ACCOUNTS=danicajgb,nnnikkikim,dianajanelle,darlenejoyce
+VT_ACCOUNTS=danicajgb,nnnikkikim,dncjnnpabo22,dianajanelle,darlenejoyce
 ```
 
 The dashboard, global controls, installer, and watchdog honor this allowlist. Accounts assigned to another server are neither exposed by the dashboard API nor restarted by the local watchdog.
