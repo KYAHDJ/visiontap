@@ -30,8 +30,8 @@ test('Kyaiko has direct working Play Pause and Restart controls', () => {
   assert.match(source, /title="Restart"/);
 });
 
-test('Kyaiko uses balance history without a duplicate earnings history', () => {
-  assert.match(source, /if\(!isKyaikoCard&&s\.earningsHistory&&s\.earningsHistory\.length>0\)/);
+test('all accounts use balance history without a duplicate earnings history', () => {
+  assert.doesNotMatch(source, /Earnings History/);
   assert.match(source, /Balance History \(10\)/);
 });
 
