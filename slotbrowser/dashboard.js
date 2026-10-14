@@ -749,7 +749,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 <body>
 <header class="appbar"><div class="brand"><span class="brandmark"><i></i><i></i><i></i><i></i></span><span class="brandcopy"><strong>VisionTap</strong><span>CONTROL CENTER</span></span></div><div class="appstate"><span class="livedot" id="app-live-dot"></span><span id="app-state-text">Checking system…</span></div></header>
 <div class="wrap">
-  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Sum of next payouts · monthly approximate</span></div></div></section>
+  <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated ECNL earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Expected received · PayMath excluded</span></div></div></section>
   <section class="mini-summary-wrap" aria-live="polite"><div class="mini-summary-title">Account snapshot <span>Live balance · change speed · next payout</span></div><div class="mini-summary-grid" id="mini-summary"></div></section>
   <section class="daily-payouts" id="daily-payout" hidden aria-live="polite"></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
@@ -842,15 +842,19 @@ function nextCashoutProjection(slot,now){
   var dateText=new Intl.DateTimeFormat('en-PH',{timeZone:'UTC',month:'short',day:'numeric'}).format(cashoutDate);
   var dayLabel=days===0?'Today':days===1?'Tomorrow':dayNames[scheduledDay]+' · '+dateText;
   var whenText=(amount>=300?dayLabel:'Not yet predictable')+' · '+start+':00–'+end+':00 AM PH';
-  return {amount:amount,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
+  var payoutType=String(schedule.type||'task').toLowerCase();
+  var deductionRate=payoutType==='network'?0.15:0.10;
+  return {amount:amount,netAmount:amount*(1-deductionRate),deductionRate:deductionRate,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
 }
 
 function updateEarningsForecast(slots,now){
-  // “Mon–Fri” represents the exact sum of the next cash-out figures shown for
-  // the accounts in this dashboard view, not a separate hourly extrapolation.
+  // The headline forecast is ECNL-only. PayMath remains visible elsewhere on
+  // the dashboard, but it must never inflate the ECNL payout totals.
   var weekdayTotal=(slots||[]).reduce(function(total,slot){
+    var account=String(slot.accountName||slot.name||'').toLowerCase();
+    if(String(slot.id)==='14'||account==='kyaiko')return total;
     var projection=nextCashoutProjection(slot,now||new Date());
-    return total+(projection&&Number.isFinite(Number(projection.amount))?Math.max(0,Number(projection.amount)):0);
+    return total+(projection&&Number.isFinite(Number(projection.netAmount))?Math.max(0,Number(projection.netAmount)):0);
   },0);
   var monthlyTotal=weekdayTotal*(52/12);
   var format=function(value){return '&#8369;'+value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
@@ -906,9 +910,9 @@ function renderMiniSummary(slots,pilots,now){
     return '<article class="mini-slot'+cardState+'" style="--mini-accent:'+theme[0]+';--mini-soft:'+theme[1]+'">'
       +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change" data-balance-start="'+changeStart+'">'+esc(change)+'</span></div>'
       +'<div class="mini-slot-values"><div class="mini-slot-stat"><small>Current balance</small><strong>&#8369;'+current.toFixed(2)+'</strong></div>'
-      +'<div class="mini-slot-stat estimate"><small>Next payout</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
+      +'<div class="mini-slot-stat estimate"><small>Next payout gross</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-stat rate"><small>'+(isPmath?'Coins':'Points')+' / minute</small><strong>'+liveRate.toFixed(2)+'</strong></div>'
-      +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+'</div>'+alertHtml+'</div></article>';
+      +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+(projection&&!isPmath?' · Expected receive: &#8369;'+projection.netAmount.toFixed(2):'')+'</div>'+alertHtml+'</div></article>';
   }).join('');
 }
 

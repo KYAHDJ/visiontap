@@ -84,17 +84,24 @@ test('every slot shows a live next payout earnings estimate after ETA', () => {
   assert.match(source, /next-cashout-line/);
 });
 
-test('top dashboard sums visible next payouts for weekday and monthly forecasts', () => {
+test('top dashboard sums ECNL expected receipts and excludes PayMath', () => {
   assert.match(source, /id="forecast-week"/);
   assert.match(source, /id="forecast-month"/);
   assert.match(source, /function updateEarningsForecast\(slots,now\)/);
   assert.match(source, /projection=nextCashoutProjection\(slot,now\|\|new Date\(\)\)/);
-  assert.match(source, /total\+\(projection&&Number\.isFinite/);
+  assert.match(source, /account==='kyaiko'/);
+  assert.match(source, /Number\(projection\.netAmount\)/);
   assert.doesNotMatch(source, /pesosPerHour\*24\*5/);
   assert.match(source, /weekdayTotal\*\(52\/12\)/);
-  assert.match(source, /Sum of next payouts/);
+  assert.match(source, /Expected received · PayMath excluded/);
   assert.match(source, /updateEarningsForecast\(slots,now\)/);
   assert.match(source, /var now=new Date\(\),next=nextEncashment\(slots,now\)/);
+});
+
+test('payout projection applies task and network deductions separately', () => {
+  assert.match(source, /payoutType==='network'\?0\.15:0\.10/);
+  assert.match(source, /netAmount:amount\*\(1-deductionRate\)/);
+  assert.match(source, /Expected receive:/);
 });
 
 test('balance history heading shows when each balance last changed', () => {
