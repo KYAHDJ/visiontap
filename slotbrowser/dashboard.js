@@ -20,7 +20,10 @@ const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.jso
 const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'];
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
+function encashmentLedgerFile(account) { return path.join(STATE_DIR, `encashment_${account}_history.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, account === 'adaihbi' ? 'encashment_config.json' : `encashment_${account}_config.json`); }
+function publicEncashmentRecord(state) { if(!state)return null;const safe=Object.assign({},state);delete safe.payoutNumber;delete safe.lastUrl;delete safe.screenshot;delete safe.message;return safe; }
+function publicEncashmentHistory(account) { const records=readJson(encashmentLedgerFile(account),[]);return (Array.isArray(records)?records:[]).map(publicEncashmentRecord).filter(Boolean); }
 function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).reduce((out,item)=>{out[item.type]=item.value;return out;},{});return `${parts.year}-${parts.month}-${parts.day}`; }
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
@@ -488,7 +491,8 @@ function getMergedSlots(status) {
       balanceHistory: Array.isArray(ms.balanceHistory) ? ms.balanceHistory.slice(-10) : [],
       _windowActive: ms.windowStart > 0,
       _cooldownActive: ms.cooldownStart > 0,
-      encashment: (()=>{const account=String(slot.accountName || name).toLowerCase();return ENCASHMENT_ACCOUNTS.has(account)?readJson(encashmentStateFile(account),null):null;})(),
+      encashment: (()=>{const account=String(slot.accountName || name).toLowerCase();return ENCASHMENT_ACCOUNTS.has(account)?publicEncashmentRecord(readJson(encashmentStateFile(account),null)):null;})(),
+      encashments: (()=>{const account=String(slot.accountName || name).toLowerCase();return ENCASHMENT_ACCOUNTS.has(account)?publicEncashmentHistory(account):[];})(),
       encashmentSchedule: (()=>{const account=String(slot.accountName || name).toLowerCase();if(!ENCASHMENT_ACCOUNTS.has(account))return null;const c=readJson(encashmentConfigFile(account),{}),o=c.oneTimeOverride,a=o&&String(o.date||'')===currentPhDateKey()?Object.assign({},c,o):c;return {type:a.type||'',weekday:a.weekday||'',startHour:a.startHour==null?null:Number(a.startHour),endHour:a.endHour==null?null:Number(a.endHour),retryMinutes:5,oneTime:!!(o&&String(o.date||'')===currentPhDateKey())};})()
     };
     merged.push(mergedSlot);
@@ -957,7 +961,17 @@ function renderDailyPayout(slots,pmathPayouts,now){
   var wrap=document.getElementById('daily-payout');
   if(!wrap)return;
   var records=[];
-  (slots||[]).forEach(function(slot){var state=slot.encashment||{},hasSubmission=!!(state.amount||state.netAmount||state.reference||state.transactionId||/submitted|pending|processing|approved|paid|transferred|completed|success/i.test(String(state.status||'')+' '+String(state.payoutStatus||'')));if(String(state.date||'')===dateKey&&hasSubmission)records.push({account:slot.accountName||slot.name,state:state,schedule:slot.encashmentSchedule||null,platform:'ECNL'})});
+  (slots||[]).forEach(function(slot){
+    var seen={};
+    var states=(Array.isArray(slot.encashments)?slot.encashments:[]).slice();
+    if(slot.encashment)states.push(slot.encashment);
+    states.forEach(function(state){
+      state=state||{};
+      var hasSubmission=!!(state.amount||state.netAmount||state.reference||state.transactionId||/submitted|pending|processing|approved|paid|transferred|completed|success/i.test(String(state.status||'')+' '+String(state.payoutStatus||'')));
+      var key=String(state.ledgerId||state.reference||state.transactionId||[state.date,state.kind,state.requestedAt,state.lastAttemptAt].join('|'));
+      if(String(state.date||'')===dateKey&&hasSubmission&&!seen[key]){seen[key]=true;records.push({account:slot.accountName||slot.name,state:state,schedule:slot.encashmentSchedule||null,platform:'ECNL'});}
+    });
+  });
   (pmathPayouts||[]).forEach(function(state){if(String(state.date||'')===dateKey)records.push({account:state.account||'kyaiko',state:state,schedule:null,platform:'PMath'})});
   if(!records.length){(slots||[]).filter(function(slot){return slot.encashmentSchedule&&slot.encashmentSchedule.weekday===today}).forEach(function(slot){records.push({account:slot.accountName||slot.name,state:{status:'Scheduled',amount:slot.withdrawable},schedule:slot.encashmentSchedule,platform:'ECNL'})})}
   if(!records.length){wrap.hidden=true;wrap.innerHTML='';return}
@@ -1087,7 +1101,7 @@ function render(d){
         var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
         return grid;
       })() +
-      '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'})()+
+      '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncashLedger(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'})()+
         controlsHtml+
       '</div></div>';
     hAiko+=cardHtml;
@@ -1098,6 +1112,21 @@ function render(d){
 
 function liveTimerText(start,fallback){if(!start)return fallback||'00:00';var elapsed=Math.max(0,Math.floor((Date.now()-Number(start))/1000));var m=Math.floor(elapsed/60),sec=elapsed%60;return(m<10?'0'+m:m)+':'+(sec<10?'0'+sec:sec)}
 function fmtWhen(ts){return ts?new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(ts)):'—'}
+function showEncashLedger(id){
+  var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),q=slot&&slot.encashmentSchedule||{};
+  document.getElementById('enctitle').textContent=String(slot&&slot.accountName||'Account')+' Payout Information';
+  var money=function(v){v=String(v||'—');return v==='—'?v:(/[₱P]/.test(v)?v:'₱'+v)};
+  var upcoming=String(q.type||'').toLowerCase(),day=({Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'})[q.weekday]||q.weekday||'Not scheduled';
+  var seen={},states=(Array.isArray(slot&&slot.encashments)?slot.encashments:[]).slice();if(slot&&slot.encashment)states.push(slot.encashment);
+  states=states.filter(function(e){var key=String(e&&e.ledgerId||e&&e.reference||e&&e.transactionId||[e&&e.date,e&&e.kind,e&&e.requestedAt,e&&e.lastAttemptAt].join('|'));if(!e||seen[key])return false;seen[key]=true;return !!(e.amount||e.netAmount||e.reference||e.transactionId);}).sort(function(a,b){return Number(b.lastAttemptAt||b.updatedAt||0)-Number(a.lastAttemptAt||a.updatedAt||0)});
+  var recordHtml=states.map(function(e){var kind=String(e.kind||'unknown').toLowerCase();return '<div class="encpayoutrecord"><div class="enchero"><div><small>'+esc(kind==='task'?'Task payout':kind==='network'?'Network payout':'Payout')+'</small><strong>'+esc(money(e.netAmount||e.amount))+'</strong></div></div>'+
+    '<div class="encsummary"><div class="encsum"><b>Gross</b><span>'+esc(money(e.amount))+'</span></div><div class="encsum"><b>Fee / tax</b><span>'+esc(money(e.tax))+'</span></div><div class="encsum net"><b>You receive</b><span>'+esc(money(e.netAmount||e.amount))+'</span></div></div>'+
+    '<div class="encdetails"><div class="encdetail"><b>Type</b>'+esc(kind==='task'?'Task':kind==='network'?'Network':'Unknown')+'</div><div class="encdetail"><b>Reference</b>'+esc(e.reference||'—')+'</div><div class="encdetail"><b>Requested</b>'+esc(e.requestedAt||fmtWhen(e.lastAttemptAt))+'</div><div class="encdetail"><b>Transaction ID</b>'+esc(e.transactionId||'—')+'</div><div class="encdetail"><b>Status</b>'+esc(e.payoutStatus||e.status||'—')+'</div></div></div>';}).join('');
+  document.getElementById('encbody').innerHTML=(recordHtml||'<div class="encactivity">No recorded payouts yet.</div>')+
+    '<div class="encschedule"><b>Next: '+esc(upcoming==='task'?'Task Encashment':upcoming==='network'?'Network Encashment':'Not configured')+'</b><span>'+esc(day)+(q.startHour!=null&&q.endHour!=null?' · '+esc(q.startHour)+':00–'+esc(q.endHour)+':00 AM PH':'')+'</span></div>'+
+    '<div class="encactivity">Task and Network payouts are stored separately. Multiple payouts on the same day remain visible.</div>';
+  document.getElementById('encmodal').classList.add('show');
+}
 function showEncash(id){
   var slot=(window._lastSlots||[]).find(function(x){return String(x.id)===String(id)}),e=slot&&slot.encashment||{},q=slot&&slot.encashmentSchedule||{};
   document.getElementById('enctitle').textContent=String(slot&&slot.accountName||'Account')+' Payout Information';

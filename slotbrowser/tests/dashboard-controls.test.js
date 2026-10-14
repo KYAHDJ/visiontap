@@ -66,6 +66,14 @@ test('dashboard highlights todays payout and pending receipt reminder', () => {
   assert.match(source, /Waiting For ₱300/);
 });
 
+test('dashboard lists separate Task and Network payout records', () => {
+  assert.match(source, /encashment_\$\{account\}_history\.json/);
+  assert.match(source, /Array\.isArray\(slot\.encashments\)/);
+  assert.match(source, /showEncashLedger/);
+  assert.match(source, /Task and Network payouts are stored separately/);
+  assert.match(source, /Multiple payouts on the same day remain visible/);
+});
+
 test('Kyaiko balance mirrors the live PMath coin count', () => {
   assert.match(source, /const pilotCoins = Number\(pilotState\.withdrawable/);
   assert.match(source, /const dashboardWithdrawable = currentWithdrawable/);

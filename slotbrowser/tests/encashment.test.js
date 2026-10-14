@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { ChromeEncashmentController, parsePayoutRecords, MIN_CASHOUT_PESOS } = require('../chrome-encashment');
 
 test('payout history columns populate every dashboard detail', () => {
@@ -27,6 +30,26 @@ test('payout parser prefers the requested date over an older row', () => {
   ], '2026-09-30');
   assert.equal(result.amount, '426.098');
   assert.equal(result.status, 'Pending');
+});
+
+test('same-day Task and Network payouts are matched independently', () => {
+  const rows = [
+    { headers:['Date','Amount','Reference','Status'], cells:['Oct 14, 2026','₱500','ECLN-NETWORK1','Pending'], text:'Oct 14, 2026 Network payout ₱500 ECLN-NETWORK1 Pending' },
+    { headers:['Date','Amount','Reference','Status'], cells:['Oct 14, 2026','₱500','ECLT-TASK0001','Pending'], text:'Oct 14, 2026 Task payout ₱500 ECLT-TASK0001 Pending' }
+  ];
+  assert.equal(parsePayoutRecords(rows, '2026-10-14', 'task').reference, 'ECLT-TASK0001');
+  assert.equal(parsePayoutRecords(rows, '2026-10-14', 'network').reference, 'ECLN-NETWORK1');
+});
+
+test('payout ledger preserves multiple payouts for the same account and date', () => {
+  const stateDir = fs.mkdtempSync(path.join(__dirname, 'tmp-payout-ledger-'));
+  const controller = new ChromeEncashmentController({}, stateDir, 'adaihbi');
+  controller.save({ ...controller.state(), date:'2026-10-14', kind:'network', status:'submitted', amount:'500', reference:'ECLN-NETWORK1', lastAttemptAt:1 });
+  controller.save({ ...controller.state(), ledgerId:'', date:'2026-10-14', kind:'task', status:'submitted', amount:'500', reference:'ECLT-TASK0001', lastAttemptAt:2 });
+  const ledger = JSON.parse(fs.readFileSync(path.join(stateDir, 'encashment_adaihbi_history.json'), 'utf8'));
+  assert.equal(ledger.length, 2);
+  assert.deepEqual(ledger.map(item => item.kind), ['network','task']);
+  fs.rmSync(stateDir, { recursive:true, force:true });
 });
 
 test('cash-out is hard-locked below 300 pesos', () => {
