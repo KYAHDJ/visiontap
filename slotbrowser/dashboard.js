@@ -874,7 +874,9 @@ function nextCashoutProjection(slot,now){
   var dateText=new Intl.DateTimeFormat('en-PH',{timeZone:'UTC',month:'short',day:'numeric'}).format(cashoutDate);
   var dayLabel=days===0?'Today':days===1?'Tomorrow':dayNames[scheduledDay]+' · '+dateText;
   var whenText=(amount>=300?dayLabel:'Not yet predictable')+' · '+start+':00–'+end+':00 AM PH';
-  return {amount:amount,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
+  var payoutType=String(schedule.type||'task').toLowerCase();
+  var deductionRate=payoutType==='network'?0.15:0.10;
+  return {amount:amount,netAmount:amount*(1-deductionRate),deductionRate:deductionRate,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
 }
 
 function updateEarningsForecast(slots,now){
@@ -883,7 +885,7 @@ function updateEarningsForecast(slots,now){
   // cash-out estimate once. Do not create a second total from a volatile rate.
   var weekdayTotal=(slots||[]).reduce(function(total,slot){
     var projection=nextCashoutProjection(slot,now);
-    return total+(projection&&Number.isFinite(Number(projection.amount))?Math.max(0,Number(projection.amount)):0);
+    return total+(projection&&Number.isFinite(Number(projection.netAmount))?Math.max(0,Number(projection.netAmount)):0);
   },0);
   var monthlyTotal=weekdayTotal*(52/12);
   var format=function(value){return '&#8369;'+value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
@@ -939,9 +941,9 @@ function renderMiniSummary(slots,pilots,now){
     return '<article class="mini-slot'+cardState+'" style="--mini-accent:'+theme[0]+';--mini-soft:'+theme[1]+'">'
       +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change" data-balance-start="'+changeStart+'">'+esc(change)+'</span></div>'
       +'<div class="mini-slot-values"><div class="mini-slot-stat"><small>Current balance</small><strong>&#8369;'+current.toFixed(2)+'</strong></div>'
-      +'<div class="mini-slot-stat estimate"><small>Next payout</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
+      +'<div class="mini-slot-stat estimate"><small>Next payout gross</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-stat rate"><small>'+(isPmath?'Coins':'Points')+' / minute</small><strong>'+liveRate.toFixed(2)+'</strong></div>'
-      +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+'</div>'+alertHtml+'</div></article>';
+      +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+(projection&&!isPmath?' · Expected receive: &#8369;'+projection.netAmount.toFixed(2):'')+'</div>'+alertHtml+'</div></article>';
   }).join('');
 }
 
@@ -1065,7 +1067,6 @@ function render(d){
     var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
-    var eh='';
     var isKyaikoCard=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko';
     var controlsHtml=isKyaikoCard
       ? '<button class="ibtn" type="button" title="Pause" onclick="runDashboardControl(&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause&quot;).catch(function(){})">&#9646;&#9646;</button>'+
@@ -1074,14 +1075,6 @@ function render(d){
       : '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'&group='+encodeURIComponent(groupKey)+'" title="Pause" onclick="return confirmControl(event,&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
         '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'&group='+encodeURIComponent(groupKey)+'" title="Resume" onclick="return confirmControl(event,&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
         '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'&group='+encodeURIComponent(groupKey)+'" title="Refresh" onclick="return confirmControl(event,&quot;refresh&quot;,&quot;'+sid+'&quot;,&quot;Refresh this account?&quot;,&quot;The account page will reload.&quot;,&quot;Refresh&quot;)">&#8634;</a>';
-    if(!isKyaikoCard&&s.earningsHistory&&s.earningsHistory.length>0){
-      eh='<div class="ehd">Earnings History</div><div class="elst">';
-      for(var j=0;j<s.earningsHistory.length;j++){
-        var e=s.earningsHistory[j];
-        eh+='<div class="erow"><span class="eamt">+'+e.earning+'</span><span class="etsk">#'+(e.taskNum||'?')+'</span><span class="eclr">'+(e.color||'')+'</span><span class="ets">'+(e.ts||'')+'</span></div>';
-      }
-      eh+='</div>';
-    }
     var cardHtml='<div class="card '+cardClass+'" style="--section-accent:'+theme[0]+';--section-soft:'+theme[1]+';--section-glow:'+theme[2]+'">'+
       '<div class="card-hd"><span class="card-nm">'+esc(s.accountName||s.name)+'</span><span class="card-bg state-'+(slotPaused?'paused':'running')+'">'+st+'</span></div>'+
       verifyHtml+
@@ -1153,7 +1146,6 @@ function render(d){
       '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
       '</form>'+
-      eh+
       '<div class="sacts">'+        (function(){if(!s.encashmentSchedule)return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'})()+
         controlsHtml+
       '</div></div>';
