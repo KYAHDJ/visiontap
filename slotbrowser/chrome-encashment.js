@@ -20,12 +20,18 @@ function phParts(now = new Date()) {
   let hour = Number(parts.hour); if (hour === 24) hour = 0;
   return { key:`${parts.year}-${parts.month}-${parts.day}`, weekday:parts.weekday, hour, minute:Number(parts.minute), second:Number(parts.second) };
 }
-function defaultState() { return { date:'', kind:'', status:'scheduled', attempts:0, lastAttemptAt:0, nextAttemptAt:0, historyCheckedAt:0, finalHistoryCheckedAt:0, historyCaptured:false, reference:'', amount:'', tax:'', netAmount:'', gateway:'', payoutNumber:'', requestedAt:'', transactionId:'', payoutStatus:'', message:'', lastUrl:'', screenshot:'', eventLog:[] }; }
+function defaultState() { return { ledgerId:'', date:'', kind:'', status:'scheduled', attempts:0, lastAttemptAt:0, nextAttemptAt:0, historyCheckedAt:0, finalHistoryCheckedAt:0, historyCaptured:false, reference:'', amount:'', tax:'', netAmount:'', gateway:'', payoutNumber:'', requestedAt:'', transactionId:'', payoutStatus:'', message:'', lastUrl:'', screenshot:'', eventLog:[] }; }
 function cleanMoney(value) {
   const match = String(value || '').replace(/,/g, '').match(/-?[0-9]+(?:\.[0-9]+)?/);
   return match ? match[0] : '';
 }
-function parsePayoutRecords(records, targetDate = '') {
+function recordPayoutKind(record) {
+  const text = String(record?.text || '').replace(/\s+/g, ' ').trim();
+  if (/\bECLN[-A-Z0-9]*\b|network payout|network earnings/i.test(text)) return 'network';
+  if (/\bECLT[-A-Z0-9]*\b|task payout|task earnings/i.test(text)) return 'task';
+  return '';
+}
+function parsePayoutRecords(records, targetDate = '', targetKind = '', targetReference = '') {
   const list = Array.isArray(records) ? records : [];
   const date = String(targetDate || '');
   const parts = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -34,12 +40,21 @@ function parsePayoutRecords(records, targetDate = '') {
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     dateHints.push(`${months[Number(parts[2])-1]} ${Number(parts[3])}, ${parts[1]}`, `${parts[2]}/${parts[3]}/${parts[1]}`, `${parts[1]}/${parts[2]}/${parts[3]}`);
   }
-  const scored = list.map((record, index) => {
+  const wantedKind = String(targetKind || '').toLowerCase();
+  const wantedReference = String(targetReference || '').toLowerCase();
+  const candidates = list.filter(record => {
+    const kind = recordPayoutKind(record);
+    if (wantedKind && kind && kind !== wantedKind) return false;
+    return true;
+  });
+  const scored = candidates.map((record, index) => {
     const text = String(record?.text || '').replace(/\s+/g, ' ').trim();
     const hasDate = dateHints.some(hint => hint && text.toLowerCase().includes(hint.toLowerCase()));
     const hasStatus = /processing|pending|approved|paid|transferred|completed|success|failed|declined/i.test(text);
     const hasMoney = /(?:₱|PHP|\bP\s*)[0-9]/i.test(text);
-    return { record, index, score:(hasDate?8:0)+(hasStatus?4:0)+(hasMoney?2:0)-index/1000 };
+    const kind = recordPayoutKind(record);
+    const referenceMatch = wantedReference && text.toLowerCase().includes(wantedReference);
+    return { record, index, score:(referenceMatch?64:0)+(hasDate?8:0)+(kind&&kind===wantedKind?6:0)+(hasStatus?4:0)+(hasMoney?2:0)-index/1000 };
   }).sort((a,b)=>b.score-a.score);
   const picked = scored[0]?.record || {};
   const headers = Array.isArray(picked.headers) ? picked.headers : [];
@@ -60,7 +75,7 @@ function parsePayoutRecords(records, targetDate = '') {
   const requestedAt = byHeader([/^date$/, /request date/, /requested at/, /created at/, /date time/]);
   const gateway = byHeader([/^gateway$/, /payment method/, /channel/]);
   const payoutNumber = byHeader([/account number/, /wallet/, /mobile/, /gcash/]);
-  return { found:!!text, text, status, reference, transactionId, amount, tax, netAmount, requestedAt, gateway, payoutNumber };
+  return { found:!!text, kind:recordPayoutKind(picked), text, status, reference, transactionId, amount, tax, netAmount, requestedAt, gateway, payoutNumber };
 }
 
 class ChromeEncashmentController {
@@ -70,7 +85,13 @@ class ChromeEncashmentController {
     this.account = String(account || 'adaihbi').trim().toLowerCase();
     this.configFile = path.join(stateDir, this.account === 'adaihbi' ? 'encashment_config.json' : `encashment_${this.account}_config.json`);
     this.stateFile = path.join(stateDir, `encashment_${this.account}.json`);
+    this.ledgerFile = path.join(stateDir, `encashment_${this.account}_history.json`);
     this.imageFile = path.join(stateDir, `encashment_${this.account}.png`);
+    if(!fs.existsSync(this.ledgerFile)){
+      const legacy=Object.assign(defaultState(),readJson(this.stateFile,{}));
+      const evidence=legacy.reference||legacy.transactionId||legacy.amount||/submitted|pending|processing|approved|paid|transferred|completed|success/i.test(`${legacy.status||''} ${legacy.payoutStatus||''}`);
+      if(evidence&&legacy.date&&legacy.kind){legacy.ledgerId=legacy.ledgerId||`${this.account}-${legacy.date}-${legacy.kind}-${legacy.lastAttemptAt||Date.now()}`;writeJson(this.ledgerFile,[Object.assign({},legacy,{account:this.account,updatedAt:Date.now()})]);}
+    }
     this.busy = false;
     this.timer = null;
   }
@@ -101,9 +122,22 @@ class ChromeEncashmentController {
     }
     return state;
   }
+  ledger() { const value=readJson(this.ledgerFile,[]);return Array.isArray(value)?value:[]; }
+  saveLedger(state) {
+    const evidence=state.reference||state.transactionId||state.amount||/submitted|pending|processing|approved|paid|transferred|completed|success/i.test(`${state.status||''} ${state.payoutStatus||''}`);
+    if(!evidence||!state.date||!state.kind)return;
+    if(!state.ledgerId)state.ledgerId=`${this.account}-${state.date}-${state.kind}-${state.lastAttemptAt||Date.now()}`;
+    const records=this.ledger(),record=Object.assign({},state,{account:this.account,updatedAt:Date.now()});
+    let index=records.findIndex(item=>item&&item.ledgerId===state.ledgerId);
+    if(index<0&&state.reference)index=records.findIndex(item=>item&&item.reference===state.reference);
+    if(index<0&&state.transactionId)index=records.findIndex(item=>item&&item.transactionId===state.transactionId);
+    if(index>=0)records[index]=Object.assign({},records[index],record);else records.push(record);
+    records.sort((a,b)=>Number(a.lastAttemptAt||a.updatedAt||0)-Number(b.lastAttemptAt||b.updatedAt||0));
+    writeJson(this.ledgerFile,records.slice(-200));
+  }
   save(state, event) {
     if (event) { state.eventLog = Array.isArray(state.eventLog) ? state.eventLog : []; state.eventLog.push({ at:Date.now(), text:compact(event, 300) }); state.eventLog = state.eventLog.slice(-30); }
-    writeJson(this.stateFile, state);
+    this.saveLedger(state);writeJson(this.stateFile, state);
   }
   start() { if (this.timer) return; this.timer = setInterval(() => this.tick().catch(error => this.pilot.log(`ENCASH tick error: ${error.message}`)), 15000); setTimeout(() => this.tick().catch(() => {}), 3000); }
   stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
@@ -113,6 +147,7 @@ class ChromeEncashmentController {
     const cfg = this.effectiveConfig(now, baseCfg);
     const ph = phParts(now), start = Number(cfg.startHour || 8), end = Number(cfg.endHour || 10), kind = cfg.type === 'task' ? 'task' : 'network';
     let state = this.state();
+    if(state.date===ph.key&&state.kind&&state.kind!==kind&&ph.weekday===(cfg.weekday||'Wed')){state=defaultState();state.date=ph.key;state.kind=kind;this.save(state,`${kind==='task'?'Task':'Network'} schedule opened for ${ph.key}`);}
     if (/submitted|pending|processing/i.test(`${state.status} ${state.payoutStatus}`) && state.date === ph.key) {
       if (!state.historyCheckedAt) await this.checkHistory();
       else if (ph.hour >= 9 && !state.finalHistoryCheckedAt) await this.checkHistory(true);
@@ -193,7 +228,7 @@ class ChromeEncashmentController {
           if(!records.length) document.querySelectorAll('[class*="payout" i],[class*="transaction" i],[class*="history" i]').forEach(el=>{const text=(el.innerText||'').replace(/\s+/g,' ').trim();if(text&&/(?:₱|PHP|processing|pending|approved|paid|transferred|completed|failed|declined)/i.test(text))records.push({headers:[],cells:[],text});});
           return {url:location.href,records};
         });
-        const result=parsePayoutRecords(pageData.records,state.date||phParts().key);
+        const result=parsePayoutRecords(pageData.records,state.date||phParts().key,state.kind,state.reference);
         state.lastUrl=pageData.url;
         state.payoutStatus=result.status||state.payoutStatus||'Pending';
         state.reference=result.reference||state.reference;
@@ -214,4 +249,4 @@ class ChromeEncashmentController {
   }
 }
 
-module.exports = { ChromeEncashmentController, phParts, parsePayoutRecords, PH_TIME_ZONE, MIN_CASHOUT_PESOS };
+module.exports = { ChromeEncashmentController, phParts, parsePayoutRecords, recordPayoutKind, PH_TIME_ZONE, MIN_CASHOUT_PESOS };
