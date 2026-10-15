@@ -11,8 +11,8 @@ It intentionally contains no ECNL passwords, Chrome cookies/profiles, SSH keys, 
 | danicajgb | Monday | 3.9 seconds |
 | nnnikkikim | Tuesday | 4.1 seconds |
 | dncjnnpabo22 | Wednesday | 4.3 seconds |
-| darlenejoyce | Wednesday | 4.0 seconds |
-| DianaJanelle | Friday | 3.7 seconds |
+| darlenejoyce | Monday | 4.0 seconds |
+| DianaJanelle | Monday | 3.7 seconds |
 | Alexander1001 | Tuesday | 0.5 seconds |
 | Elizabeth1001 | Wednesday | 0.7 seconds |
 | DearTheodosia | Thursday | instant |
