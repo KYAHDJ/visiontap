@@ -830,11 +830,14 @@ function nextCashoutProjection(slot,now){
   var pesosPerHour=pointRate>0?pointRate:Math.min(isPmath?3.6:4.32,historyRate);
   function candidate(){
     var candidateMinutes=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
-    var candidateHours=Math.max(0,candidateMinutes/60);
-    return {hours:candidateHours,amount:Math.max(0,currentPesos+pesosPerHour*candidateHours)};
+    var startHours=Math.max(0,candidateMinutes/60),windowHours=Math.max(0,end-start);
+    var endAmount=Math.max(0,currentPesos+pesosPerHour*(startHours+windowHours));
+    var thresholdHours=pesosPerHour>0?Math.max(0,(300-currentPesos)/pesosPerHour):Infinity;
+    var payoutHours=endAmount>=300?Math.max(startHours,thresholdHours):startHours;
+    return {hours:payoutHours,amount:Math.max(0,currentPesos+pesosPerHour*payoutHours),endAmount:endAmount};
   }
   var projected=candidate(),guard=0;
-  while(projected.amount<300&&pesosPerHour>0&&guard++<104){
+  while(projected.endAmount<300&&pesosPerHour>0&&guard++<104){
     if(isPmath){
       do{days++;scheduledDay=(scheduledDay+1)%7}while(scheduledDay===0||scheduledDay===6);
     }else days+=7;

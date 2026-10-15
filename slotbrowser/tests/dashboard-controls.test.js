@@ -162,7 +162,9 @@ test('earnings estimates reject short-history spikes and use the real minimum sc
   assert.match(source, /estimatedPesosPerHour: estimatedPesosPerHour/);
   assert.match(source, /const tp = 300/);
   assert.doesNotMatch(source, /while \(currentWithdrawable >= tp\)/);
-  assert.match(source, /while\(projected\.amount<300&&pesosPerHour>0/);
+  assert.match(source, /while\(projected\.endAmount<300&&pesosPerHour>0/);
+  assert.match(source, /thresholdHours=pesosPerHour>0\?Math\.max\(0,\(300-currentPesos\)\/pesosPerHour\):Infinity/);
+  assert.match(source, /endAmount>=300\?Math\.max\(startHours,thresholdHours\):startHours/);
   assert.match(source, /pointRate>0\?pointRate:Math\.min/);
 });
 
