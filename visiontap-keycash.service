@@ -1,0 +1,23 @@
+[Unit]
+Description=VisionTap isolated KeyCash typing worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/home/opc/VisionTap/slotbrowser
+Environment=VT_KEYCASH_LOAD_LIMIT=18
+Environment=VT_KEYCASH_MEMORY_FLOOR_MB=1024
+ExecStart=/usr/bin/node /home/opc/VisionTap/slotbrowser/keycash-worker.js
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=25
+KillMode=mixed
+Nice=10
+CPUQuota=70%
+MemoryMax=900M
+OOMScoreAdjust=500
+
+[Install]
+WantedBy=multi-user.target

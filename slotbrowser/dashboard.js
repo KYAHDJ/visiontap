@@ -22,6 +22,7 @@ const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
+const KEYCASH_STATE_FILE = path.join(os.homedir(), '.config', 'VisionTap-KeyCash', 'state.json');
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
 const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','alexander1001','elizabeth1001','deartheodosia','aaronburr'];
 const CHROME_ACCOUNTS = String(process.env.VT_ACCOUNTS || DEFAULT_CHROME_ACCOUNTS.join(','))
@@ -753,6 +754,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 .global-controls-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;padding:12px!important}
 .read-only .global-controls-grid,.read-only .sacts,.read-only .slotverify-actions,.read-only .crow{display:none!important}
 .public-payout-row{display:flex;border-top:1px solid #2a2943;padding-top:12px;margin-top:12px}.public-payout-row .encbtn{width:auto;min-width:128px;padding:0 14px}
+.keycash-card{display:none;margin:22px 0;padding:18px;border:1px solid #ff9f1a;border-radius:16px;background:linear-gradient(145deg,rgba(255,159,26,.13),#111126 58%);box-shadow:0 12px 32px #0005}.keycash-card.show{display:block}.keycash-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.keycash-head strong{font-size:18px}.keycash-head span{padding:5px 8px;border-radius:999px;background:#29233b;color:#ffd38a;font-size:8px;font-weight:850}.keycash-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.keycash-stat{padding:11px;border:1px solid #35304b;border-radius:11px;background:#0e0e20}.keycash-stat small{display:block;color:#9692aa;font-size:7px;text-transform:uppercase;font-weight:800}.keycash-stat b{display:block;margin-top:4px;color:#fff;font-size:15px}.keycash-note{margin-top:11px;color:#aaa7c3;font-size:9px}@media(max-width:620px){.keycash-grid{grid-template-columns:1fr 1fr}.keycash-card{padding:12px}}
 .admin-access{margin-left:10px;padding:7px 10px;border:1px solid #474263;border-radius:8px;color:#d9d5ed;text-decoration:none;font-size:9px;font-weight:850;white-space:nowrap}.admin-mode .admin-access{border-color:#00b87a;color:#78edc3;background:rgba(0,184,122,.12)}
 @media(max-width:620px){.appstate{gap:4px}.admin-access{margin-left:3px;padding:6px 7px;font-size:7px}#app-state-text{display:none}}
 .global-controls-grid .btn{display:flex!important;align-items:center;justify-content:center;width:100%!important;min-width:0!important;min-height:42px;margin:0!important;padding:10px 12px!important}
@@ -802,6 +804,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
   </div>
   <div class="stitle section-aiko-title"><span>ACCOUNTS — <span id="scnt-aiko">0</span> slots</span></div>
   <div id="slots-aiko"></div>
+  <section class="keycash-card" id="keycash-card"><div class="keycash-head"><strong>KeyCash · adaihbi1001</strong><span id="keycash-status">Checking</span></div><div class="keycash-grid"><div class="keycash-stat"><small>Wallet</small><b id="keycash-balance">₱0.00</b></div><div class="keycash-stat"><small>Completed rounds</small><b id="keycash-rounds">0</b></div><div class="keycash-stat"><small>Worker errors</small><b id="keycash-errors">0</b></div><div class="keycash-stat"><small>Last update</small><b id="keycash-update">—</b></div></div><div class="keycash-note" id="keycash-note">Isolated worker with automatic ECNL load protection.</div></section>
   <div class="stitle">Server</div>
   <div class="ggrid">
     <a class="btn bgrn bful" href="/restart" onclick="return confirmLink(event,this,&quot;Restart VisionTap?&quot;,&quot;The dashboard and automation services may be briefly unavailable.&quot;,&quot;Restart VisionTap&quot;)">Restart VisionTap</a>
@@ -1054,6 +1057,7 @@ function render(d){
   var allowed=groups[groupKey];
   var inView=function(account){return allowed.indexOf(String(account||'').toLowerCase())>=0;};
   var slots=uniqueAccounts((d.slots||[]).filter(function(s){return inView(s.accountName||s.name)}));
+  var keycashCard=document.getElementById('keycash-card'),keycash=d.keycash||null;if(keycashCard){keycashCard.classList.toggle('show',groupKey==='theodosia-aaron');if(keycash&&groupKey==='theodosia-aaron'){document.getElementById('keycash-status').textContent=keycash.status||'Unknown';document.getElementById('keycash-balance').textContent='₱'+Number(keycash.balance||0).toFixed(2);document.getElementById('keycash-rounds').textContent=String(keycash.rounds||0);document.getElementById('keycash-errors').textContent=String(keycash.errors||0);document.getElementById('keycash-update').textContent=keycash.updatedAt?fmtWhen(keycash.updatedAt):'—';document.getElementById('keycash-note').textContent=(keycash.status||'Worker active')+(keycash.load?' · server load '+keycash.load:'')+' · ECNL accounts have priority.';}}
   var pilots=uniqueAccounts((d.chromePilots||[]).filter(function(p){return inView(p&&p.account)})),pilot=d.chromePilot||{};
   var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
@@ -1393,7 +1397,8 @@ const server = http.createServer(async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
     const pmathPayouts = [];
-    res.end(JSON.stringify({ group, accounts:allowedAccounts, scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots[0] || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
+    const keycash = group === 'theodosia-aaron' ? readJson(KEYCASH_STATE_FILE, null) : null;
+    res.end(JSON.stringify({ group, accounts:allowedAccounts, scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots[0] || {}, pmathPayouts, keycash, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
 
