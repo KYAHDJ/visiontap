@@ -752,6 +752,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 /* Compact, balanced Global Controls layout */
 .global-controls-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;padding:12px!important}
 .read-only .global-controls-grid,.read-only .sacts,.read-only .slotverify-actions,.read-only .crow{display:none!important}
+.public-payout-row{display:flex;border-top:1px solid #2a2943;padding-top:12px;margin-top:12px}.public-payout-row .encbtn{width:auto;min-width:128px;padding:0 14px}
 .admin-access{margin-left:10px;padding:7px 10px;border:1px solid #474263;border-radius:8px;color:#d9d5ed;text-decoration:none;font-size:9px;font-weight:850;white-space:nowrap}.admin-mode .admin-access{border-color:#00b87a;color:#78edc3;background:rgba(0,184,122,.12)}
 @media(max-width:620px){.appstate{gap:4px}.admin-access{margin-left:3px;padding:6px 7px;font-size:7px}#app-state-text{display:none}}
 .global-controls-grid .btn{display:flex!important;align-items:center;justify-content:center;width:100%!important;min-width:0!important;min-height:42px;margin:0!important;padding:10px 12px!important}
@@ -1169,9 +1170,8 @@ function render(d){
       '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
       '</form>'+
-      '<div class="sacts">'+        '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncashLedger(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'+
-        controlsHtml+
-      '</div></div>';
+      '<div class="public-payout-row"><button class="ibtn encbtn" type="button" onclick="showEncashLedger(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></div>'+
+      '<div class="sacts">'+controlsHtml+'</div></div>';
     hAiko+=cardHtml;
   }
   document.getElementById('slots-aiko').innerHTML=hAiko || '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px;">No AIKO slots</div>';
