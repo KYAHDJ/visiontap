@@ -80,16 +80,19 @@ test('Kyaiko balance mirrors the live PMath coin count', () => {
   assert.match(source, /pointsDone = currentWithdrawable/);
 });
 
-test('every slot shows a live next payout earnings estimate after ETA', () => {
+test('every slot shows gross and after-deduction next payout estimates after ETA', () => {
   assert.match(source, /function nextCashoutProjection\(/);
-  assert.match(source, /Next payout estimate:/);
+  assert.match(source, /Next payout gross/);
+  assert.match(source, /After 10% deduction/);
   assert.match(source, /cashoutProjection\.amount/);
+  assert.match(source, /cashoutNetAmount = Number\(cashoutAmount\)\*0\.90/);
   assert.match(source, /pointsPerHour/);
   assert.match(source, /below &#8369;300 minimum/);
   const etaIndex = source.indexOf('ETA: <span');
   const estimateIndex = source.indexOf('nextCashoutLine', etaIndex);
   assert.ok(etaIndex >= 0 && estimateIndex > etaIndex);
   assert.match(source, /next-cashout-line/);
+  assert.match(source, /next-payout-grid/);
 });
 
 test('top dashboard sums ECNL expected receipts and excludes PayMath', () => {
@@ -109,7 +112,8 @@ test('top dashboard sums ECNL expected receipts and excludes PayMath', () => {
 test('payout projection applies task and network deductions separately', () => {
   assert.match(source, /payoutType==='network'\?0\.15:0\.10/);
   assert.match(source, /netAmount:amount\*\(1-deductionRate\)/);
-  assert.match(source, /Expected receive:/);
+  assert.match(source, /netEstimate=estimate\*0\.90/);
+  assert.match(source, /After 10% deduction/);
 });
 
 test('balance history heading shows when each balance last changed', () => {
