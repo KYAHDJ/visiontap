@@ -72,6 +72,9 @@ test('dashboard lists separate Task and Network payout records', () => {
   assert.match(source, /showEncashLedger/);
   assert.match(source, /Task and Network payouts are stored separately/);
   assert.match(source, /Multiple payouts on the same day remain visible/);
+  assert.match(source, /Estimated — not requested yet/);
+  assert.match(source, /Estimated task payout/);
+  assert.match(source, /if\(!states\.length&&slot\)/);
 });
 
 test('Kyaiko balance mirrors the live PMath coin count', () => {
