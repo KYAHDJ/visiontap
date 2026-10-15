@@ -123,8 +123,9 @@ async function recover(error) {
 async function main() {
   fs.mkdirSync(PROFILE_DIR, { recursive:true });
   context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    executablePath:'/opt/google/chrome/chrome', headless:true,
-    args:['--no-sandbox','--disable-dev-shm-usage','--disable-background-networking','--disable-sync','--disable-extensions','--disable-notifications','--disable-gpu']
+    executablePath:'/opt/google/chrome/chrome', headless:process.env.VT_KEYCASH_HEADLESS === '1',
+    viewport:null,
+    args:['--no-sandbox','--disable-dev-shm-usage','--disable-background-networking','--disable-sync','--disable-extensions','--disable-notifications','--window-size=512,1000','--window-position=2048,0']
   });
   page = context.pages()[0] || await context.newPage();
   page.setDefaultTimeout(20000);
