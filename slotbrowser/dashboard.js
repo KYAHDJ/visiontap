@@ -866,11 +866,14 @@ function nextCashoutProjection(slot,now){
   var pesosPerHour=isPmath?(historyRate>0?historyRate:pointRate):pointRate;
   function candidate(){
     var candidateMinutes=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
-    var candidateHours=Math.max(0,candidateMinutes/60);
-    return {hours:candidateHours,amount:Math.max(0,currentPesos+pesosPerHour*candidateHours)};
+    var startHours=Math.max(0,candidateMinutes/60),windowHours=Math.max(0,end-start);
+    var endAmount=Math.max(0,currentPesos+pesosPerHour*(startHours+windowHours));
+    var thresholdHours=pesosPerHour>0?Math.max(0,(300-currentPesos)/pesosPerHour):Infinity;
+    var payoutHours=endAmount>=300?Math.max(startHours,thresholdHours):startHours;
+    return {hours:payoutHours,amount:Math.max(0,currentPesos+pesosPerHour*payoutHours),endAmount:endAmount};
   }
   var projected=candidate(),guard=0;
-  while(projected.amount<300&&pesosPerHour>0&&guard++<104){
+  while(projected.endAmount<300&&pesosPerHour>0&&guard++<104){
     if(isPmath){
       do{days++;scheduledDay=(scheduledDay+1)%7}while(scheduledDay===0||scheduledDay===6);
     }else days+=7;
@@ -1164,7 +1167,7 @@ function render(d){
       '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+
       '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
       '</form>'+
-      '<div class="sacts">'+        (function(){if(!s.encashmentSchedule)return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncashLedger(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'})()+
+      '<div class="sacts">'+        '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncashLedger(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'+
         controlsHtml+
       '</div></div>';
     hAiko+=cardHtml;
