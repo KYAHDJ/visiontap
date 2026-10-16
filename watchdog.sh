@@ -12,7 +12,7 @@ MAX_RESTARTS=8
 RESTART_WINDOW=600
 WORKER_HEARTBEAT_MS=90000
 
-IFS=',' read -r -a accounts <<< "${VT_ACCOUNTS:-danicajgb,nnnikkikim,dncjnnpabo22,dianajanelle,darlenejoyce,alexander1001,elizabeth1001,deartheodosia,aaronburr}"
+IFS=',' read -r -a accounts <<< "${VT_ACCOUNTS:-alexander1001,elizabeth1001,deartheodosia,aaronburr,kyaiko}"
 declare -A restart_count
 declare -A restart_time
 
@@ -46,7 +46,7 @@ restart_service() {
   local service=$1 reason=$2
   if restart_allowed "$service"; then
     log "$service unhealthy: $reason; restarting"
-    systemctl restart "$service" >> "$LOG" 2>&1 || log "$service restart failed"
+    sudo -n /usr/bin/systemctl restart "${service%.service}.service" >> "$LOG" 2>&1 || log "$service restart failed"
   fi
 }
 
@@ -68,6 +68,7 @@ status = str(state.get('status') or '').lower()
 protected = (
     state.get('paused') or state.get('verificationHold') or
     state.get('encashmentBusy') or
+    (state.get('pmathConversion') or {}).get('status') in ('checking', 'converting', 'failed') or
     int(state.get('siteRecoveryWaitUntil') or 0) > int(time.time() * 1000) or
     int(state.get('recoveryResumeUntil') or 0) > int(time.time() * 1000)
 )

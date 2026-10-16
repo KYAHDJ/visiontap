@@ -266,19 +266,6 @@
       return { status: "task-changed" };
     }
     if (!allowed()) return { status: 'cancelled' };
-    // Wait before revealing or submitting the answer. This makes each account's
-    // configured delay visible and prevents every slot from appearing instant.
-    const delayStartedAt = performance.now();
-    const deadline = delayStartedAt + delayMs;
-    while (performance.now() < deadline) {
-      if (!allowed()) return { status: 'cancelled' };
-      await sleep(Math.max(1, deadline - performance.now()));
-    }
-    if (findAnswerInput() !== inputBox || !isUIFullyLoaded() || isCheckingState()) return { status: "input-changed" };
-    if (options.expectedImage && await grabTaskImage() !== options.expectedImage) {
-      return { status: "task-changed" };
-    }
-    if (!allowed()) return { status: 'cancelled' };
     // Preserve an existing correct answer; replace a different answer only once.
     if (inputBox.value !== answerColor) {
       const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -286,11 +273,24 @@
       inputBox.dispatchEvent(new Event('input', { bubbles: true }));
       inputBox.dispatchEvent(new Event('change', { bubbles: true }));
     }
+    // Start the full delay only once the verified answer is in the input.
+    const filledAt = performance.now();
+    const deadline = filledAt + delayMs;
+    while (performance.now() < deadline) {
+      if (!allowed()) return { status: 'cancelled' };
+      await sleep(Math.max(1, deadline - performance.now()));
+    }
+    if (findAnswerInput() !== inputBox || inputBox.value !== answerColor ||
+        !isUIFullyLoaded() || isCheckingState()) return { status: "input-changed" };
+    if (options.expectedImage && await grabTaskImage() !== options.expectedImage) {
+      return { status: "task-changed" };
+    }
+    if (!allowed()) return { status: 'cancelled' };
     const btn = findSubmitButton();
     if (!btn || btn.disabled || inputBox.disabled) return { status: "not-ready" };
     if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' };
     btn.click();
-    return { status: "filled", delayMs, elapsedMs: Math.round(performance.now() - delayStartedAt) };
+    return { status: "filled", delayMs: 0, elapsedMs: Math.round(performance.now() - filledAt) };
   }
 
   // ---- EXACT Chrome extension: 60-Second Inactivity Reload Watchdog ----
@@ -310,6 +310,8 @@
   ];
 
   function nukeAds() {
+    // Conversion dialogs and their hidden templates belong to the transaction.
+    if (/\/convert-coins/i.test(location.pathname)) return;
     try {
       AD_SELECTORS.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => {
@@ -1003,13 +1005,18 @@
     const buttons = () => Array.from(document.querySelectorAll('button,a.btn,input[type="button"],input[type="submit"],[role="button"]')).filter(visible);
     const dismiss = buttons().find(el => /^(cancel|close|×|x)$/i.test((el.innerText || el.value || el.getAttribute('aria-label') || '').trim())) ||
       Array.from(document.querySelectorAll('.btn-close,.close,[data-bs-dismiss="modal"],[data-dismiss="modal"]')).find(visible);
-    if (!dismiss) return { status:'no-dismiss' };
-    dismiss.click();
-    await sleep(400);
-    const convert = buttons().find(el => /^convert coins$/i.test((el.innerText || el.value || '').trim()));
-    if (!convert) return { status:'no-convert-coins' };
-    convert.click();
-    let confirm = null;
+    let confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
+    if (!confirm) {
+      if (dismiss) { dismiss.click(); await sleep(400); }
+      let convert = null;
+      for (let i = 0; i < 40 && !convert && !confirm; i++) {
+        confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
+        convert = buttons().find(el => /^convert coins$/i.test((el.innerText || el.value || '').trim()) && !el.disabled);
+        if (!convert && !confirm) await sleep(250);
+      }
+      if (!convert && !confirm) return { status:'no-convert-coins' };
+      if (!confirm) convert.click();
+    }
     for (let i = 0; i < 20 && !confirm; i++) {
       await sleep(250);
       confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));

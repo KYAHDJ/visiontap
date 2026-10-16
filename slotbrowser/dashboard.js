@@ -22,9 +22,8 @@ const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
-const KEYCASH_STATE_FILE = path.join(os.homedir(), '.config', 'VisionTap-KeyCash', 'state.json');
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','alexander1001','elizabeth1001','deartheodosia','aaronburr'];
+const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','alexander1001','elizabeth1001','deartheodosia','aaronburr','kyaiko'];
 const CHROME_ACCOUNTS = String(process.env.VT_ACCOUNTS || DEFAULT_CHROME_ACCOUNTS.join(','))
   .split(',').map(account => account.trim().toLowerCase()).filter((account, index, all) => account && all.indexOf(account) === index);
 const ENCASHMENT_ACCOUNTS = new Set(CHROME_ACCOUNTS);
@@ -51,12 +50,12 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '19':'alexander1001', '20':'elizabeth1001', '12':'deartheodosia', '15':'aaronburr' };
+const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '19':'alexander1001', '20':'elizabeth1001', '12':'deartheodosia', '15':'aaronburr', '14':'kyaiko' };
 const DASHBOARD_GROUPS = {
   'danica-niki':['danicajgb','nnnikkikim','dncjnnpabo22'],
   'darlene':['darlenejoyce'],
   'diana':['dianajanelle'],
-  'theodosia-aaron':['alexander1001','elizabeth1001','deartheodosia','aaronburr']
+  'theodosia-aaron':['alexander1001','elizabeth1001','deartheodosia','aaronburr','kyaiko']
 };
 function normalizeDashboardGroup(group = '') {
   const key = String(group || '').toLowerCase();
@@ -754,7 +753,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 .global-controls-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;padding:12px!important}
 .read-only .global-controls-grid,.read-only .sacts,.read-only .slotverify-actions,.read-only .crow{display:none!important}
 .public-payout-row{display:flex;border-top:1px solid #2a2943;padding-top:12px;margin-top:12px}.public-payout-row .encbtn{width:auto;min-width:128px;padding:0 14px}
-.keycash-card{display:none;margin:22px 0;padding:18px;border:1px solid #ff9f1a;border-radius:16px;background:linear-gradient(145deg,rgba(255,159,26,.13),#111126 58%);box-shadow:0 12px 32px #0005}.keycash-card.show{display:block}.keycash-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.keycash-head strong{font-size:18px}.keycash-head span{padding:5px 8px;border-radius:999px;background:#29233b;color:#ffd38a;font-size:8px;font-weight:850}.keycash-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.keycash-stat{padding:11px;border:1px solid #35304b;border-radius:11px;background:#0e0e20}.keycash-stat small{display:block;color:#9692aa;font-size:7px;text-transform:uppercase;font-weight:800}.keycash-stat b{display:block;margin-top:4px;color:#fff;font-size:15px}.keycash-note{margin-top:11px;color:#aaa7c3;font-size:9px}@media(max-width:620px){.keycash-grid{grid-template-columns:1fr 1fr}.keycash-card{padding:12px}}
 .admin-access{margin-left:10px;padding:7px 10px;border:1px solid #474263;border-radius:8px;color:#d9d5ed;text-decoration:none;font-size:9px;font-weight:850;white-space:nowrap}.admin-mode .admin-access{border-color:#00b87a;color:#78edc3;background:rgba(0,184,122,.12)}
 @media(max-width:620px){.appstate{gap:4px}.admin-access{margin-left:3px;padding:6px 7px;font-size:7px}#app-state-text{display:none}}
 .global-controls-grid .btn{display:flex!important;align-items:center;justify-content:center;width:100%!important;min-width:0!important;min-height:42px;margin:0!important;padding:10px 12px!important}
@@ -792,7 +790,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{overflow-x:hidden}
 <div class="wrap">
   <section class="hero"><div class="hero-copy"><span class="eyebrow">Operations overview</span><h1>Control center<em>.</em></h1><p>Monitor real earnings, manage accounts, and control every live task.</p></div><div class="hero-live"><div class="ph-clock" aria-live="off"><div class="ph-clock-time" id="ph-clock-time">--:--:--</div><div class="ph-clock-date" id="ph-clock-date">Loading Philippine time...</div><div class="ph-clock-label">PH · UTC+8</div></div><div class="earnings-forecast" aria-live="polite"><span class="forecast-label">Estimated earnings</span><div class="forecast-values"><div><strong id="forecast-week">&#8369;0.00</strong><small>Mon–Fri</small></div><div><strong id="forecast-month">&#8369;0.00</strong><small>1 month</small></div></div><span class="forecast-note">Sum of next payouts · monthly approximate</span></div></div></section>
   <section class="mini-summary-wrap" aria-live="polite"><div class="mini-summary-title">Account snapshot <span>Live balance · change speed · next payout</span></div><div class="mini-summary-grid" id="mini-summary"></div></section>
-  <section class="keycash-card" id="keycash-card"><div class="keycash-head"><strong>KeyCash · adaihbi1001</strong><span id="keycash-status">Checking</span></div><div class="keycash-grid"><div class="keycash-stat"><small>Wallet</small><b id="keycash-balance">₱0.00</b></div><div class="keycash-stat"><small>Completed rounds</small><b id="keycash-rounds">0</b></div><div class="keycash-stat"><small>Worker errors</small><b id="keycash-errors">0</b></div><div class="keycash-stat"><small>Last update</small><b id="keycash-update">—</b></div></div><div class="keycash-note" id="keycash-note">Isolated worker with automatic ECNL load protection.</div></section>
   <section class="daily-payouts" id="daily-payout" hidden aria-live="polite"></section>
   <section class="overview"><div class="ov primary"><span class="ovicon">▦</span><small>Total accounts</small><strong id="ov-total">00</strong><span>real configured slots</span></div><div class="ov"><span class="ovicon">◉</span><small>Active accounts</small><strong id="ov-active">00</strong><span id="ov-active-note">checking status</span></div><div class="ov health"><span class="ovicon">✓</span><small>Automation health</small><strong id="ov-health">—</strong><span>scanner · Chrome · loop</span></div><div class="ov next"><span class="ovicon">◷</span><small>Next encashment</small><strong id="ov-next-day">—</strong><span id="ov-next-time">Loading schedule…</span></div></section>
   <div class="pills" id="pills"></div>
@@ -1057,7 +1054,6 @@ function render(d){
   var allowed=groups[groupKey];
   var inView=function(account){return allowed.indexOf(String(account||'').toLowerCase())>=0;};
   var slots=uniqueAccounts((d.slots||[]).filter(function(s){return inView(s.accountName||s.name)}));
-  var keycashCard=document.getElementById('keycash-card'),keycash=d.keycash||null;if(keycashCard){keycashCard.classList.toggle('show',groupKey==='theodosia-aaron');if(keycash&&groupKey==='theodosia-aaron'){document.getElementById('keycash-status').textContent=keycash.status||'Unknown';document.getElementById('keycash-balance').textContent='₱'+Number(keycash.balance||0).toFixed(2);document.getElementById('keycash-rounds').textContent=String(keycash.rounds||0);document.getElementById('keycash-errors').textContent=String(keycash.errors||0);document.getElementById('keycash-update').textContent=keycash.updatedAt?fmtWhen(keycash.updatedAt):'—';document.getElementById('keycash-note').textContent=(keycash.status||'Worker active')+(keycash.load?' · server load '+keycash.load:'')+' · ECNL accounts have priority.';}}
   var pilots=uniqueAccounts((d.chromePilots||[]).filter(function(p){return inView(p&&p.account)})),pilot=d.chromePilot||{};
   var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
@@ -1396,9 +1392,9 @@ const server = http.createServer(async (req, res) => {
     const chromePilots = getChromePilots().filter(pilot => allowed.has(String(pilot && pilot.account || '').toLowerCase()));
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    const pmathPayouts = [];
-    const keycash = group === 'theodosia-aaron' ? readJson(KEYCASH_STATE_FILE, null) : null;
-    res.end(JSON.stringify({ group, accounts:allowedAccounts, scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots[0] || {}, pmathPayouts, keycash, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
+    const pmathPayoutsRaw = readJson(PMATH_PAYOUT_HISTORY_FILE, []);
+    const pmathPayouts = Array.isArray(pmathPayoutsRaw) ? pmathPayoutsRaw : (Array.isArray(pmathPayoutsRaw.records) ? pmathPayoutsRaw.records : []);
+    res.end(JSON.stringify({ group, accounts:allowedAccounts, scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots[0] || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
 
