@@ -41,6 +41,7 @@ async function main() {
   let totalWithdrawn = 0;
   let lastLoginAttemptAt = 0;
   let checkpointStartedAt = 0;
+  let lastCheckpointRefreshAt = 0;
   let tryAgainRecoveryStartedAt = 0;
   let checkpointRestartCount = 0;
   let lastCheckpointRestartAt = 0;
@@ -118,34 +119,27 @@ async function main() {
       helperSessionSubmissions = observedSessionSubmissions;
       const securityCheckpoint = /vercel security checkpoint/i.test(String(pageState?.title || ''));
       if (securityCheckpoint) {
-        if (!checkpointStartedAt) checkpointStartedAt = Date.now();
-        const checkpointAge = Date.now() - checkpointStartedAt;
-        const restartCooldown = Math.min(15 * 60000, 60000 * (2 ** Math.min(checkpointRestartCount, 4)));
-        const manualVerificationRequired = checkpointRestartCount >= 3;
-        const canRestart = !manualVerificationRequired && Date.now() - lastCheckpointRestartAt >= restartCooldown;
+        if (!checkpointStartedAt) {
+          checkpointStartedAt = Date.now();
+          lastCheckpointRefreshAt = checkpointStartedAt;
+        }
+        const refreshInSeconds = Math.max(0, Math.ceil((30000 - (Date.now() - lastCheckpointRefreshAt)) / 1000));
         save({
-          status:manualVerificationRequired
-            ? 'Failed to verify browser — manual verification required; automatic retries stopped.'
-            : canRestart
-            ? 'Vercel checkpoint detected — automatic Encodra recovery pending…'
-            : 'Vercel checkpoint detected — waiting for automatic recovery cooldown…',
-          currentUrl:pageState?.url || '', checkpointRestartCount, lastCheckpointRestartAt
+          status:'Vercel checkpoint detected — refreshing this page automatically in '+refreshInSeconds+'s…',
+          currentUrl:pageState?.url || ''
         });
-        if (checkpointAge >= 15000 && canRestart) {
-          checkpointRestartCount += 1;
-          lastCheckpointRestartAt = Date.now();
-          save({
-            running:false,
-            status:'Blank Vercel checkpoint persisted — restarting Encodra automatically…',
-            currentUrl:pageState?.url || '', checkpointRestartCount, lastCheckpointRestartAt
-          });
-          throw new Error('Blank Vercel checkpoint persisted; automatic Chrome restart requested');
+        if (Date.now() - lastCheckpointRefreshAt >= 30000) {
+          lastCheckpointRefreshAt = Date.now();
+          save({status:'Vercel checkpoint detected — refreshing the Encodra page now…',currentUrl:pageState?.url || ''});
+          await page.reload({waitUntil:'domcontentloaded',timeout:60000}).catch(() => null);
+          await sleep(1500);
         }
         await sleep(500);
         continue;
       }
       if (checkpointStartedAt || checkpointRestartCount || lastCheckpointRestartAt) {
         checkpointStartedAt = 0;
+        lastCheckpointRefreshAt = 0;
         checkpointRestartCount = 0;
         lastCheckpointRestartAt = 0;
       }
