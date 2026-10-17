@@ -46,6 +46,7 @@ async function main() {
   let lastCheckpointRestartAt = 0;
   let lastTryAgainRestartAt = 0;
   let blankPageStartedAt = 0;
+  let lastAnswerProgressAt = Date.now();
   try {
     const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     checkpointRestartCount = Number(saved.checkpointRestartCount) || 0;
@@ -90,6 +91,7 @@ async function main() {
     }});
     await boundsSession.detach();
     if (page.url() !== WORK_URL) await page.goto(WORK_URL, { waitUntil:'domcontentloaded', timeout:60000 });
+    lastAnswerProgressAt = Date.now();
     while (true) {
       let command = null;
       try { command = JSON.parse(fs.readFileSync(COMMAND_FILE, 'utf8')); } catch (_) {}
@@ -97,7 +99,7 @@ async function main() {
         lastNonce = command.nonce;
         try { fs.unlinkSync(COMMAND_FILE); } catch (_) {}
         if (command.action === 'pause') paused = true;
-        if (command.action === 'resume') paused = false;
+        if (command.action === 'resume') { paused = false; lastAnswerProgressAt = Date.now(); }
         if (command.action === 'reload') await page.reload({waitUntil:'domcontentloaded',timeout:60000});
         if (command.action === 'restart') {
           save({running:false,status:'Dashboard requested a full Encodra restart…'});
@@ -138,7 +140,10 @@ async function main() {
       if (Number.isFinite(pageState?.withdrawable)) withdrawable = pageState.withdrawable;
       if (Number.isFinite(pageState?.totalWithdrawn)) totalWithdrawn = pageState.totalWithdrawn;
       const observedSessionSubmissions = Number(pageState?.helper?.submissions) || 0;
-      if (observedSessionSubmissions > helperSessionSubmissions) submissions += observedSessionSubmissions - helperSessionSubmissions;
+      if (observedSessionSubmissions > helperSessionSubmissions) {
+        submissions += observedSessionSubmissions - helperSessionSubmissions;
+        lastAnswerProgressAt = Date.now();
+      }
       helperSessionSubmissions = observedSessionSubmissions;
       const securityCheckpoint = /vercel security checkpoint/i.test(String(pageState?.title || ''));
       if (securityCheckpoint) {
@@ -154,6 +159,17 @@ async function main() {
         checkpointStartedAt = 0;
         checkpointRestartCount = 0;
         lastCheckpointRestartAt = 0;
+      }
+      const onColorTaskPage = /\/tasks\/color(?:$|[?#])/.test(String(pageState?.url || ''));
+      if (!paused && onColorTaskPage) {
+        const answerIdleMs = Date.now() - lastAnswerProgressAt;
+        if (answerIdleMs >= 30000) {
+          save({running:false,status:'No answer completed for 30 seconds — performing a full Encodra relaunch…',
+            currentUrl:pageState?.url || '', answerWatchdogSecondsRemaining:0});
+          throw new Error('No answer completed for 30 seconds; automatic full restart requested');
+        }
+      } else {
+        lastAnswerProgressAt = Date.now();
       }
       const tryAgainStalled = !pageState?.signedIn
         && /try again clicked/i.test(String(pageState?.helper?.message || ''));
@@ -201,6 +217,7 @@ async function main() {
         save({status:onAuthPage ? 'Sign-in required' : (pageState?.helper?.message || 'Waiting for the next visible color task…'),
           currentUrl:pageState?.url || '', answer:pageState?.helper?.answer || null, shapeNumber:pageState?.helper?.shapeNumber || null,
           lastSubmittedAt:pageState?.helper?.lastSubmittedAt || null,
+          answerWatchdogSecondsRemaining:onColorTaskPage ? Math.max(0,Math.ceil((30000-(Date.now()-lastAnswerProgressAt))/1000)) : null,
           checkpointRestartCount:0, lastCheckpointRestartAt:0, lastTryAgainRestartAt });
       }
       await sleep(500);
