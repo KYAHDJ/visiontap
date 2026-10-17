@@ -40,10 +40,19 @@ async function main() {
   let withdrawable = 0;
   let totalWithdrawn = 0;
   let lastLoginAttemptAt = 0;
+  let checkpointStartedAt = 0;
+  let checkpointRestartCount = 0;
+  let lastCheckpointRestartAt = 0;
+  try {
+    const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    checkpointRestartCount = Number(saved.checkpointRestartCount) || 0;
+    lastCheckpointRestartAt = Number(saved.lastCheckpointRestartAt) || 0;
+  } catch (_) {}
   const startedAt = Date.now();
   const base = () => ({ account:ACCOUNT, slot:SLOT, running:true, paused, tasks:submissions, taskCount:submissions,
     correctCount:submissions, errors:0, pointsDone, withdrawable, totalWithdrawn,
-    loopStartTime:startedAt, time:new Date(Date.now()-startedAt).toISOString().slice(11,19), updatedAt:Date.now() });
+    loopStartTime:startedAt, time:new Date(Date.now()-startedAt).toISOString().slice(11,19), updatedAt:Date.now(),
+    checkpointRestartCount, lastCheckpointRestartAt });
   const save = extra => writeState({ ...base(), ...extra });
   const stop = async () => { save({running:false,status:'Stopped'}); try { await browser?.close(); } catch (_) {} try { chromeProcess?.kill('SIGTERM'); } catch (_) {} process.exit(0); };
   process.on('SIGTERM', stop);
@@ -104,6 +113,36 @@ async function main() {
       const observedSessionSubmissions = Number(pageState?.helper?.submissions) || 0;
       if (observedSessionSubmissions > helperSessionSubmissions) submissions += observedSessionSubmissions - helperSessionSubmissions;
       helperSessionSubmissions = observedSessionSubmissions;
+      const securityCheckpoint = /vercel security checkpoint/i.test(String(pageState?.title || ''));
+      if (securityCheckpoint) {
+        if (!checkpointStartedAt) checkpointStartedAt = Date.now();
+        const checkpointAge = Date.now() - checkpointStartedAt;
+        const restartCooldown = 60000;
+        const canRestart = Date.now() - lastCheckpointRestartAt >= restartCooldown;
+        save({
+          status:canRestart
+            ? 'Vercel checkpoint detected — automatic Encodra recovery pending…'
+            : 'Vercel checkpoint detected — waiting for automatic recovery cooldown…',
+          currentUrl:pageState?.url || '', checkpointRestartCount, lastCheckpointRestartAt
+        });
+        if (checkpointAge >= 15000 && canRestart) {
+          checkpointRestartCount += 1;
+          lastCheckpointRestartAt = Date.now();
+          save({
+            running:false,
+            status:'Blank Vercel checkpoint persisted — restarting Encodra automatically…',
+            currentUrl:pageState?.url || '', checkpointRestartCount, lastCheckpointRestartAt
+          });
+          throw new Error('Blank Vercel checkpoint persisted; automatic Chrome restart requested');
+        }
+        await sleep(500);
+        continue;
+      }
+      if (checkpointStartedAt || checkpointRestartCount || lastCheckpointRestartAt) {
+        checkpointStartedAt = 0;
+        checkpointRestartCount = 0;
+        lastCheckpointRestartAt = 0;
+      }
       if (paused) {
         await page.evaluate(() => { window.__vtColorPaused = true; }).catch(() => {});
         save({status:'Paused', currentUrl:pageState?.url || ''});
@@ -129,7 +168,8 @@ async function main() {
         const onAuthPage = /\/auth(?:$|[?#])/.test(String(pageState?.url || ''));
         save({status:onAuthPage ? 'Sign-in required' : (pageState?.helper?.message || 'Waiting for the next visible color task…'),
           currentUrl:pageState?.url || '', answer:pageState?.helper?.answer || null, shapeNumber:pageState?.helper?.shapeNumber || null,
-          lastSubmittedAt:pageState?.helper?.lastSubmittedAt || null });
+          lastSubmittedAt:pageState?.helper?.lastSubmittedAt || null,
+          checkpointRestartCount:0, lastCheckpointRestartAt:0 });
       }
       await sleep(500);
     }
