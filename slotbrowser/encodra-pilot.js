@@ -41,7 +41,6 @@ async function main() {
   let totalWithdrawn = 0;
   let lastLoginAttemptAt = 0;
   let checkpointStartedAt = 0;
-  let lastCheckpointRefreshAt = 0;
   let tryAgainRecoveryStartedAt = 0;
   let checkpointRestartCount = 0;
   let lastCheckpointRestartAt = 0;
@@ -119,27 +118,16 @@ async function main() {
       helperSessionSubmissions = observedSessionSubmissions;
       const securityCheckpoint = /vercel security checkpoint/i.test(String(pageState?.title || ''));
       if (securityCheckpoint) {
-        if (!checkpointStartedAt) {
-          checkpointStartedAt = Date.now();
-          lastCheckpointRefreshAt = checkpointStartedAt;
-        }
-        const refreshInSeconds = Math.max(0, Math.ceil((30000 - (Date.now() - lastCheckpointRefreshAt)) / 1000));
+        if (!checkpointStartedAt) checkpointStartedAt = Date.now();
         save({
-          status:'Vercel checkpoint detected — refreshing this page automatically in '+refreshInSeconds+'s…',
+          status:'Vercel checkpoint detected — automatic refresh stopped; manual verification required.',
           currentUrl:pageState?.url || ''
         });
-        if (Date.now() - lastCheckpointRefreshAt >= 30000) {
-          lastCheckpointRefreshAt = Date.now();
-          save({status:'Vercel checkpoint detected — refreshing the Encodra page now…',currentUrl:pageState?.url || ''});
-          await page.reload({waitUntil:'domcontentloaded',timeout:60000}).catch(() => null);
-          await sleep(1500);
-        }
         await sleep(500);
         continue;
       }
       if (checkpointStartedAt || checkpointRestartCount || lastCheckpointRestartAt) {
         checkpointStartedAt = 0;
-        lastCheckpointRefreshAt = 0;
         checkpointRestartCount = 0;
         lastCheckpointRestartAt = 0;
       }
