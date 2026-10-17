@@ -22,7 +22,7 @@ function installColorHelper(hostname) {
     ['blue', [30,136,229]], ['purple', [142,36,170]],
     ['pink', [248,128,171]], ['brown', [141,90,59]]
   ];
-  let panel, lastText = '', lastSubmission = null, lastRetryButton = null;
+  let panel, lastText = '', lastSubmission = null, pendingSubmission = null, lastRetryButton = null;
   window.__vtColorState = { status:'starting', answer:null, shapeNumber:null, submissions:0, updatedAt:Date.now() };
   const visible = element => {
     if (!element.checkVisibility({checkOpacity:true, checkVisibilityCSS:true})) return false;
@@ -61,7 +61,15 @@ function installColorHelper(hostname) {
       || getComputedStyle(button).pointerEvents === 'none') return 'waiting';
     if (lastSubmission?.input === input && lastSubmission?.svg === svg
       && lastSubmission.number === number && lastSubmission.answer === answer) return 'submitted';
+    const samePending = pendingSubmission?.input === input && pendingSubmission?.svg === svg
+      && pendingSubmission.number === number && pendingSubmission.answer === answer;
+    if (!samePending) {
+      pendingSubmission = {input, svg, number, answer, readyAt:Date.now() + 1000 + Math.random() * 1000};
+      return 'delaying';
+    }
+    if (Date.now() < pendingSubmission.readyAt) return 'delaying';
     lastSubmission = {input, svg, number, answer};
+    pendingSubmission = null;
     button.click();
     window.__vtColorState.submissions += 1;
     window.__vtColorState.lastSubmittedAt = Date.now();
@@ -130,6 +138,7 @@ function installColorHelper(hostname) {
       if (fillState === 'filled') return show(`VisionTap • Auto-submit mode\nShape ${number}: ${answer.toUpperCase()}\nFilled — waiting for Submit`);
       const submitState = submitFilledAnswer(task, svg, number, answer);
       if (submitState === 'waiting') return show(`VisionTap • Auto-submit mode\nShape ${number}: ${answer.toUpperCase()}\nWaiting for Submit to become available`);
+      if (submitState === 'delaying') return show(`VisionTap • Auto-submit mode\nShape ${number}: ${answer.toUpperCase()}\nWaiting 1–2 seconds before Submit`);
       window.__vtColorState.status = 'submitted';
       show(`VisionTap • Auto-submit mode\nShape ${number}: ${answer.toUpperCase()}\nSubmitted — waiting for a new task`);
     } catch (_) { show('VisionTap • Manual mode\nUnable to read visible task'); }
