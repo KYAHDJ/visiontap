@@ -1368,6 +1368,19 @@ const server = http.createServer(async (req, res) => {
     res.end();
     return;
   }
+  if (url.pathname === '/api/encodra/control' && req.method === 'POST') {
+    const remoteAddress = String(req.socket.remoteAddress || '');
+    const allowedController = remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress.endsWith('169.58.134.171');
+    if (!allowedController) { res.writeHead(403); res.end('Encodra control is restricted to the main VisionTap server'); return; }
+    const action = String(url.searchParams.get('action') || '').toLowerCase();
+    if (!['pause','resume','reload','restart'].includes(action)) { res.writeHead(400); res.end('Invalid Encodra control action'); return; }
+    if (action === 'restart') execSync('sudo systemctl restart visiontap-encodra.service', { timeout:30000 });
+    else writeJson(chromePilotCommandFile('encodra'), { action, nonce:`${Date.now()}-${Math.random()}` });
+    res.setHeader('Content-Type','application/json');
+    res.setHeader('Cache-Control','no-store');
+    res.end(JSON.stringify({ok:true,account:'encodra',action}));
+    return;
+  }
   if (DASHBOARD_READ_ONLY && !isAdmin && !(req.method === "GET" && (url.pathname === "/" || url.pathname === "/api/stats" || url.pathname === "/api/encodra"))) {
     res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     res.end("Public dashboard is read-only");
