@@ -1110,6 +1110,11 @@ function render(d){
         var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/(isPmathCard?100:250)).toFixed(1) : '0';
         var leftCol = '<div class="bcol"><div class="bcol-hd-row"><div class="bcol-hd">Balance History (10)</div><span class="balance-age" data-balance-start="'+balanceTimerStart+'">'+esc(balanceAgeText)+'</span></div><div class="bhist-list">'+histHtml+'</div></div>';
         var avgSecondsPerPoint = ptsPerMin>0 ? (60/ptsPerMin) : 0;
+        var encodraPesosPerHour = Math.max(0, Number(s.estimatedPesosPerHour||0));
+        var encodraEarningsForecast = isEncodra
+          ? '<div class="bcalc-line" style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(148,163,184,.2)">Possible earnings at current speed:</div>'
+            +'<div class="bcalc-line"><span class="bcalc-em" style="color:#38bdf8">&#8369;'+encodraPesosPerHour.toFixed(2)+'/hour</span> · <span class="bcalc-em" style="color:#a78bfa">&#8369;'+(encodraPesosPerHour*24).toFixed(2)+'/day</span> · <span class="bcalc-em" style="color:#facc15">&#8369;'+(encodraPesosPerHour*24*7).toFixed(2)+'/week</span></div>'
+          : '';
         var rightCol;
         if (isPmathCard) {
           rightCol = '<div class="bcol"><div class="bcol-hd">Kyaiko Goal (100 coins = 1&#8369;)</div>'
@@ -1125,6 +1130,7 @@ function render(d){
             +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
             +'<div class="bcalc-line">Getting: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' pts/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
             +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
+            +encodraEarningsForecast
             +nextCashoutLine+'</div>';
         }
         var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
@@ -1258,7 +1264,7 @@ const server = http.createServer((req, res) => {
     const encodraPilot = { ...encodraRemote, running:encodraRemote.running === true && remoteAge < 15000 };
     const encodraElapsedMinutes = Math.max(0, (Date.now() - Number(encodraPilot.loopStartTime || 0)) / 60000);
     const encodraPointsPerMinute = encodraElapsedMinutes > 0
-      ? Math.max(0, Number(encodraPilot.correctCount || encodraPilot.tasks) || 0) / encodraElapsedMinutes
+      ? Math.max(0, Number(encodraPilot.sessionTasks) || 0) / encodraElapsedMinutes
       : 0;
     const encodraSlot = { id:'21', accountName:'aiko1001', name:'aiko1001',
       pointsDone:Number(encodraPilot.pointsDone) || 0, pointsTotal:0,
