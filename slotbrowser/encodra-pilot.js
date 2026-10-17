@@ -53,7 +53,7 @@ async function main() {
   } catch (_) {}
   const startedAt = Date.now();
   const base = () => ({ account:ACCOUNT, slot:SLOT, running:true, paused, tasks:submissions, taskCount:submissions,
-    correctCount:submissions, errors:0, pointsDone, withdrawable, totalWithdrawn,
+    correctCount:submissions, sessionTasks:helperSessionSubmissions, errors:0, pointsDone, withdrawable, totalWithdrawn,
     loopStartTime:startedAt, time:new Date(Date.now()-startedAt).toISOString().slice(11,19), updatedAt:Date.now(),
     checkpointRestartCount, lastCheckpointRestartAt, lastTryAgainRestartAt });
   const save = extra => writeState({ ...base(), ...extra });
