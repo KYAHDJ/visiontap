@@ -148,9 +148,19 @@ async function main() {
       const securityCheckpoint = /vercel security checkpoint/i.test(String(pageState?.title || ''));
       if (securityCheckpoint) {
         if (!checkpointStartedAt) checkpointStartedAt = Date.now();
+        const checkpointCooldownMs = 60000;
+        const sinceLastCheckpointRestart = Date.now() - lastCheckpointRestartAt;
+        if (!lastCheckpointRestartAt || sinceLastCheckpointRestart >= checkpointCooldownMs) {
+          checkpointRestartCount += 1;
+          lastCheckpointRestartAt = Date.now();
+          save({running:false,
+            status:'Vercel checkpoint detected — immediately rebuilding the Encodra browser session…',
+            currentUrl:pageState?.url || '', checkpointRestartCount, lastCheckpointRestartAt});
+          throw new Error('Vercel checkpoint detected; automatic full restart requested');
+        }
         save({
-          status:'Vercel checkpoint detected — automatic refresh stopped; manual verification required.',
-          currentUrl:pageState?.url || ''
+          status:`Vercel checkpoint persisted — next clean relaunch available in ${Math.ceil((checkpointCooldownMs-sinceLastCheckpointRestart)/1000)}s…`,
+          currentUrl:pageState?.url || '', checkpointRestartCount, lastCheckpointRestartAt
         });
         await sleep(500);
         continue;
