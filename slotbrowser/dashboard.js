@@ -18,6 +18,22 @@ const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
 const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'];
+const ENCODRA_STATUS_URL = process.env.VT_ENCODRA_STATUS_URL || 'http://91.230.110.15:6260/api/encodra';
+let encodraRemote = { account:'encodra', slot:'21', running:false, status:'Connecting to Encodra server…', updatedAt:0 };
+function refreshEncodraRemote() {
+  const request = http.get(ENCODRA_STATUS_URL, { timeout:3000 }, response => {
+    let body = '';
+    response.setEncoding('utf8');
+    response.on('data', chunk => { if (body.length < 32768) body += chunk; });
+    response.on('end', () => {
+      try { const state=JSON.parse(body); if(response.statusCode===200 && state.account==='encodra') encodraRemote=state; } catch (_) {}
+    });
+  });
+  request.on('timeout', () => request.destroy());
+  request.on('error', () => { if(Date.now()-Number(encodraRemote.updatedAt||0)>15000) encodraRemote={...encodraRemote,running:false,status:'Encodra server offline'}; });
+}
+refreshEncodraRemote();
+setInterval(refreshEncodraRemote, 2000).unref();
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentLedgerFile(account) { return path.join(STATE_DIR, `encashment_${account}_history.json`); }
@@ -1026,12 +1042,15 @@ function render(d){
     var verifyHtml=slotPilot.verificationHold?'<div class="slotverify"><div class="slotverify-title">Manual verification required <span>'+esc(String(s.accountName||s.name).toUpperCase())+'</span></div><p>'+esc(slotPilot.status||'Complete verification in this account’s Oracle Chrome window. Auto-refresh is paused.')+'</p><div class="slotverify-stats"><span>Tasks<b>'+esc(slotPilot.tasks||0)+'</b></span><span>Errors<b>'+esc(slotPilot.errors||0)+'</b></span><span>Time<b>'+esc(slotPilot.time||'00:00')+'</b></span></div><div class="slotverify-actions"><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;pause&quot;)">Pause</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;resume&quot;)">Resume after verify</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;reload&quot;)">Safe reload</button></div></div>':'';
     var isKyaiko=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko',conversion=slotPilot.pmathConversion||{},conversionClass=conversion.status==='converted'?'yes':conversion.status==='failed'?'no':'waiting';
     var conversionHtml=isKyaiko?'<div class="encoutstatus '+conversionClass+'" style="display:flex;margin:0 0 12px;width:100%;justify-content:center">'+esc(conversion.message||'Auto-convert enabled at 30,000 coins')+'</div>':'';
-    var st=slotPaused?'PAUSED':(slotPilot.verificationHold?'VERIFY':'RUNNING');
-    var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
+    var isEncodra=String(s.id)==='21'||String(s.accountName||'').toLowerCase()==='aiko1001';
+    var st=isEncodra?(slotPilot.running?(slotPaused?'PAUSED':'REMOTE'):'OFFLINE'):(slotPaused?'PAUSED':(slotPilot.verificationHold?'VERIFY':'RUNNING'));
+    var pts=isEncodra?(Number(s.pointsDone||0)+' points'):(s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks');
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
     var isKyaikoCard=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko';
-    var controlsHtml=isKyaikoCard
+    var controlsHtml=isEncodra
+      ? '<span class="ibtn" title="Managed on the Theodosia/Aaron server" style="cursor:default">&#9729;</span>'
+      : isKyaikoCard
       ? '<button class="ibtn" type="button" title="Pause" onclick="runDashboardControl(&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause&quot;).catch(function(){})">&#9646;&#9646;</button>'+
         '<button class="ibtn" type="button" title="Play" onclick="runDashboardControl(&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Play&quot;).catch(function(){})">&#9654;</button>'+
         '<button class="ibtn" type="button" title="Restart" onclick="runDashboardControl(&quot;restart&quot;,&quot;'+sid+'&quot;,&quot;Restart&quot;).catch(function(){})">&#8634;</button>'
@@ -1230,8 +1249,19 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/api/stats" && req.method === "GET") {
     const status = getStatus();
-    const slots = getMergedSlots(status).map(({ pass, ...slot }) => slot);
-    const chromePilots = getChromePilots();
+    const remoteAge = Date.now() - Number(encodraRemote.updatedAt || 0);
+    const encodraPilot = { ...encodraRemote, running:encodraRemote.running === true && remoteAge < 15000 };
+    const encodraSlot = { id:'21', accountName:'aiko1001', name:'aiko1001',
+      pointsDone:Number(encodraPilot.pointsDone) || 0, pointsTotal:0,
+      withdrawable:Number(encodraPilot.withdrawable) || 0, totalWithdrawn:Number(encodraPilot.totalWithdrawn) || 0,
+      taskCount:Number(encodraPilot.taskCount || encodraPilot.tasks) || 0,
+      correctCount:Number(encodraPilot.correctCount || encodraPilot.tasks) || 0, wrongCount:0,
+      errorCount:Number(encodraPilot.errors) || 0, timerText:String(encodraPilot.time || '00:00:00'),
+      loopStartTime:Number(encodraPilot.loopStartTime) || 0, paused:encodraPilot.paused === true,
+      pointsPerMinute:0, pointsPerHour:0, targetPesos:0, pesosNeeded:0, pointsUntilTarget:0,
+      etaText:'Remote color task', balanceHistory:[] };
+    const slots = [encodraSlot, ...getMergedSlots(status).map(({ pass, ...slot }) => slot)];
+    const chromePilots = [encodraPilot, ...getChromePilots()];
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
     const pmathPayoutsRaw = readJson(PMATH_PAYOUT_HISTORY_FILE, []);
