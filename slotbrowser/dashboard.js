@@ -829,21 +829,26 @@ function nextCashoutProjection(slot,now){
   var weekdays={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6},today=weekdays[parts.weekday],minutes=(Number(parts.hour)%24)*60+Number(parts.minute)+Number(parts.second)/60;
   var account=String(slot.accountName||slot.name||'').toLowerCase(),isPmath=String(slot.id)==='14'||account==='kyaiko';
   var schedule=slot.encashmentSchedule||{},scheduledDay=weekdays[schedule.weekday],start=Number(schedule.startHour),end=Number(schedule.endHour);
+  var currentPesos=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
+  var pointRate=Math.max(0,Number(slot.pointsPerHour||0))*(isPmath?1/100:3/250);
+  pointRate=Math.min(isPmath?3.6:4.32,pointRate);
+  var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0));
+  var pesosPerHour=pointRate>0?pointRate:Math.min(isPmath?3.6:4.32,historyRate);
   var days=0;
   if(isPmath){
     start=8;end=10;
     if(today>=1&&today<=5&&minutes<end*60)scheduledDay=today;
     else { scheduledDay=today; do{days++;scheduledDay=(scheduledDay+1)%7}while(scheduledDay===0||scheduledDay===6); }
   }else{
-    if(scheduledDay==null||!Number.isFinite(start)||!Number.isFinite(end))return null;
+    if(scheduledDay==null||!Number.isFinite(start)||!Number.isFinite(end)){
+      if(!(pesosPerHour>0))return null;
+      var thresholdHours=Math.max(0,(300-currentPesos)/pesosPerHour);
+      var thresholdAmount=Math.max(300,currentPesos);
+      return {amount:thresholdAmount,netAmount:thresholdAmount*0.90,deductionRate:0.10,hoursUntil:thresholdHours,eligible:thresholdAmount>=300,whenText:'At current pace · payout schedule unavailable'};
+    }
     days=(scheduledDay-today+7)%7;
     if(days===0&&minutes>=end*60)days=7;
   }
-  var currentPesos=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
-  var pointRate=Math.max(0,Number(slot.pointsPerHour||0))*(isPmath?1/100:3/250);
-  pointRate=Math.min(isPmath?3.6:4.32,pointRate);
-  var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0));
-  var pesosPerHour=pointRate>0?pointRate:Math.min(isPmath?3.6:4.32,historyRate);
   function candidate(){
     var candidateMinutes=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
     var startHours=Math.max(0,candidateMinutes/60),windowHours=Math.max(0,end-start);
@@ -1251,6 +1256,10 @@ const server = http.createServer((req, res) => {
     const status = getStatus();
     const remoteAge = Date.now() - Number(encodraRemote.updatedAt || 0);
     const encodraPilot = { ...encodraRemote, running:encodraRemote.running === true && remoteAge < 15000 };
+    const encodraElapsedMinutes = Math.max(0, (Date.now() - Number(encodraPilot.loopStartTime || 0)) / 60000);
+    const encodraPointsPerMinute = encodraElapsedMinutes > 0
+      ? Math.max(0, Number(encodraPilot.correctCount || encodraPilot.tasks) || 0) / encodraElapsedMinutes
+      : 0;
     const encodraSlot = { id:'21', accountName:'aiko1001', name:'aiko1001',
       pointsDone:Number(encodraPilot.pointsDone) || 0, pointsTotal:0,
       withdrawable:Number(encodraPilot.withdrawable) || 0, totalWithdrawn:Number(encodraPilot.totalWithdrawn) || 0,
@@ -1258,7 +1267,9 @@ const server = http.createServer((req, res) => {
       correctCount:Number(encodraPilot.correctCount || encodraPilot.tasks) || 0, wrongCount:0,
       errorCount:Number(encodraPilot.errors) || 0, timerText:String(encodraPilot.time || '00:00:00'),
       loopStartTime:Number(encodraPilot.loopStartTime) || 0, paused:encodraPilot.paused === true,
-      pointsPerMinute:0, pointsPerHour:0, targetPesos:0, pesosNeeded:0, pointsUntilTarget:0,
+      pointsPerMinute:encodraPointsPerMinute, pointsPerHour:encodraPointsPerMinute * 60,
+      estimatedPesosPerHour:Math.min(4.32, encodraPointsPerMinute * 60 * (3 / 250)),
+      targetPesos:300, pesosNeeded:Math.max(0, 300 - (Number(encodraPilot.withdrawable) || 0)), pointsUntilTarget:0,
       etaText:'Remote color task', balanceHistory:[] };
     const slots = [encodraSlot, ...getMergedSlots(status).map(({ pass, ...slot }) => slot)];
     const chromePilots = [encodraPilot, ...getChromePilots()];
