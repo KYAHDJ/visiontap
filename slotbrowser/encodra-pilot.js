@@ -120,7 +120,7 @@ async function main() {
       if (securityCheckpoint) {
         if (!checkpointStartedAt) checkpointStartedAt = Date.now();
         const checkpointAge = Date.now() - checkpointStartedAt;
-        const restartCooldown = 60000;
+        const restartCooldown = Math.min(15 * 60000, 60000 * (2 ** Math.min(checkpointRestartCount, 4)));
         const canRestart = Date.now() - lastCheckpointRestartAt >= restartCooldown;
         save({
           status:canRestart
