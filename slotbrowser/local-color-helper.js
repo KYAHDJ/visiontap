@@ -3,7 +3,17 @@
 // Runs only in the local test browser. Fills an empty answer input and submits it
 // only after the page exposes an enabled, visible Submit button.
 function installColorHelper(hostname) {
-  if (location.hostname !== hostname || window.__vtColorSuggestion) return;
+  if (location.hostname !== hostname) return;
+  const installHider = () => {
+    if (document.getElementById?.('visiontap-encodra-hide-style')) return;
+    const style = document.createElement('style');
+    style.id = 'visiontap-encodra-hide-style';
+    style.textContent = 'p, footer { display: none !important; visibility: hidden !important; }';
+    (document.head || document.documentElement)?.appendChild?.(style);
+  };
+  installHider();
+  document.addEventListener?.('DOMContentLoaded', installHider, { once:true });
+  if (window.__vtColorSuggestion) return;
   window.__vtColorSuggestion = true;
   const palette = [
     ['black', [17,17,17]], ['white', [250,250,250]],
