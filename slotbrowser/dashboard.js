@@ -844,7 +844,13 @@ function nextCashoutProjection(slot,now){
       if(!(pesosPerHour>0))return null;
       var thresholdHours=Math.max(0,(300-currentPesos)/pesosPerHour);
       var thresholdAmount=Math.max(300,currentPesos);
-      return {amount:thresholdAmount,netAmount:thresholdAmount*0.90,deductionRate:0.10,hoursUntil:thresholdHours,eligible:thresholdAmount>=300,whenText:'At current pace · payout schedule unavailable'};
+      var thresholdDate=new Date(now.getTime()+thresholdHours*3600000);
+      var thresholdWeekday=new Intl.DateTimeFormat('en-US',{timeZone:PH_TIME_ZONE,weekday:'short'}).format(thresholdDate);
+      if(thresholdWeekday==='Sat')thresholdDate=new Date(thresholdDate.getTime()+2*86400000);
+      if(thresholdWeekday==='Sun')thresholdDate=new Date(thresholdDate.getTime()+86400000);
+      var thresholdDay=new Intl.DateTimeFormat('en-US',{timeZone:PH_TIME_ZONE,weekday:'long'}).format(thresholdDate);
+      var thresholdDateText=new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'numeric'}).format(thresholdDate);
+      return {amount:thresholdAmount,netAmount:thresholdAmount*0.90,deductionRate:0.10,hoursUntil:thresholdHours,eligible:thresholdAmount>=300,whenText:thresholdDay+' · '+thresholdDateText+' · projected ₱300 eligibility'};
     }
     days=(scheduledDay-today+7)%7;
     if(days===0&&minutes>=end*60)days=7;
