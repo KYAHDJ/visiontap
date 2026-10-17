@@ -2,7 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execSync } = require("child_process");
+const { execSync, execFileSync } = require("child_process");
 
 const PORT = 6260;
 const PMATH_CONVERT_THRESHOLD = 30000;
@@ -19,6 +19,7 @@ const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
 const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'];
 const ENCODRA_STATUS_URL = process.env.VT_ENCODRA_STATUS_URL || 'http://91.230.110.15:6260/api/encodra';
+const ENCODRA_CONTROL_URL = process.env.VT_ENCODRA_CONTROL_URL || 'http://91.230.110.15:6260/api/encodra/control';
 let encodraRemote = { account:'encodra', slot:'21', running:false, status:'Connecting to Encodra server…', updatedAt:0 };
 function refreshEncodraRemote() {
   const request = http.get(ENCODRA_STATUS_URL, { timeout:3000 }, response => {
@@ -45,19 +46,30 @@ function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${a
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
 const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin' };
+function sendEncodraControl(action) {
+  const mapped = action === 'refresh' ? 'reload' : action;
+  const output = execFileSync('curl', ['-fsS','-X','POST',`${ENCODRA_CONTROL_URL}?action=${encodeURIComponent(mapped)}`], { timeout:30000, encoding:'utf8' });
+  const result = JSON.parse(output || '{}');
+  if (!result.ok) throw new Error('Encodra control failed');
+  return result;
+}
 function sendChromeControl(action, slot = 'all') {
   const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
   if (!['pause','resume','reload','stop'].includes(mapped)) throw new Error('Invalid control action');
+  if (String(slot) === '21') return { action:mapped, accounts:['encodra'], remote:sendEncodraControl(mapped) };
   const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
   if (accounts.length === 0) throw new Error('Unknown account slot');
   for (const account of accounts) writeJson(chromePilotCommandFile(account), { action:mapped, nonce:`${Date.now()}-${Math.random()}` });
+  if (slot === 'all') sendEncodraControl(mapped);
   return { action: mapped, accounts };
 }
 function restartChromeServices(slot = 'all') {
+  if (String(slot) === '21') return { action:'restart', accounts:['encodra'], remote:sendEncodraControl('restart') };
   const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
   if (accounts.length === 0) throw new Error('Unknown account slot');
   const units = accounts.map(account => `visiontap-chrome@${account}`).join(' ');
   execSync(`sudo systemctl restart ${units}`, { timeout: 30000 });
+  if (slot === 'all') sendEncodraControl('restart');
   return { action: 'restart', accounts };
 }
 
@@ -1061,7 +1073,9 @@ function render(d){
     var sid=encodeURIComponent(s.id);
     var isKyaikoCard=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko';
     var controlsHtml=isEncodra
-      ? '<span class="ibtn" title="Managed on the Theodosia/Aaron server" style="cursor:default">&#9729;</span>'
+      ? '<button class="ibtn" type="button" title="Pause" onclick="runDashboardControl(&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause&quot;).catch(function(){})">&#9646;&#9646;</button>'+
+        '<button class="ibtn" type="button" title="Play" onclick="runDashboardControl(&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Play&quot;).catch(function(){})">&#9654;</button>'+
+        '<button class="ibtn" type="button" title="Restart" onclick="runDashboardControl(&quot;restart&quot;,&quot;'+sid+'&quot;,&quot;Restart&quot;).catch(function(){})">&#8634;</button>'
       : isKyaikoCard
       ? '<button class="ibtn" type="button" title="Pause" onclick="runDashboardControl(&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause&quot;).catch(function(){})">&#9646;&#9646;</button>'+
         '<button class="ibtn" type="button" title="Play" onclick="runDashboardControl(&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Play&quot;).catch(function(){})">&#9654;</button>'+
