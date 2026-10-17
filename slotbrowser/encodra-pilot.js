@@ -95,6 +95,7 @@ async function main() {
       try { command = JSON.parse(fs.readFileSync(COMMAND_FILE, 'utf8')); } catch (_) {}
       if (command?.nonce && command.nonce !== lastNonce) {
         lastNonce = command.nonce;
+        try { fs.unlinkSync(COMMAND_FILE); } catch (_) {}
         if (command.action === 'pause') paused = true;
         if (command.action === 'resume') paused = false;
         if (command.action === 'reload') await page.reload({waitUntil:'domcontentloaded',timeout:60000});
