@@ -22,7 +22,7 @@ function installColorHelper(hostname) {
     ['blue', [30,136,229]], ['purple', [142,36,170]],
     ['pink', [248,128,171]], ['brown', [141,90,59]]
   ];
-  let panel, lastText = '', lastSubmission = null;
+  let panel, lastText = '', lastSubmission = null, lastRetryButton = null;
   window.__vtColorState = { status:'starting', answer:null, shapeNumber:null, submissions:0, updatedAt:Date.now() };
   const visible = element => {
     if (!element.checkVisibility({checkOpacity:true, checkVisibilityCSS:true})) return false;
@@ -70,6 +70,18 @@ function installColorHelper(hostname) {
   const scan = () => {
     try {
       if (window.__vtColorPaused) return show('VisionTap • Auto-submit mode\nPaused');
+      const retryButton = [...document.querySelectorAll('button')]
+        .find(el => visible(el) && /^try again$/i.test(String(el.innerText || el.textContent || '').trim())
+          && !el.disabled && el.getAttribute('aria-disabled') !== 'true'
+          && getComputedStyle(el).pointerEvents !== 'none');
+      if (retryButton) {
+        if (retryButton !== lastRetryButton) {
+          lastRetryButton = retryButton;
+          retryButton.click();
+        }
+        return show('VisionTap • Recovery mode\nTry Again clicked — waiting for the color task');
+      }
+      lastRetryButton = null;
       // Select only the task container supplied by the user. Never read page source,
       // hidden text, script state, network responses, or unrelated page contents.
       const containers = [...document.querySelectorAll('div.flex.flex-col.gap-4')]
