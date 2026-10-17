@@ -56,6 +56,7 @@ function publicEncodraState() {
     account:'encodra', slot:'21', running:state.running === true, paused:state.paused === true,
     status:String(state.status || 'Offline').slice(0,240), tasks:Number(state.tasks || state.taskCount) || 0,
     taskCount:Number(state.taskCount || state.tasks) || 0, correctCount:Number(state.correctCount || state.tasks) || 0,
+    sessionTasks:Number(state.sessionTasks) || 0,
     errors:Number(state.errors) || 0, time:String(state.time || '00:00:00'), loopStartTime:Number(state.loopStartTime) || 0,
     pointsDone:Number(state.pointsDone) || 0, withdrawable:Number(state.withdrawable) || 0,
     totalWithdrawn:Number(state.totalWithdrawn) || 0,
