@@ -1374,8 +1374,7 @@ const server = http.createServer(async (req, res) => {
     if (!allowedController) { res.writeHead(403); res.end('Encodra control is restricted to the main VisionTap server'); return; }
     const action = String(url.searchParams.get('action') || '').toLowerCase();
     if (!['pause','resume','reload','restart'].includes(action)) { res.writeHead(400); res.end('Invalid Encodra control action'); return; }
-    if (action === 'restart') execSync('sudo systemctl restart visiontap-encodra.service', { timeout:30000 });
-    else writeJson(chromePilotCommandFile('encodra'), { action, nonce:`${Date.now()}-${Math.random()}` });
+    writeJson(chromePilotCommandFile('encodra'), { action, nonce:`${Date.now()}-${Math.random()}` });
     res.setHeader('Content-Type','application/json');
     res.setHeader('Cache-Control','no-store');
     res.end(JSON.stringify({ok:true,account:'encodra',action}));

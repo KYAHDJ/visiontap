@@ -45,6 +45,7 @@ async function main() {
   let checkpointRestartCount = 0;
   let lastCheckpointRestartAt = 0;
   let lastTryAgainRestartAt = 0;
+  let blankPageStartedAt = 0;
   try {
     const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     checkpointRestartCount = Number(saved.checkpointRestartCount) || 0;
@@ -97,6 +98,10 @@ async function main() {
         if (command.action === 'pause') paused = true;
         if (command.action === 'resume') paused = false;
         if (command.action === 'reload') await page.reload({waitUntil:'domcontentloaded',timeout:60000});
+        if (command.action === 'restart') {
+          save({running:false,status:'Dashboard requested a full Encodra restart…'});
+          throw new Error('Dashboard requested a full Encodra restart');
+        }
         if (command.action === 'stop') await stop();
       }
       const pageState = await page.evaluate(() => {
@@ -104,12 +109,30 @@ async function main() {
         const points = visibleText.match(/\bPOINTS\s*(\d[\d,]*)/i);
         const wallet = visibleText.match(/TASKING WALLET\s*₱?\s*([\d,.]+)/i);
         const withdrawn = visibleText.match(/TOTAL WITHDRAWN\s*₱?\s*([\d,.]+)/i);
+        const visibleElements = [...document.body?.querySelectorAll('*') || []].filter(element => {
+          const style = getComputedStyle(element);
+          const bounds = element.getBoundingClientRect();
+          return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0
+            && bounds.width > 1 && bounds.height > 1;
+        }).length;
         return { helper:window.__vtColorState || null, url:location.href, title:document.title,
+          bodyTextLength:String(document.body?.innerText || '').trim().length, visibleElements,
           signedIn:!!document.querySelector('#task-answer'),
           pointsDone:points ? Number(points[1].replace(/,/g,'')) : null,
           withdrawable:wallet ? Number(wallet[1].replace(/,/g,'')) : null,
           totalWithdrawn:withdrawn ? Number(withdrawn[1].replace(/,/g,'')) : null };
       }).catch(() => null);
+      const blankPage = !pageState || (!pageState.bodyTextLength && !pageState.visibleElements);
+      if (blankPage) {
+        if (!blankPageStartedAt) blankPageStartedAt = Date.now();
+        const blankForMs = Date.now() - blankPageStartedAt;
+        save({status:`Blank/unresponsive Encodra page detected — rebuilding in ${Math.max(0,Math.ceil((15000-blankForMs)/1000))}s…`,
+          currentUrl:pageState?.url || ''});
+        if (blankForMs >= 15000) throw new Error('Blank or unresponsive page persisted for 15 seconds; automatic full restart requested');
+        await sleep(500);
+        continue;
+      }
+      blankPageStartedAt = 0;
       if (Number.isFinite(pageState?.pointsDone)) pointsDone = pageState.pointsDone;
       if (Number.isFinite(pageState?.withdrawable)) withdrawable = pageState.withdrawable;
       if (Number.isFinite(pageState?.totalWithdrawn)) totalWithdrawn = pageState.totalWithdrawn;
