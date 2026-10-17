@@ -121,9 +121,12 @@ async function main() {
         if (!checkpointStartedAt) checkpointStartedAt = Date.now();
         const checkpointAge = Date.now() - checkpointStartedAt;
         const restartCooldown = Math.min(15 * 60000, 60000 * (2 ** Math.min(checkpointRestartCount, 4)));
-        const canRestart = Date.now() - lastCheckpointRestartAt >= restartCooldown;
+        const manualVerificationRequired = checkpointRestartCount >= 3;
+        const canRestart = !manualVerificationRequired && Date.now() - lastCheckpointRestartAt >= restartCooldown;
         save({
-          status:canRestart
+          status:manualVerificationRequired
+            ? 'Failed to verify browser — manual verification required; automatic retries stopped.'
+            : canRestart
             ? 'Vercel checkpoint detected — automatic Encodra recovery pending…'
             : 'Vercel checkpoint detected — waiting for automatic recovery cooldown…',
           currentUrl:pageState?.url || '', checkpointRestartCount, lastCheckpointRestartAt
