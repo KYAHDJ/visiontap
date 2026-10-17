@@ -834,6 +834,7 @@ function nextCashoutProjection(slot,now){
   pointRate=Math.min(isPmath?3.6:4.32,pointRate);
   var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0));
   var pesosPerHour=pointRate>0?pointRate:Math.min(isPmath?3.6:4.32,historyRate);
+  if(account==='aiko1001'&&!(pesosPerHour>0))pesosPerHour=4.32;
   var days=0;
   if(isPmath){
     start=8;end=10;
@@ -1280,7 +1281,7 @@ const server = http.createServer((req, res) => {
       errorCount:Number(encodraPilot.errors) || 0, timerText:String(encodraPilot.time || '00:00:00'),
       loopStartTime:Number(encodraPilot.loopStartTime) || 0, paused:encodraPilot.paused === true,
       pointsPerMinute:encodraPointsPerMinute, pointsPerHour:encodraPointsPerMinute * 60,
-      estimatedPesosPerHour:Math.min(4.32, encodraPointsPerMinute * 60 * (3 / 250)),
+      estimatedPesosPerHour:Math.min(4.32, encodraPointsPerMinute * 60 * (3 / 250)) || 4.32,
       targetPesos:300, pesosNeeded:Math.max(0, 300 - (Number(encodraPilot.withdrawable) || 0)), pointsUntilTarget:0,
       etaText:'Remote color task', balanceHistory:[] };
     const slots = [encodraSlot, ...getMergedSlots(status).map(({ pass, ...slot }) => slot)];
