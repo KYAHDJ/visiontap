@@ -50,6 +50,19 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
+function publicEncodraState() {
+  const state = readJson(chromePilotStateFile('encodra'), { account:'encodra', slot:'21', running:false, status:'Offline' });
+  return {
+    account:'encodra', slot:'21', running:state.running === true, paused:state.paused === true,
+    status:String(state.status || 'Offline').slice(0,240), tasks:Number(state.tasks || state.taskCount) || 0,
+    taskCount:Number(state.taskCount || state.tasks) || 0, correctCount:Number(state.correctCount || state.tasks) || 0,
+    errors:Number(state.errors) || 0, time:String(state.time || '00:00:00'), loopStartTime:Number(state.loopStartTime) || 0,
+    pointsDone:Number(state.pointsDone) || 0, withdrawable:Number(state.withdrawable) || 0,
+    totalWithdrawn:Number(state.totalWithdrawn) || 0,
+    answer:state.answer || null, shapeNumber:state.shapeNumber || null, lastSubmittedAt:state.lastSubmittedAt || null,
+    updatedAt:Number(state.updatedAt) || 0
+  };
+}
 const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '19':'alexander1001', '20':'elizabeth1001', '12':'deartheodosia', '15':'aaronburr', '14':'kyaiko' };
 const DASHBOARD_GROUPS = {
   'danica-niki':['danicajgb','nnnikkikim','dncjnnpabo22'],
@@ -1354,7 +1367,7 @@ const server = http.createServer(async (req, res) => {
     res.end();
     return;
   }
-  if (DASHBOARD_READ_ONLY && !isAdmin && !(req.method === "GET" && (url.pathname === "/" || url.pathname === "/api/stats"))) {
+  if (DASHBOARD_READ_ONLY && !isAdmin && !(req.method === "GET" && (url.pathname === "/" || url.pathname === "/api/stats" || url.pathname === "/api/encodra"))) {
     res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     res.end("Public dashboard is read-only");
     return;
@@ -1395,6 +1408,13 @@ const server = http.createServer(async (req, res) => {
     const pmathPayoutsRaw = readJson(PMATH_PAYOUT_HISTORY_FILE, []);
     const pmathPayouts = Array.isArray(pmathPayoutsRaw) ? pmathPayoutsRaw : (Array.isArray(pmathPayoutsRaw.records) ? pmathPayoutsRaw.records : []);
     res.end(JSON.stringify({ group, accounts:allowedAccounts, scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots[0] || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
+    return;
+  }
+
+  if (url.pathname === "/api/encodra" && req.method === "GET") {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "no-store");
+    res.end(JSON.stringify(publicEncodraState()));
     return;
   }
 

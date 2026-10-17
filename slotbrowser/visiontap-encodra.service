@@ -1,0 +1,19 @@
+[Unit]
+Description=VisionTap Encodra color pilot
+After=network-online.target visiontap-xvfb.service visiontap-openbox.service visiontap-scanner.service
+Wants=network-online.target
+Requires=visiontap-xvfb.service visiontap-openbox.service
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/home/opc/VisionTap/slotbrowser
+Environment=DISPLAY=:1
+Environment=VT_CHROME_USER_DATA=/home/opc/.config/VisionTap-Chrome/encodra
+EnvironmentFile=-/home/opc/.config/VisionTap-Chrome/encodra.env
+ExecStart=/usr/bin/node /home/opc/VisionTap/slotbrowser/encodra-pilot.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
