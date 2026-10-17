@@ -41,18 +41,21 @@ async function main() {
   let totalWithdrawn = 0;
   let lastLoginAttemptAt = 0;
   let checkpointStartedAt = 0;
+  let tryAgainRecoveryStartedAt = 0;
   let checkpointRestartCount = 0;
   let lastCheckpointRestartAt = 0;
+  let lastTryAgainRestartAt = 0;
   try {
     const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     checkpointRestartCount = Number(saved.checkpointRestartCount) || 0;
     lastCheckpointRestartAt = Number(saved.lastCheckpointRestartAt) || 0;
+    lastTryAgainRestartAt = Number(saved.lastTryAgainRestartAt) || 0;
   } catch (_) {}
   const startedAt = Date.now();
   const base = () => ({ account:ACCOUNT, slot:SLOT, running:true, paused, tasks:submissions, taskCount:submissions,
     correctCount:submissions, errors:0, pointsDone, withdrawable, totalWithdrawn,
     loopStartTime:startedAt, time:new Date(Date.now()-startedAt).toISOString().slice(11,19), updatedAt:Date.now(),
-    checkpointRestartCount, lastCheckpointRestartAt });
+    checkpointRestartCount, lastCheckpointRestartAt, lastTryAgainRestartAt });
   const save = extra => writeState({ ...base(), ...extra });
   const stop = async () => { save({running:false,status:'Stopped'}); try { await browser?.close(); } catch (_) {} try { chromeProcess?.kill('SIGTERM'); } catch (_) {} process.exit(0); };
   process.on('SIGTERM', stop);
@@ -143,6 +146,26 @@ async function main() {
         checkpointRestartCount = 0;
         lastCheckpointRestartAt = 0;
       }
+      const tryAgainStalled = !pageState?.signedIn
+        && /try again clicked/i.test(String(pageState?.helper?.message || ''));
+      if (tryAgainStalled) {
+        if (!tryAgainRecoveryStartedAt) tryAgainRecoveryStartedAt = Date.now();
+        const canRestartTryAgain = Date.now() - lastTryAgainRestartAt >= 60000;
+        if (Date.now() - tryAgainRecoveryStartedAt >= 15000 && canRestartTryAgain) {
+          checkpointRestartCount += 1;
+          lastCheckpointRestartAt = Date.now();
+          lastTryAgainRestartAt = Date.now();
+          save({
+            running:false,
+            status:'Try Again did not restore a task — restarting Encodra automatically…',
+            currentUrl:pageState?.url || '', checkpointRestartCount, lastCheckpointRestartAt, lastTryAgainRestartAt
+          });
+          throw new Error('Try Again recovery stalled; automatic Chrome restart requested');
+        }
+      } else {
+        tryAgainRecoveryStartedAt = 0;
+        if (pageState?.signedIn) lastTryAgainRestartAt = 0;
+      }
       if (paused) {
         await page.evaluate(() => { window.__vtColorPaused = true; }).catch(() => {});
         save({status:'Paused', currentUrl:pageState?.url || ''});
@@ -169,7 +192,7 @@ async function main() {
         save({status:onAuthPage ? 'Sign-in required' : (pageState?.helper?.message || 'Waiting for the next visible color task…'),
           currentUrl:pageState?.url || '', answer:pageState?.helper?.answer || null, shapeNumber:pageState?.helper?.shapeNumber || null,
           lastSubmittedAt:pageState?.helper?.lastSubmittedAt || null,
-          checkpointRestartCount:0, lastCheckpointRestartAt:0 });
+          checkpointRestartCount:0, lastCheckpointRestartAt:0, lastTryAgainRestartAt });
       }
       await sleep(500);
     }
