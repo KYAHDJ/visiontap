@@ -899,7 +899,7 @@ function updateEarningsForecast(slots,now){
   // the dashboard, but it must never inflate the ECNL payout totals.
   var weekdayTotal=(slots||[]).reduce(function(total,slot){
     var account=String(slot.accountName||slot.name||'').toLowerCase();
-    if(String(slot.id)==='14'||account==='kyaiko')return total;
+    if(String(slot.id)==='14'||account==='kyaiko'||account==='aiko1001')return total;
     var projection=nextCashoutProjection(slot,now||new Date());
     return total+(projection&&Number.isFinite(Number(projection.netAmount))?Math.max(0,Number(projection.netAmount)):0);
   },0);
