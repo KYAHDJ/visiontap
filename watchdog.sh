@@ -12,7 +12,7 @@ MAX_RESTARTS=8
 RESTART_WINDOW=600
 WORKER_HEARTBEAT_MS=90000
 
-accounts=(kyaiko adaihbi temi axceling1001 clarencebopis connormofu jinninijin)
+accounts=(kyaiko adaihbi temi axceling1001 clarencebopis connormofu jinninijin yaminiko jerrytomaton)
 declare -A restart_count
 declare -A restart_time
 

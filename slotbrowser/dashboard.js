@@ -17,7 +17,7 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'];
+const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton'];
 const ENCODRA_STATUS_URL = process.env.VT_ENCODRA_STATUS_URL || 'http://91.230.110.15:6260/api/encodra';
 const ENCODRA_CONTROL_URL = process.env.VT_ENCODRA_CONTROL_URL || 'http://91.230.110.15:6260/api/encodra/control';
 let encodraRemote = { account:'encodra', slot:'21', running:false, status:'Connecting to Encodra server…', updatedAt:0 };
@@ -35,7 +35,7 @@ function refreshEncodraRemote() {
 }
 refreshEncodraRemote();
 setInterval(refreshEncodraRemote, 2000).unref();
-const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin']);
+const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentLedgerFile(account) { return path.join(STATE_DIR, `encashment_${account}_history.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, account === 'adaihbi' ? 'encashment_config.json' : `encashment_${account}_config.json`); }
@@ -45,7 +45,7 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin' };
+const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin', '18':'yaminiko', '19':'jerrytomaton' };
 function sendEncodraControl(action) {
   const mapped = action === 'refresh' ? 'reload' : action;
   const output = execFileSync('curl', ['-fsS','-X','POST',`${ENCODRA_CONTROL_URL}?action=${encodeURIComponent(mapped)}`], { timeout:30000, encoding:'utf8' });
@@ -994,6 +994,8 @@ function slotTheme(account){
     connormofu:['#14b8a6','rgba(20,184,166,.15)','rgba(20,184,166,.25)'],
     adaihbi:['#22c55e','rgba(34,197,94,.15)','rgba(34,197,94,.25)'],
     temi:['#f59e0b','rgba(245,158,11,.15)','rgba(245,158,11,.25)'],
+    yaminiko:['#06b6d4','rgba(6,182,212,.15)','rgba(6,182,212,.25)'],
+    jerrytomaton:['#ef4444','rgba(239,68,68,.15)','rgba(239,68,68,.25)'],
     axceling1001:['#ec4899','rgba(236,72,153,.15)','rgba(236,72,153,.25)'],
     jinninijin:['#f97316','rgba(249,115,22,.15)','rgba(249,115,22,.25)']
   };
@@ -1157,7 +1159,7 @@ function render(d){
         var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
         return grid;
       })() +
-      '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncashLedger(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'})()+
+      '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncashLedger(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'})()+
         controlsHtml+
       '</div></div>';
     hAiko+=cardHtml;
@@ -1395,7 +1397,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin");
+    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin visiontap-chrome@yaminiko visiontap-chrome@jerrytomaton");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");

@@ -35,13 +35,15 @@ test('all accounts use balance history without a duplicate earnings history', ()
   assert.match(source, /Balance History \(10\)/);
 });
 
-test('dashboard includes all six ECNL slots and their controls', () => {
-  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu', 'jinninijin']) {
+test('dashboard includes all eight ECNL slots and their controls', () => {
+  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu', 'jinninijin', 'yaminiko', 'jerrytomaton']) {
     assert.match(source, new RegExp(account));
   }
   assert.match(source, /'13':'clarencebopis'/);
   assert.match(source, /'16':'connormofu'/);
   assert.match(source, /'17':'jinninijin'/);
+  assert.match(source, /'18':'yaminiko'/);
+  assert.match(source, /'19':'jerrytomaton'/);
   assert.doesNotMatch(source, /\["13","16","17"\]/);
 });
 

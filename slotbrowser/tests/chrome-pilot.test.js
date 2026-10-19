@@ -84,14 +84,14 @@ test('Kyaiko auto-converts PMath coins at the 30,000 threshold', () => {
   assert.match(pilot.convertPmathCoins.toString(), /PMATH_CONVERT_RETRY_MS/);
 });
 
-test('all six ECNL accounts have isolated payout controllers', () => {
+test('all eight ECNL accounts have isolated payout controllers', () => {
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
-  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu', 'jinninijin']) {
+  for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu', 'jinninijin', 'yaminiko', 'jerrytomaton']) {
     assert.match(source, new RegExp(account));
   }
 });
 
-test('ECNL submission delays are staggered across the six accounts', () => {
+test('ECNL submission delays are staggered across the eight accounts', () => {
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
   assert.match(source, /adaihbi: 0/);
   assert.match(source, /temi: 300/);
@@ -99,12 +99,17 @@ test('ECNL submission delays are staggered across the six accounts', () => {
   assert.match(source, /clarencebopis: 900/);
   assert.match(source, /connormofu: 1100/);
   assert.match(source, /jinninijin: 450/);
+  assert.match(source, /yaminiko: 750/);
+  assert.match(source, /jerrytomaton: 1050/);
 });
 
 test('ECNL advances after a short 500ms post-submit settle without changing PMath', () => {
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
   assert.match(source, /this\.nextIterationAt = Date\.now\(\) \+ 500/);
-  assert.match(source, /SUBMIT_DELAYS = \{ adaihbi: 0, temi: 300, axceling1001: 600, clarencebopis: 900, connormofu: 1100, jinninijin: 450, kyaiko: 0 \}/);
+  for (const delay of ['adaihbi:0', 'temi:300', 'axceling1001:600', 'clarencebopis:900', 'connormofu:1100', 'jinninijin:450', 'yaminiko:750', 'jerrytomaton:1050']) {
+    const [account, milliseconds] = delay.split(':');
+    assert.match(source, new RegExp(`${account}:\\s*${milliseconds}`));
+  }
   assert.match(source, /ready\?\.checking && TASK_MODE !== 'math'/);
   assert.match(source, /Waiting for ECNL to present the next task/);
   assert.match(source, /consecutiveDetectFails >= 5/);
