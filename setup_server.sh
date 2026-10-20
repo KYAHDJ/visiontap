@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_DIR=/home/opc/VisionTap
 OPC_HOME=/home/opc
-VT_ACCOUNTS=${VT_ACCOUNTS:-danicajgb,nnnikkikim,dncjnnpabo22,dianajanelle,darlenejoyce,castiel,aannadiaa,alexander1001,elizabeth1001,deartheodosia,aaronburr,kyaiko}
+VT_ACCOUNTS=${VT_ACCOUNTS:-danicajgb,nnnikkikim,dncjnnpabo22,dianajanelle,darlenejoyce,castiel,aannadiaa,alexander1001,elizabeth1001,deartheodosia,aaronburr,kyaiko,jerrytomaton}
 IFS=',' read -r -a accounts <<< "$VT_ACCOUNTS"
 
 if [ "$(id -u)" -ne 0 ]; then
