@@ -100,13 +100,12 @@ test('every slot shows gross and after-deduction next payout estimates after ETA
   assert.match(source, /next-payout-grid/);
 });
 
-test('top dashboard sums ECNL expected receipts and excludes PayMath and aiko1001', () => {
+test('top dashboard sums ECNL expected receipts and excludes PayMath', () => {
   assert.match(source, /id="forecast-week"/);
   assert.match(source, /id="forecast-month"/);
   assert.match(source, /function updateEarningsForecast\(slots,now\)/);
   assert.match(source, /projection=nextCashoutProjection\(slot,now\|\|new Date\(\)\)/);
   assert.match(source, /account==='kyaiko'/);
-  assert.match(source, /account==='aiko1001'/);
   assert.match(source, /Number\(projection\.netAmount\)/);
   assert.doesNotMatch(source, /pesosPerHour\*24\*5/);
   assert.match(source, /weekdayTotal\*\(52\/12\)/);

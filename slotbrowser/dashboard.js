@@ -2,7 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execSync, execFileSync } = require("child_process");
+const { execSync } = require("child_process");
 
 const PORT = 6260;
 const PMATH_CONVERT_THRESHOLD = 30000;
@@ -17,24 +17,7 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton'];
-const ENCODRA_STATUS_URL = process.env.VT_ENCODRA_STATUS_URL || 'http://91.230.110.15:6260/api/encodra';
-const ENCODRA_CONTROL_URL = process.env.VT_ENCODRA_CONTROL_URL || 'http://91.230.110.15:6260/api/encodra/control';
-let encodraRemote = { account:'encodra', slot:'21', running:false, status:'Connecting to Encodra server…', updatedAt:0 };
-function refreshEncodraRemote() {
-  const request = http.get(ENCODRA_STATUS_URL, { timeout:3000 }, response => {
-    let body = '';
-    response.setEncoding('utf8');
-    response.on('data', chunk => { if (body.length < 32768) body += chunk; });
-    response.on('end', () => {
-      try { const state=JSON.parse(body); if(response.statusCode===200 && state.account==='encodra') encodraRemote=state; } catch (_) {}
-    });
-  });
-  request.on('timeout', () => request.destroy());
-  request.on('error', () => { if(Date.now()-Number(encodraRemote.updatedAt||0)>15000) encodraRemote={...encodraRemote,running:false,status:'Encodra server offline'}; });
-}
-refreshEncodraRemote();
-setInterval(refreshEncodraRemote, 2000).unref();
+const CHROME_ACCOUNTS = ['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton'];
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentLedgerFile(account) { return path.join(STATE_DIR, `encashment_${account}_history.json`); }
@@ -45,31 +28,20 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin', '18':'yaminiko', '19':'jerrytomaton' };
-function sendEncodraControl(action) {
-  const mapped = action === 'refresh' ? 'reload' : action;
-  const output = execFileSync('curl', ['-fsS','-X','POST',`${ENCODRA_CONTROL_URL}?action=${encodeURIComponent(mapped)}`], { timeout:30000, encoding:'utf8' });
-  const result = JSON.parse(output || '{}');
-  if (!result.ok) throw new Error('Encodra control failed');
-  return result;
-}
+const CHROME_SLOT_ACCOUNTS = { '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin', '18':'yaminiko', '19':'jerrytomaton' };
 function sendChromeControl(action, slot = 'all') {
   const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
   if (!['pause','resume','reload','stop'].includes(mapped)) throw new Error('Invalid control action');
-  if (String(slot) === '21') return { action:mapped, accounts:['encodra'], remote:sendEncodraControl(mapped) };
   const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
   if (accounts.length === 0) throw new Error('Unknown account slot');
   for (const account of accounts) writeJson(chromePilotCommandFile(account), { action:mapped, nonce:`${Date.now()}-${Math.random()}` });
-  if (slot === 'all') sendEncodraControl(mapped);
   return { action: mapped, accounts };
 }
 function restartChromeServices(slot = 'all') {
-  if (String(slot) === '21') return { action:'restart', accounts:['encodra'], remote:sendEncodraControl('restart') };
   const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
   if (accounts.length === 0) throw new Error('Unknown account slot');
   const units = accounts.map(account => `visiontap-chrome@${account}`).join(' ');
   execSync(`sudo systemctl restart ${units}`, { timeout: 30000 });
-  if (slot === 'all') sendEncodraControl('restart');
   return { action: 'restart', accounts };
 }
 
@@ -846,7 +818,6 @@ function nextCashoutProjection(slot,now){
   pointRate=Math.min(isPmath?3.6:4.32,pointRate);
   var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0));
   var pesosPerHour=pointRate>0?pointRate:Math.min(isPmath?3.6:4.32,historyRate);
-  if(account==='aiko1001'&&!(pesosPerHour>0))pesosPerHour=4.32;
   var days=0;
   if(isPmath){
     start=8;end=10;
@@ -899,7 +870,7 @@ function updateEarningsForecast(slots,now){
   // the dashboard, but it must never inflate the ECNL payout totals.
   var weekdayTotal=(slots||[]).reduce(function(total,slot){
     var account=String(slot.accountName||slot.name||'').toLowerCase();
-    if(String(slot.id)==='14'||account==='kyaiko'||account==='aiko1001')return total;
+    if(String(slot.id)==='14'||account==='kyaiko')return total;
     var projection=nextCashoutProjection(slot,now||new Date());
     return total+(projection&&Number.isFinite(Number(projection.netAmount))?Math.max(0,Number(projection.netAmount)):0);
   },0);
@@ -1068,17 +1039,12 @@ function render(d){
     var verifyHtml=slotPilot.verificationHold?'<div class="slotverify"><div class="slotverify-title">Manual verification required <span>'+esc(String(s.accountName||s.name).toUpperCase())+'</span></div><p>'+esc(slotPilot.status||'Complete verification in this account’s Oracle Chrome window. Auto-refresh is paused.')+'</p><div class="slotverify-stats"><span>Tasks<b>'+esc(slotPilot.tasks||0)+'</b></span><span>Errors<b>'+esc(slotPilot.errors||0)+'</b></span><span>Time<b>'+esc(slotPilot.time||'00:00')+'</b></span></div><div class="slotverify-actions"><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;pause&quot;)">Pause</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;resume&quot;)">Resume after verify</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;reload&quot;)">Safe reload</button></div></div>':'';
     var isKyaiko=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko',conversion=slotPilot.pmathConversion||{},conversionClass=conversion.status==='converted'?'yes':conversion.status==='failed'?'no':'waiting';
     var conversionHtml=isKyaiko?'<div class="encoutstatus '+conversionClass+'" style="display:flex;margin:0 0 12px;width:100%;justify-content:center">'+esc(conversion.message||'Auto-convert enabled at 30,000 coins')+'</div>':'';
-    var isEncodra=String(s.id)==='21'||String(s.accountName||'').toLowerCase()==='aiko1001';
-    var st=isEncodra?(slotPilot.running?(slotPaused?'PAUSED':'REMOTE'):'OFFLINE'):(slotPaused?'PAUSED':(slotPilot.verificationHold?'VERIFY':'RUNNING'));
-    var pts=isEncodra?(Number(s.pointsDone||0)+' points'):(s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks');
+    var st=slotPaused?'PAUSED':(slotPilot.verificationHold?'VERIFY':'RUNNING');
+    var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
     var isKyaikoCard=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko';
-    var controlsHtml=isEncodra
-      ? '<button class="ibtn" type="button" title="Pause" onclick="runDashboardControl(&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause&quot;).catch(function(){})">&#9646;&#9646;</button>'+
-        '<button class="ibtn" type="button" title="Play" onclick="runDashboardControl(&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Play&quot;).catch(function(){})">&#9654;</button>'+
-        '<button class="ibtn" type="button" title="Restart" onclick="runDashboardControl(&quot;restart&quot;,&quot;'+sid+'&quot;,&quot;Restart&quot;).catch(function(){})">&#8634;</button>'
-      : isKyaikoCard
+    var controlsHtml=isKyaikoCard
       ? '<button class="ibtn" type="button" title="Pause" onclick="runDashboardControl(&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause&quot;).catch(function(){})">&#9646;&#9646;</button>'+
         '<button class="ibtn" type="button" title="Play" onclick="runDashboardControl(&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Play&quot;).catch(function(){})">&#9654;</button>'+
         '<button class="ibtn" type="button" title="Restart" onclick="runDashboardControl(&quot;restart&quot;,&quot;'+sid+'&quot;,&quot;Restart&quot;).catch(function(){})">&#8634;</button>'
@@ -1133,11 +1099,6 @@ function render(d){
         var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/(isPmathCard?100:250)).toFixed(1) : '0';
         var leftCol = '<div class="bcol"><div class="bcol-hd-row"><div class="bcol-hd">Balance History (10)</div><span class="balance-age" data-balance-start="'+balanceTimerStart+'">'+esc(balanceAgeText)+'</span></div><div class="bhist-list">'+histHtml+'</div></div>';
         var avgSecondsPerPoint = ptsPerMin>0 ? (60/ptsPerMin) : 0;
-        var encodraPesosPerHour = Math.max(0, Number(s.estimatedPesosPerHour||0));
-        var encodraEarningsForecast = isEncodra
-          ? '<div class="bcalc-line" style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(148,163,184,.2)">Possible earnings at current speed:</div>'
-            +'<div class="bcalc-line"><span class="bcalc-em" style="color:#38bdf8">&#8369;'+encodraPesosPerHour.toFixed(2)+'/hour</span> · <span class="bcalc-em" style="color:#a78bfa">&#8369;'+(encodraPesosPerHour*24).toFixed(2)+'/day</span> · <span class="bcalc-em" style="color:#facc15">&#8369;'+(encodraPesosPerHour*24*7).toFixed(2)+'/week</span></div>'
-          : '';
         var rightCol;
         if (isPmathCard) {
           rightCol = '<div class="bcol"><div class="bcol-hd">Kyaiko Goal (100 coins = 1&#8369;)</div>'
@@ -1153,7 +1114,6 @@ function render(d){
             +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
             +'<div class="bcalc-line">Getting: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' pts/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
             +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
-            +encodraEarningsForecast
             +nextCashoutLine+'</div>';
         }
         var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
@@ -1283,30 +1243,11 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/api/stats" && req.method === "GET") {
     const status = getStatus();
-    const remoteAge = Date.now() - Number(encodraRemote.updatedAt || 0);
-    const encodraPilot = { ...encodraRemote, running:encodraRemote.running === true && remoteAge < 15000 };
-    const encodraElapsedMinutes = Math.max(0, (Date.now() - Number(encodraPilot.loopStartTime || 0)) / 60000);
-    const encodraPointsPerMinute = encodraElapsedMinutes > 0
-      ? Math.max(0, Number(encodraPilot.sessionTasks) || 0) / encodraElapsedMinutes
-      : 0;
-    const encodraSlot = { id:'21', accountName:'aiko1001', name:'aiko1001',
-      pointsDone:Number(encodraPilot.pointsDone) || 0, pointsTotal:0,
-      withdrawable:Number(encodraPilot.withdrawable) || 0, totalWithdrawn:Number(encodraPilot.totalWithdrawn) || 0,
-      taskCount:Number(encodraPilot.taskCount || encodraPilot.tasks) || 0,
-      correctCount:Number(encodraPilot.correctCount || encodraPilot.tasks) || 0, wrongCount:0,
-      errorCount:Number(encodraPilot.errors) || 0, timerText:String(encodraPilot.time || '00:00:00'),
-      loopStartTime:Number(encodraPilot.loopStartTime) || 0, paused:encodraPilot.paused === true,
-      pointsPerMinute:encodraPointsPerMinute, pointsPerHour:encodraPointsPerMinute * 60,
-      estimatedPesosPerHour:Math.min(4.32, encodraPointsPerMinute * 60 * (3 / 250)) || 4.32,
-      targetPesos:300, pesosNeeded:Math.max(0, 300 - (Number(encodraPilot.withdrawable) || 0)), pointsUntilTarget:0,
-      etaText:'Remote color task', balanceHistory:[] };
-    const slots = [encodraSlot, ...getMergedSlots(status).map(({ pass, ...slot }) => slot)];
-    const chromePilots = [encodraPilot, ...getChromePilots()];
+    const slots = getMergedSlots(status).map(({ pass, ...slot }) => slot);
+    const chromePilots = getChromePilots();
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    const pmathPayoutsRaw = readJson(PMATH_PAYOUT_HISTORY_FILE, []);
-    const pmathPayouts = Array.isArray(pmathPayoutsRaw) ? pmathPayoutsRaw : (Array.isArray(pmathPayoutsRaw.records) ? pmathPayoutsRaw.records : []);
-    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
+    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, pmathPayouts:[], theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
 
@@ -1397,7 +1338,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin visiontap-chrome@yaminiko visiontap-chrome@jerrytomaton");
+    run("sudo systemctl restart visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin visiontap-chrome@yaminiko visiontap-chrome@jerrytomaton");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");

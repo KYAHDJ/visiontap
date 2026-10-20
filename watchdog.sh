@@ -12,7 +12,7 @@ MAX_RESTARTS=8
 RESTART_WINDOW=600
 WORKER_HEARTBEAT_MS=90000
 
-accounts=(kyaiko adaihbi temi axceling1001 clarencebopis connormofu jinninijin yaminiko jerrytomaton)
+IFS=',' read -r -a accounts <<< "${VT_ACCOUNTS:-adaihbi,temi,axceling1001,clarencebopis,connormofu,jinninijin,yaminiko,jerrytomaton}"
 declare -A restart_count
 declare -A restart_time
 
@@ -68,6 +68,7 @@ status = str(state.get('status') or '').lower()
 protected = (
     state.get('paused') or state.get('verificationHold') or
     state.get('encashmentBusy') or
+    (state.get('pmathConversion') or {}).get('status') in ('checking', 'converting', 'failed') or
     int(state.get('siteRecoveryWaitUntil') or 0) > int(time.time() * 1000) or
     int(state.get('recoveryResumeUntil') or 0) > int(time.time() * 1000)
 )
