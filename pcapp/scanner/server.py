@@ -72,9 +72,11 @@ def bounded_ocr(image, config):
                 GLYPH_CACHE.move_to_end(cache_key)
                 return GLYPH_CACHE[cache_key]
     ticket = object()
-    deadline = time.monotonic() + 8
+    # Eight ECNL workers can request OCR at nearly the same instant. Give the
+    # FIFO queue enough time to drain so healthy work is not rejected as busy.
+    deadline = time.monotonic() + float(os.environ.get('VT_OCR_QUEUE_TIMEOUT', '24'))
     with OCR_CONDITION:
-        if len(OCR_QUEUE) >= 8:
+        if len(OCR_QUEUE) >= int(os.environ.get('VT_OCR_QUEUE_LIMIT', '16')):
             raise ScannerBusy('Scanner busy; queue full')
         OCR_QUEUE.append(ticket)
         while OCR_QUEUE[0] is not ticket:

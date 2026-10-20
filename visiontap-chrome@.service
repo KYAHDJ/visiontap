@@ -13,10 +13,14 @@ Environment=VT_CHROME_PROFILE=Default
 Environment=VT_CHROME_PATH=/opt/google/chrome/chrome
 EnvironmentFile=/home/opc/.config/VisionTap-Chrome/%i.env
 ExecStart=/usr/bin/node /home/opc/VisionTap/slotbrowser/chrome-pilot.js
-Restart=on-failure
+Restart=always
 RestartSec=5
 TimeoutStopSec=20
 KillMode=mixed
+# Eight full Chrome profiles share four vCPUs. Cap each worker group so one
+# animated page cannot starve the other accounts, VNC, or the shared scanner.
+CPUAccounting=true
+CPUQuota=38%
 
 [Install]
 WantedBy=multi-user.target

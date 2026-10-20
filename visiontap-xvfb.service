@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=opc
-ExecStart=/usr/bin/Xvfb :1 -screen 0 4608x1024x24 -ac -nolisten tcp
+ExecStart=/usr/bin/Xvfb :1 -screen 0 3584x1024x24 -ac -nolisten tcp
 Restart=always
 RestartSec=5
 

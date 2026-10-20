@@ -55,15 +55,15 @@ sudo install -m 0644 visiontap-xvfb.service visiontap-openbox.service visiontap-
   visiontap-chrome@.service /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/system/visiontap-dashboard.service.d
 sudo install -m 0644 visiontap-dashboard-remote.conf /etc/systemd/system/visiontap-dashboard.service.d/remote.conf
-mkdir -p "$HOME/.config/VisionTap-Chrome"/{adaihbi,temi,axceling1001,clarencebopis,connormofu,jinninijin,yaminiko,jerrytomaton}
-for account in adaihbi temi axceling1001 clarencebopis connormofu jinninijin yaminiko jerrytomaton; do
-  install -m 0600 "chrome-$account.env" "$HOME/.config/VisionTap-Chrome/$account.env"
+mkdir -p "$HOME/.config/VisionTap-Chrome"/{adaihbi,temi,axceling1001,clarencebopis,connormofu,jinninijin,yaminiko}
+for account in adaihbi temi axceling1001 clarencebopis connormofu jinninijin yaminiko; do
+  install -m 0600 "chrome-$account.env.conf" "$HOME/.config/VisionTap-Chrome/$account.env"
 done
 sudo systemctl disable --now visiontap-electron.service 2>/dev/null || true
 sudo visudo -cf visiontap-recovery.sudoers
 sudo install -o root -g root -m 0440 visiontap-recovery.sudoers /etc/sudoers.d/visiontap-recovery
 sudo systemctl daemon-reload
 sudo systemctl enable visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-scanner visiontap-dashboard visiontap-watchdog
-sudo systemctl enable visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin visiontap-chrome@yaminiko visiontap-chrome@jerrytomaton
+sudo systemctl enable visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin visiontap-chrome@yaminiko
 
 echo "=== Setup complete at $(date) ==="

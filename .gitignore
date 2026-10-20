@@ -39,6 +39,7 @@ ssh_verbose.txt
 .env
 .env.*
 !.env.example
+chrome-*.env
 credentials.json
 cred_history.json
 *.tar.gz
