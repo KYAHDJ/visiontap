@@ -2,7 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execSync } = require("child_process");
+const { execSync, execFileSync } = require("child_process");
 
 const PORT = 6260;
 const PMATH_CONVERT_THRESHOLD = 30000;
@@ -18,6 +18,18 @@ const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
 const CHROME_ACCOUNTS = ['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton'];
+const REMOTE_KYAIKO_URL = process.env.VT_REMOTE_KYAIKO_URL || 'http://169.58.93.176:6260';
+const REMOTE_CONTROL_TOKEN = String(process.env.VT_REMOTE_CONTROL_TOKEN || '');
+let remoteKyaiko = { slot:null, pilot:{account:'kyaiko',slot:'14',running:false,status:'Connecting to Theodosia server…'}, payouts:[], updatedAt:0 };
+function refreshRemoteKyaiko() {
+  const request=http.get(`${REMOTE_KYAIKO_URL}/api/stats?group=theodosia-aaron`,{timeout:4000},response=>{
+    let body='';response.setEncoding('utf8');response.on('data',chunk=>{if(body.length<262144)body+=chunk;});response.on('end',()=>{
+      try{const value=JSON.parse(body),slot=(value.slots||[]).find(item=>String(item.accountName||'').toLowerCase()==='kyaiko'),pilot=(value.chromePilots||[]).find(item=>String(item.account||'').toLowerCase()==='kyaiko');if(response.statusCode===200&&slot&&pilot)remoteKyaiko={slot,pilot,payouts:Array.isArray(value.pmathPayouts)?value.pmathPayouts:[],updatedAt:Date.now()};}catch(_){}
+    });
+  });
+  request.on('timeout',()=>request.destroy());request.on('error',()=>{});
+}
+refreshRemoteKyaiko();setInterval(refreshRemoteKyaiko,2000).unref();
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentLedgerFile(account) { return path.join(STATE_DIR, `encashment_${account}_history.json`); }
@@ -28,20 +40,30 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin', '18':'yaminiko', '19':'jerrytomaton' };
+const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin', '18':'yaminiko', '19':'jerrytomaton' };
+function sendRemoteKyaikoControl(action) {
+  if(!REMOTE_CONTROL_TOKEN)throw new Error('Remote Kyaiko control is not configured');
+  const mapped=action==='refresh'?'reload':action;
+  const output=execFileSync('curl',['-fsS','-X','POST','-H',`X-VisionTap-Token: ${REMOTE_CONTROL_TOKEN}`,`${REMOTE_KYAIKO_URL}/api/kyaiko/control?action=${encodeURIComponent(mapped)}`],{timeout:30000,encoding:'utf8'});
+  const result=JSON.parse(output||'{}');if(!result.ok)throw new Error('Remote Kyaiko control failed');return result;
+}
 function sendChromeControl(action, slot = 'all') {
   const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
   if (!['pause','resume','reload','stop'].includes(mapped)) throw new Error('Invalid control action');
+  if(String(slot)==='14')return {action:mapped,accounts:['kyaiko'],remote:sendRemoteKyaikoControl(mapped)};
   const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
   if (accounts.length === 0) throw new Error('Unknown account slot');
   for (const account of accounts) writeJson(chromePilotCommandFile(account), { action:mapped, nonce:`${Date.now()}-${Math.random()}` });
+  if(slot==='all')sendRemoteKyaikoControl(mapped);
   return { action: mapped, accounts };
 }
 function restartChromeServices(slot = 'all') {
+  if(String(slot)==='14')return {action:'restart',accounts:['kyaiko'],remote:sendRemoteKyaikoControl('restart')};
   const accounts = slot === 'all' ? CHROME_ACCOUNTS : [CHROME_SLOT_ACCOUNTS[String(slot)]].filter(Boolean);
   if (accounts.length === 0) throw new Error('Unknown account slot');
   const units = accounts.map(account => `visiontap-chrome@${account}`).join(' ');
   execSync(`sudo systemctl restart ${units}`, { timeout: 30000 });
+  if(slot==='all')sendRemoteKyaikoControl('restart');
   return { action: 'restart', accounts };
 }
 
@@ -1243,11 +1265,14 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/api/stats" && req.method === "GET") {
     const status = getStatus();
-    const slots = getMergedSlots(status).map(({ pass, ...slot }) => slot);
-    const chromePilots = getChromePilots();
+    const remoteFresh=Date.now()-Number(remoteKyaiko.updatedAt||0)<15000;
+    const remoteSlot=remoteKyaiko.slot?{...remoteKyaiko.slot,id:'14',accountName:'kyaiko',name:'kyaiko'}:null;
+    const remotePilot={...remoteKyaiko.pilot,account:'kyaiko',slot:'14',running:remoteFresh&&remoteKyaiko.pilot.running===true,status:remoteFresh?remoteKyaiko.pilot.status:'Theodosia server connection unavailable'};
+    const slots=[...(remoteSlot?[remoteSlot]:[]),...getMergedSlots(status).map(({ pass, ...slot }) => slot)];
+    const chromePilots=[remotePilot,...getChromePilots()];
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, pmathPayouts:[], theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
+    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, pmathPayouts:remoteKyaiko.payouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
 
@@ -1255,6 +1280,11 @@ const server = http.createServer((req, res) => {
     const action = String(url.searchParams.get("action") || "");
     const account = String(url.searchParams.get("account") || "adaihbi").toLowerCase();
     if (!["pause", "resume", "reload", "stop"].includes(action)) { res.writeHead(400); res.end("Invalid action"); return; }
+    if (account === 'kyaiko') {
+      try { const result=sendRemoteKyaikoControl(action);res.setHeader("Content-Type","application/json");res.end(JSON.stringify({ok:true,account,action,remote:result})); }
+      catch(error){res.writeHead(500);res.end(error.message||'Remote control failed');}
+      return;
+    }
     if (!CHROME_ACCOUNTS.includes(account)) { res.writeHead(400); res.end("Invalid account"); return; }
     writeJson(chromePilotCommandFile(account), { action, nonce: `${Date.now()}-${Math.random()}` });
     res.setHeader("Content-Type", "application/json");

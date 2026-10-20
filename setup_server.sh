@@ -53,6 +53,8 @@ npm --prefix slotbrowser ci --omit=dev
 sudo install -m 0644 visiontap-xvfb.service visiontap-openbox.service visiontap-vnc.service \
   visiontap-scanner.service visiontap-dashboard.service visiontap-watchdog.service \
   visiontap-chrome@.service /etc/systemd/system/
+sudo install -d -m 0755 /etc/systemd/system/visiontap-dashboard.service.d
+sudo install -m 0644 visiontap-dashboard-remote.conf /etc/systemd/system/visiontap-dashboard.service.d/remote.conf
 mkdir -p "$HOME/.config/VisionTap-Chrome"/{adaihbi,temi,axceling1001,clarencebopis,connormofu,jinninijin,yaminiko,jerrytomaton}
 for account in adaihbi temi axceling1001 clarencebopis connormofu jinninijin yaminiko jerrytomaton; do
   install -m 0600 "chrome-$account.env" "$HOME/.config/VisionTap-Chrome/$account.env"
