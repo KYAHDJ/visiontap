@@ -10,6 +10,7 @@ const DASHBOARD_USER = String(process.env.VT_DASHBOARD_USER || 'visiontap');
 const DASHBOARD_PASSWORD = String(process.env.VT_DASHBOARD_PASSWORD || '');
 const DASHBOARD_READ_ONLY = process.env.VT_DASHBOARD_READ_ONLY === '1';
 const DASHBOARD_ADMIN_PASSWORD = String(process.env.VT_DASHBOARD_ADMIN_PASSWORD || '');
+const REMOTE_CONTROL_TOKEN = String(process.env.VT_REMOTE_CONTROL_TOKEN || '');
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const adminSessions = new Map();
 const PMATH_CONVERT_THRESHOLD = 30000;
@@ -1290,6 +1291,12 @@ function passwordMatches(value) {
   const expected = crypto.createHash('sha256').update(DASHBOARD_ADMIN_PASSWORD).digest();
   return crypto.timingSafeEqual(actual, expected);
 }
+function remoteTokenMatches(value) {
+  if (!REMOTE_CONTROL_TOKEN) return false;
+  const actual = crypto.createHash('sha256').update(String(value || '')).digest();
+  const expected = crypto.createHash('sha256').update(REMOTE_CONTROL_TOKEN).digest();
+  return crypto.timingSafeEqual(actual, expected);
+}
 function safeReturnPath(value) {
   const target = String(value || '/');
   return target.startsWith('/') && !target.startsWith('//') ? target : '/';
@@ -1325,6 +1332,16 @@ const server = http.createServer(async (req, res) => {
   }
   const url = new URL(req.url, `http://${req.headers.host}`);
   const isAdmin = isAdminRequest(req);
+  if (url.pathname === '/api/kyaiko/control' && req.method === 'POST') {
+    if (!remoteTokenMatches(req.headers['x-visiontap-token'])) { res.writeHead(403); res.end('Forbidden'); return; }
+    const action=String(url.searchParams.get('action')||'').toLowerCase();
+    if(!['pause','resume','reload','refresh','restart'].includes(action)){res.writeHead(400);res.end('Invalid action');return;}
+    try {
+      const result=action==='restart'?restartChromeServices('14','theodosia-aaron'):sendChromeControl(action,'14','theodosia-aaron');
+      res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify({ok:true,...result}));
+    } catch(error) { res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:error.message||'Control failed'})); }
+    return;
+  }
   if (url.pathname === '/admin-login' && req.method === 'GET') {
     if (isAdmin) { res.writeHead(302, { Location:safeReturnPath(url.searchParams.get('return')) }); res.end(); return; }
     res.writeHead(200, { 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store' });

@@ -37,6 +37,7 @@ install -m 0644 -o opc -g opc "$APP_DIR/config/slots.json" "$OPC_HOME/.config/Vi
 install -m 0644 "$APP_DIR"/visiontap-*.service /etc/systemd/system/
 install -d -m 0755 /etc/systemd/system/visiontap-dashboard.service.d
 install -m 0644 "$APP_DIR/visiontap-dashboard-admin.conf" /etc/systemd/system/visiontap-dashboard.service.d/admin.conf
+install -m 0644 "$APP_DIR/visiontap-dashboard-remote.conf" /etc/systemd/system/visiontap-dashboard.service.d/remote.conf
 install -m 0440 "$APP_DIR/visiontap-dashboard-sudoers" /etc/sudoers.d/visiontap-dashboard
 chmod 0755 "$APP_DIR/watchdog.sh" "$APP_DIR/visiontap-accounts-viewer"
 chown -R opc:opc "$APP_DIR"
