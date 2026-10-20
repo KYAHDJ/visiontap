@@ -10,6 +10,7 @@ const { spawn } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { chromium } = require('playwright-core');
 const { ChromeEncashmentController } = require('./chrome-encashment');
+const { PmathCashoutController } = require('./pmath-cashout');
 
 const ACCOUNT = String(process.env.VT_ACCOUNT || 'adaihbi').trim().toLowerCase();
 const SLOT_ID = String(process.env.VT_SLOT_ID || '11');
@@ -124,6 +125,7 @@ class ChromePilot {
     this.serverRecoveryActive = false;
     this.nextServerErrorCheckAt = 0;
     this.encashment = ENCASHMENT_ACCOUNTS.has(ACCOUNT) ? new ChromeEncashmentController(this, PILOT_STATE_DIR, ACCOUNT) : null;
+    this.pmathCashout = TASK_MODE === 'math' ? new PmathCashoutController(this, PILOT_STATE_DIR) : null;
   }
 
   log(message) {
@@ -223,13 +225,21 @@ class ChromePilot {
     if (!await this.ensureScanner()) this.log('Scanner remains offline; the loop will keep retrying without submitting.');
     else await this.restoreDashboardCounters();
     this.encashment?.start();
+    this.pmathCashout?.start();
     this.log(`${ACCOUNT} pilot started. Close Chrome or use Stop in the dashboard to end it.`);
     await this.loop();
   }
 
   async guardPage(page) {
     await page.exposeFunction('__vtSignal', msg => this.handlePageSignal(msg)).catch(() => {});
-    page.on('dialog', dialog => dialog.dismiss().catch(() => {}));
+    page.on('dialog', async dialog => {
+      if (TASK_MODE === 'math' && /\/convert-coins/i.test(page.url()) && this.pmathConversion.status === 'converting' && dialog.type() === 'confirm' && /convert/i.test(dialog.message())) {
+        this.pmathNativeConfirmed = true;
+        await dialog.accept().catch(() => {});
+        return;
+      }
+      await dialog.dismiss().catch(() => {});
+    });
     page.on('requestfailed', request => {
       if (page === this.page && request.isNavigationRequest() && request.frame() === page.mainFrame()) {
         const code = request.failure()?.errorText || 'Navigation failed';
@@ -577,9 +587,11 @@ class ChromePilot {
     }, 5000).catch(() => {});
   }
 
-  async convertPmathCoins(observedCoins = null) {
+  async convertPmathCoins(observedCoins = null, options = {}) {
     if (TASK_MODE !== 'math' || this.paused || this.verificationHold) return false;
-    if (this.pmathConversion.lastAttemptAt && Date.now() - this.pmathConversion.lastAttemptAt < PMATH_CONVERT_RETRY_MS) return false;
+    const force = options.force === true;
+    const minimumCoins = Math.max(100, Number(options.minimumCoins || PMATH_CONVERT_THRESHOLD));
+    if (!force && this.pmathConversion.lastAttemptAt && Date.now() - this.pmathConversion.lastAttemptAt < PMATH_CONVERT_RETRY_MS) return false;
     this.pmathConversion.lastAttemptAt = Date.now();
     this.pmathConversion.status = 'checking';
     this.pmathConversion.coinsBefore = Number.isFinite(Number(observedCoins)) ? Number(observedCoins) : null;
@@ -592,18 +604,16 @@ class ChromePilot {
       }
       await this.installPageRuntime();
       const meta = await this.callApi('pmathGetMeta').catch(() => null);
-      const available = Math.max(
-        Number(this.pmathConversion.coinsBefore || 0),
-        Number(meta?.convertible || 0),
-        Number(meta?.coins || 0)
-      );
-      if (!Number.isFinite(available) || available < PMATH_CONVERT_THRESHOLD) {
+      const pageCoins = Number(meta?.convertible ?? meta?.coins);
+      const available = Number.isFinite(pageCoins) ? pageCoins : Number(this.pmathConversion.coinsBefore || 0);
+      if (!Number.isFinite(available) || available < minimumCoins) {
         this.pmathConversion.status = 'waiting';
         this.pmathConversion.message = `Conversion skipped: ${Number.isFinite(available) ? available : 0} coins available.`;
         await this.setStatus(this.pmathConversion.message);
         return false;
       }
       this.pmathConversion.status = 'converting';
+      this.pmathNativeConfirmed = false;
       this.pmathConversion.coinsBefore = available;
       this.pmathConversion.message = `Converting ${available} PMath coins to pesos…`;
       await this.setStatus(this.pmathConversion.message);
@@ -611,14 +621,14 @@ class ChromePilot {
       if (!result || result.status === 'no-btn') result = await this.callApi('pmathDoConvert', { amount:available });
       if (!result || !/clicked|converted/.test(result.status || '')) throw new Error(`Conversion control unavailable (${result?.status || 'unknown'})`);
       const confirmation = await this.callApi('pmathConfirmPreparedConversion');
-      if (confirmation?.status !== 'confirmed') throw new Error(`PMath confirmation flow stopped at ${confirmation?.status || 'unknown'}`);
+      if (confirmation?.status !== 'confirmed' && !this.pmathNativeConfirmed) throw new Error(`PMath confirmation flow stopped at ${confirmation?.status || 'unknown'}`);
       const expectedRemainder = available % 100;
       let coinsAfter = NaN;
       let pageText = '';
       for (let i = 0; i < 30; i++) {
         await sleep(1000);
         const afterMeta = await this.callApi('pmathGetMeta').catch(() => null);
-        coinsAfter = Number(afterMeta?.coins);
+        coinsAfter = afterMeta?.coins == null ? NaN : Number(afterMeta.coins);
         pageText = await this.page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 1600)).catch(() => '');
         if ((Number.isFinite(coinsAfter) && coinsAfter <= expectedRemainder) || /coins converted successfully/i.test(pageText)) break;
       }
@@ -626,7 +636,7 @@ class ChromePilot {
       await sleep(2000);
       await this.installPageRuntime();
       const afterMeta = await this.callApi('pmathGetMeta').catch(() => null);
-      const workCoins = Number(afterMeta?.coins);
+      const workCoins = afterMeta?.coins == null ? NaN : Number(afterMeta.coins);
       if (Number.isFinite(workCoins)) coinsAfter = workCoins;
       const succeeded = (Number.isFinite(coinsAfter) && coinsAfter <= expectedRemainder) || /coins converted successfully|conversion receipt/i.test(pageText);
       if (!succeeded) throw new Error('PMath did not confirm the coin conversion');
@@ -647,14 +657,28 @@ class ChromePilot {
       await this.setStatus(this.pmathConversion.message);
       return false;
     } finally {
-      if (!/pmath100\.com\/games-mathproblem/i.test(this.page.url())) {
+      if (this.pmathConversion.status !== 'failed' && !this.verificationHold && !await this.detectVerification() && !/pmath100\.com\/games-mathproblem/i.test(this.page.url())) {
         await this.page.goto(WORK_URL, { waitUntil:'domcontentloaded', timeout:30000 }).catch(() => {});
       }
       await this.installPageRuntime();
       this.lastActivityAt = Date.now();
       this.lastProgressAt = this.lastActivityAt;
       this.pending = null;
+      this.mathPending = null;
     }
+  }
+
+  async preparePmathPayout() {
+    if (TASK_MODE !== 'math') return false;
+    if (!/pmath100\.com\/convert-coins/i.test(this.page.url())) {
+      await this.page.goto(PMATH_CONVERT_URL, { waitUntil:'domcontentloaded', timeout:30000 });
+      await sleep(2000);
+    }
+    await this.installPageRuntime();
+    const meta = await this.callApi('pmathGetMeta').catch(() => null);
+    const coins = Number(meta?.convertible ?? meta?.coins ?? 0);
+    if (!Number.isFinite(coins) || coins < 100) return true;
+    return this.convertPmathCoins(coins, { force:true, minimumCoins:100 });
   }
 
   async syncDashboardMeta(force = false) {
@@ -674,7 +698,7 @@ class ChromePilot {
   }
 
   async iteration() {
-    if (this.encashment?.busy) return;
+    if (this.encashment?.busy || this.pmathCashout?.busy) return;
     if (Date.now() < this.nextIterationAt) return;
     if (this.paused) { await this.updateOverlay(); return; }
     if (await guardBrowserRecovery(this, WORK_URL)) return;
@@ -923,6 +947,7 @@ class ChromePilot {
       await sleep(this.verificationHold ? 1500 : 750);
     }
     this.encashment?.stop();
+    this.pmathCashout?.stop();
     await this.context?.close().catch(() => {});
     await this.updateOverlay();
     this.log('Pilot stopped; Chrome profile was kept in place.');

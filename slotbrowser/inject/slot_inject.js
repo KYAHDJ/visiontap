@@ -310,6 +310,8 @@
   ];
 
   function nukeAds() {
+    // Conversion dialogs and their hidden templates belong to the transaction.
+    if (/\/convert-coins/i.test(location.pathname)) return;
     try {
       AD_SELECTORS.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => {
@@ -1003,13 +1005,18 @@
     const buttons = () => Array.from(document.querySelectorAll('button,a.btn,input[type="button"],input[type="submit"],[role="button"]')).filter(visible);
     const dismiss = buttons().find(el => /^(cancel|close|×|x)$/i.test((el.innerText || el.value || el.getAttribute('aria-label') || '').trim())) ||
       Array.from(document.querySelectorAll('.btn-close,.close,[data-bs-dismiss="modal"],[data-dismiss="modal"]')).find(visible);
-    if (!dismiss) return { status:'no-dismiss' };
-    dismiss.click();
-    await sleep(400);
-    const convert = buttons().find(el => /^convert coins$/i.test((el.innerText || el.value || '').trim()));
-    if (!convert) return { status:'no-convert-coins' };
-    convert.click();
-    let confirm = null;
+    let confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
+    if (!confirm) {
+      if (dismiss) { dismiss.click(); await sleep(400); }
+      let convert = null;
+      for (let i = 0; i < 40 && !convert && !confirm; i++) {
+        confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
+        convert = buttons().find(el => /^convert coins$/i.test((el.innerText || el.value || '').trim()) && !el.disabled);
+        if (!convert && !confirm) await sleep(250);
+      }
+      if (!convert && !confirm) return { status:'no-convert-coins' };
+      if (!confirm) convert.click();
+    }
     for (let i = 0; i < 20 && !confirm; i++) {
       await sleep(250);
       confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
