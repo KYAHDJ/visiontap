@@ -17,10 +17,11 @@ Restart=always
 RestartSec=5
 TimeoutStopSec=20
 KillMode=mixed
-# Eight full Chrome profiles share four vCPUs. Cap each worker group so one
-# animated page cannot starve the other accounts, VNC, or the shared scanner.
+# Seven full Chrome profiles share four vCPUs. Each worker is capped so one
+# animated page cannot starve the others, VNC, or the shared scanner, while
+# still leaving enough CPU to finish ~250 task points inside each ECNL hour.
 CPUAccounting=true
-CPUQuota=38%
+CPUQuota=60%
 
 [Install]
 WantedBy=multi-user.target
