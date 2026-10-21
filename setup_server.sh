@@ -51,7 +51,7 @@ npm --prefix slotbrowser ci --omit=dev
 
 # Install Chrome-only services and account configuration.
 sudo install -m 0644 visiontap-xvfb.service visiontap-openbox.service visiontap-vnc.service \
-  visiontap-scanner.service visiontap-dashboard.service visiontap-watchdog.service \
+  visiontap-scanner.service visiontap-dashboard.service \
   visiontap-chrome@.service /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/system/visiontap-dashboard.service.d
 sudo install -m 0644 visiontap-dashboard-remote.conf /etc/systemd/system/visiontap-dashboard.service.d/remote.conf
@@ -63,7 +63,7 @@ sudo systemctl disable --now visiontap-electron.service 2>/dev/null || true
 sudo visudo -cf visiontap-recovery.sudoers
 sudo install -o root -g root -m 0440 visiontap-recovery.sudoers /etc/sudoers.d/visiontap-recovery
 sudo systemctl daemon-reload
-sudo systemctl enable visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-scanner visiontap-dashboard visiontap-watchdog
+sudo systemctl enable visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-scanner visiontap-dashboard
 sudo systemctl enable visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin visiontap-chrome@yaminiko
 
 echo "=== Setup complete at $(date) ==="
