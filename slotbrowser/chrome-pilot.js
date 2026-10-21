@@ -10,6 +10,7 @@ const { spawn } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { chromium } = require('playwright-core');
 const { ChromeEncashmentController } = require('./chrome-encashment');
+const { PmathCashoutController } = require('./pmath-cashout');
 
 const ACCOUNT = String(process.env.VT_ACCOUNT || 'adaihbi').trim().toLowerCase();
 const SLOT_ID = String(process.env.VT_SLOT_ID || '11');
@@ -19,11 +20,12 @@ const WORK_URL = TASK_MODE === 'math' ? 'https://pmath100.com/games-mathproblem#
 const PMATH_CONVERT_URL = 'https://pmath100.com/convert-coins';
 const PMATH_CONVERT_THRESHOLD = 30000;
 const PMATH_CONVERT_RETRY_MS = 300000;
-const SUBMIT_DELAYS = { adaihbi: 0, temi: 300, axceling1001: 600, clarencebopis: 900, connormofu: 1100, jinninijin: 450, yaminiko: 750, jerrytomaton: 1050, kyaiko: 0 };
+const SUBMIT_DELAYS = { adaihbi: 0, temi: 300, axceling1001: 600, clarencebopis: 900, connormofu: 1100, jinninijin: 450, yaminiko: 750, jerrytomaton: 1050, deartheodosia: 0, aaronburr: 300, alexander1001: 500, elizabeth1001: 700, danicajgb: 3900, dianajanelle: 3700, darlenejoyce: 4000, nnnikkikim: 4100, dncjnnpabo22: 4300, kyaiko: 0 };
 const SUBMIT_DELAY_MS = Number(process.env.VT_SUBMIT_DELAY_MS ?? SUBMIT_DELAYS[ACCOUNT] ?? 0);
-const ENCASHMENT_ACCOUNTS = new Set(['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu', 'jinninijin', 'yaminiko', 'jerrytomaton']);
+const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton','danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','alexander1001','elizabeth1001','deartheodosia','aaronburr']);
 const STALL_RESET_MS = 15000;
 const ECNL_CHECKING_STALL_MS = 30000;
+const HOLD_STALL_RESET_MS = 30000;
 const SCANNER_URL = 'http://127.0.0.1:5566';
 const MATH_SCANNER_URL = process.env.VT_MATH_SCANNER_URL || SCANNER_URL;
 const MATH_SCANNER_TIMEOUT_MS = Number(process.env.VT_MATH_SCANNER_TIMEOUT_MS || 30000);
@@ -102,6 +104,7 @@ class ChromePilot {
     this.lastProgressAt = this.lastActivityAt;
     this.lastConfirmedProgressAt = this.lastActivityAt;
     this.lastReloadAt = 0;
+    this.lastPmathSoftRecoveryAt = 0;
     this.recoveryReloads = 0;
     this.startedAt = Date.now();
     this.loopStartTime = this.startedAt;
@@ -114,13 +117,15 @@ class ChromePilot {
     this.statusText = `Starting ${ACCOUNT} Chrome pilot…`;
     this.injectSource = fs.readFileSync(INJECT_PATH, 'utf8');
     this.adBlockSource = fs.readFileSync(AD_BLOCK_PATH, 'utf8');
-    this.lastCommandNonce = null;
+    this.lastCommandNonce = (() => { try { return JSON.parse(fs.readFileSync(PILOT_COMMAND_FILE,'utf8')).nonce || null; } catch (_) { return null; } })();
     this.verificationClearStreak = 0;
+    this.holdStallSince = 0;
     this.lastHoldScreenshotAt = 0;
     this.resumeArmed = false;
     this.serverRecoveryActive = false;
     this.nextServerErrorCheckAt = 0;
     this.encashment = ENCASHMENT_ACCOUNTS.has(ACCOUNT) ? new ChromeEncashmentController(this, PILOT_STATE_DIR, ACCOUNT) : null;
+    this.pmathCashout = TASK_MODE === 'math' ? new PmathCashoutController(this, PILOT_STATE_DIR) : null;
   }
 
   log(message) {
@@ -193,11 +198,24 @@ class ChromePilot {
         ,'--disable-session-crashed-bubble'
       ]
     });
+    await this.context.addInitScript(() => {
+      const install = () => {
+        if (document.getElementById('vt-performance-style')) return;
+        const style = document.createElement('style');
+        style.id = 'vt-performance-style';
+        style.textContent = '*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}';
+        (document.head || document.documentElement).appendChild(style);
+      };
+      if (document.documentElement) install();
+      else addEventListener('DOMContentLoaded', install, { once:true });
+    });
     this.log('Chrome context is connected.');
 
     const pages = this.context.pages();
     this.page = pages.find(p => /ecnlmediamarket\.com|pmath100\.com/i.test(p.url())) || pages[0] || await this.context.newPage();
     for (const extra of pages) if (extra !== this.page && extra.url() === 'about:blank') await extra.close().catch(() => {});
+    await this.page.bringToFront().catch(() => {});
+    await this.page.keyboard.press('Control+0').catch(() => {});
     await this.positionWindow();
 
     this.log('Dashboard file controls are connected.');
@@ -216,13 +234,24 @@ class ChromePilot {
     if (!await this.ensureScanner()) this.log('Scanner remains offline; the loop will keep retrying without submitting.');
     else await this.restoreDashboardCounters();
     this.encashment?.start();
+    this.pmathCashout?.start();
     this.log(`${ACCOUNT} pilot started. Close Chrome or use Stop in the dashboard to end it.`);
     await this.loop();
   }
 
   async guardPage(page) {
     await page.exposeFunction('__vtSignal', msg => this.handlePageSignal(msg)).catch(() => {});
-    page.on('dialog', dialog => dialog.dismiss().catch(() => {}));
+    page.on('dialog', async dialog => {
+      if (TASK_MODE === 'math' && /\/convert-coins/i.test(page.url()) && this.pmathConversion.status === 'converting') {
+        this.log(`PMath conversion dialog: ${dialog.type()} ${dialog.message().slice(0, 300)}`);
+        if (dialog.type() === 'confirm' && /convert/i.test(dialog.message())) {
+          this.pmathNativeConfirmed = true;
+          await dialog.accept().catch(() => {});
+          return;
+        }
+      }
+      await dialog.dismiss().catch(() => {});
+    });
     page.on('requestfailed', request => {
       if (page === this.page && request.isNavigationRequest() && request.frame() === page.mainFrame()) {
         const code = request.failure()?.errorText || 'Navigation failed';
@@ -245,6 +274,7 @@ class ChromePilot {
       if (frame === page.mainFrame()) {
         this.lastActivityAt = Date.now();
         this.pending = null;
+        this.mathPending = null;
       }
     });
     page.on('close', () => { if (page === this.page) this.stopped = true; });
@@ -265,6 +295,20 @@ class ChromePilot {
     this.running = false;
     await this.setStatus(`Restarting ${ACCOUNT} after 60 seconds without PMath progress…`);
     await this.context?.close().catch(() => {});
+    return true;
+  }
+
+  async softRecoverPmath(reason) {
+    if (TASK_MODE !== 'math' || this.paused || this.verificationHold || await this.detectVerification()) return false;
+    if (this.lastPmathSoftRecoveryAt && Date.now() - this.lastPmathSoftRecoveryAt < 60000) return false;
+    this.lastPmathSoftRecoveryAt = Date.now();
+    this.mathPending = null;
+    this.pending = null;
+    this.epoch++;
+    this.log(`PMATH-SOFT-RECOVERY: ${reason}; reopening the work page without restarting Chrome.`);
+    await this.setStatus('PayMath task stalled for 30 seconds. Reopening its work page…');
+    await this.page.goto(WORK_URL, { waitUntil:'domcontentloaded', timeout:30000 }).catch(() => {});
+    await this.installPageRuntime();
     return true;
   }
 
@@ -364,6 +408,7 @@ class ChromePilot {
           !!document.querySelector('iframe[src*="challenges.cloudflare.com"], iframe[src*="/cdn-cgi/challenge-platform"], input[name="cf-turnstile-response"], .cf-turnstile');
       };
       const removeAds = () => {
+        if (/convert-coins/i.test(location.pathname)) return;
         const selectors = ['iframe[src*="googleads"]','iframe[src*="doubleclick"]','iframe[id*="aswift"]','.adsbygoogle','ins.adsbygoogle','#google_vignette','.google-auto-placed','[aria-label*="advertisement" i]'];
         for (const sel of selectors) document.querySelectorAll(sel).forEach(el => el.remove());
         document.querySelectorAll('div,section,aside').forEach(el => {
@@ -469,7 +514,7 @@ class ChromePilot {
         time, elapsed, loopStartTime:this.loopStartTime, updatedAt: Date.now(), lastProgressAt: this.lastProgressAt,
         siteRecoveryWaitUntil: this.siteRecoveryWaitUntil || 0, recoveryResumeUntil: this.recoveryResumeUntil || 0,
         lastConfirmedProgressAt: this.lastConfirmedProgressAt, browserRecoveryActive: !!this.browserRecoveryActive,
-        encashmentBusy: !!this.encashment?.busy,
+        encashmentBusy: !!this.encashment?.busy || !!this.pmathCashout?.busy,
         lastReloadAt: this.lastReloadAt, recoveryReloads: this.recoveryReloads,
         pmathConversion: TASK_MODE === 'math' ? this.pmathConversion : undefined
       }, null, 2));
@@ -535,7 +580,7 @@ class ChromePilot {
       await this.context?.close().catch(() => {});
       return false;
     }
-    this.lastReloadAt = Date.now(); this.pending = null; this.epoch++;
+    this.lastReloadAt = Date.now(); this.pending = null; this.mathPending = null; this.epoch++;
     if (recovery) this.recoveryReloads++;
     this.log(`Safe reload ${this.recoveryReloads}: ${reason}`);
     await this.setStatus(`Safe reload: ${reason}`);
@@ -570,9 +615,11 @@ class ChromePilot {
     }, 5000).catch(() => {});
   }
 
-  async convertPmathCoins(observedCoins = null) {
+  async convertPmathCoins(observedCoins = null, options = {}) {
     if (TASK_MODE !== 'math' || this.paused || this.verificationHold) return false;
-    if (this.pmathConversion.lastAttemptAt && Date.now() - this.pmathConversion.lastAttemptAt < PMATH_CONVERT_RETRY_MS) return false;
+    const force = options.force === true;
+    const minimumCoins = Math.max(100, Number(options.minimumCoins || PMATH_CONVERT_THRESHOLD));
+    if (!force && this.pmathConversion.lastAttemptAt && Date.now() - this.pmathConversion.lastAttemptAt < PMATH_CONVERT_RETRY_MS) return false;
     this.pmathConversion.lastAttemptAt = Date.now();
     this.pmathConversion.status = 'checking';
     this.pmathConversion.coinsBefore = Number.isFinite(Number(observedCoins)) ? Number(observedCoins) : null;
@@ -585,18 +632,16 @@ class ChromePilot {
       }
       await this.installPageRuntime();
       const meta = await this.callApi('pmathGetMeta').catch(() => null);
-      const available = Math.max(
-        Number(this.pmathConversion.coinsBefore || 0),
-        Number(meta?.convertible || 0),
-        Number(meta?.coins || 0)
-      );
-      if (!Number.isFinite(available) || available < PMATH_CONVERT_THRESHOLD) {
+      const pageCoins = Number(meta?.convertible ?? meta?.coins);
+      const available = Number.isFinite(pageCoins) ? pageCoins : Number(this.pmathConversion.coinsBefore || 0);
+      if (!Number.isFinite(available) || available < minimumCoins) {
         this.pmathConversion.status = 'waiting';
         this.pmathConversion.message = `Conversion skipped: ${Number.isFinite(available) ? available : 0} coins available.`;
         await this.setStatus(this.pmathConversion.message);
         return false;
       }
       this.pmathConversion.status = 'converting';
+      this.pmathNativeConfirmed = false;
       this.pmathConversion.coinsBefore = available;
       this.pmathConversion.message = `Converting ${available} PMath coins to pesos…`;
       await this.setStatus(this.pmathConversion.message);
@@ -604,14 +649,18 @@ class ChromePilot {
       if (!result || result.status === 'no-btn') result = await this.callApi('pmathDoConvert', { amount:available });
       if (!result || !/clicked|converted/.test(result.status || '')) throw new Error(`Conversion control unavailable (${result?.status || 'unknown'})`);
       const confirmation = await this.callApi('pmathConfirmPreparedConversion');
-      if (confirmation?.status !== 'confirmed') throw new Error(`PMath confirmation flow stopped at ${confirmation?.status || 'unknown'}`);
+      if (confirmation?.status !== 'confirmed' && !this.pmathNativeConfirmed) {
+        const controls = await this.page.evaluate(() => [...document.querySelectorAll('button,[role="dialog"],.swal2-popup')].filter(el => el.getBoundingClientRect().width > 0).map(el => el.innerText).join(' | ').slice(0, 1400)).catch(() => '');
+        this.log(`PMath conversion visible controls: ${controls}`);
+        throw new Error(`PMath confirmation flow stopped at ${confirmation?.status || 'unknown'}`);
+      }
       const expectedRemainder = available % 100;
       let coinsAfter = NaN;
       let pageText = '';
       for (let i = 0; i < 30; i++) {
         await sleep(1000);
         const afterMeta = await this.callApi('pmathGetMeta').catch(() => null);
-        coinsAfter = Number(afterMeta?.coins);
+        coinsAfter = afterMeta?.coins == null ? NaN : Number(afterMeta.coins);
         pageText = await this.page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 1600)).catch(() => '');
         if ((Number.isFinite(coinsAfter) && coinsAfter <= expectedRemainder) || /coins converted successfully/i.test(pageText)) break;
       }
@@ -619,7 +668,7 @@ class ChromePilot {
       await sleep(2000);
       await this.installPageRuntime();
       const afterMeta = await this.callApi('pmathGetMeta').catch(() => null);
-      const workCoins = Number(afterMeta?.coins);
+      const workCoins = afterMeta?.coins == null ? NaN : Number(afterMeta.coins);
       if (Number.isFinite(workCoins)) coinsAfter = workCoins;
       const succeeded = (Number.isFinite(coinsAfter) && coinsAfter <= expectedRemainder) || /coins converted successfully|conversion receipt/i.test(pageText);
       if (!succeeded) throw new Error('PMath did not confirm the coin conversion');
@@ -640,14 +689,28 @@ class ChromePilot {
       await this.setStatus(this.pmathConversion.message);
       return false;
     } finally {
-      if (!/pmath100\.com\/games-mathproblem/i.test(this.page.url())) {
+      if (this.pmathConversion.status !== 'failed' && !this.verificationHold && !await this.detectVerification() && !/pmath100\.com\/games-mathproblem/i.test(this.page.url())) {
         await this.page.goto(WORK_URL, { waitUntil:'domcontentloaded', timeout:30000 }).catch(() => {});
       }
       await this.installPageRuntime();
       this.lastActivityAt = Date.now();
       this.lastProgressAt = this.lastActivityAt;
       this.pending = null;
+      this.mathPending = null;
     }
+  }
+
+  async preparePmathPayout() {
+    if (TASK_MODE !== 'math') return false;
+    if (!/pmath100\.com\/convert-coins/i.test(this.page.url())) {
+      await this.page.goto(PMATH_CONVERT_URL, { waitUntil:'domcontentloaded', timeout:30000 });
+      await sleep(2000);
+    }
+    await this.installPageRuntime();
+    const meta = await this.callApi('pmathGetMeta').catch(() => null);
+    const coins = Number(meta?.convertible ?? meta?.coins ?? 0);
+    if (!Number.isFinite(coins) || coins < 100) return true;
+    return this.convertPmathCoins(coins, { force:true, minimumCoins:100 });
   }
 
   async syncDashboardMeta(force = false) {
@@ -667,7 +730,7 @@ class ChromePilot {
   }
 
   async iteration() {
-    if (this.encashment?.busy) return;
+    if (this.encashment?.busy || this.pmathCashout?.busy) return;
     if (Date.now() < this.nextIterationAt) return;
     if (this.paused) { await this.updateOverlay(); return; }
     if (await guardBrowserRecovery(this, WORK_URL)) return;
@@ -708,8 +771,28 @@ class ChromePilot {
       }).catch(() => ({ onLogin: false, onWork: false, challenged: true, loginReady: false, authenticatedHome: false, workReady: false }));
       const clearPage = !readiness.challenged && (readiness.loginReady || readiness.authenticatedHome || readiness.workReady);
       this.verificationClearStreak = clearPage ? this.verificationClearStreak + 1 : 0;
+      if (clearPage || readiness.challenged) this.holdStallSince = 0;
+      else this.holdStallSince ||= Date.now();
       const requiredClearChecks = (readiness.loginReady || readiness.authenticatedHome) ? 3 : 5;
       if (this.verificationClearStreak < requiredClearChecks) {
+        if (!readiness.challenged) {
+          const stalledMs = Date.now() - (this.holdStallSince || Date.now());
+          if (stalledMs >= HOLD_STALL_RESET_MS) {
+            this.log(`HOLD-STALL: task page stuck ${Math.round(stalledMs / 1000)}s with no verification challenge; reopening the work page.`);
+            this.verificationHold = false; this.resumeArmed = false; this.verificationClearStreak = 0; this.holdStallSince = 0;
+            this.epoch++;
+            await this.page.goto(WORK_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+            await this.installPageRuntime();
+            this.lastActivityAt = Date.now(); this.lastProgressAt = this.lastActivityAt;
+            await this.setStatus('Task page was stuck; reopened it automatically. No verification was required.');
+            return;
+          }
+          const secondsLeft = Math.max(1, Math.ceil((HOLD_STALL_RESET_MS - stalledMs) / 1000));
+          await this.setStatus(this.resumeArmed
+            ? `Resume armed. Task page not ready yet; auto-refresh in ${secondsLeft}s if no verification appears.`
+            : `Task page not ready (no verification detected). Auto-refresh in ${secondsLeft}s if it stays stuck.`);
+          return;
+        }
         const waitText = readiness.onLogin ? `Waiting for a clear ${ACCOUNT} login form…` : 'Waiting for the task page to remain stable…';
         await this.setStatus(this.resumeArmed
           ? `Resume armed. ${waitText}`
@@ -718,6 +801,7 @@ class ChromePilot {
       }
       if (readiness.loginReady) {
         this.verificationClearStreak = 0;
+        if (!this.loadCredentials()) { await this.setStatus(`Login required for ${ACCOUNT}. Credentials have not been added.`); return; }
         await this.setStatus(`Verification cleared. Signing in with the saved ${ACCOUNT} account…`);
         const submitted = await this.tryLogin();
         if (!submitted) await this.setStatus('Saved credentials exist, but the login form is not ready yet.');
@@ -777,7 +861,9 @@ class ChromePilot {
     if (!image) {
       this.consecutiveNoImage++;
       if (TASK_MODE === 'math') {
-        if (Date.now() - this.lastProgressAt >= 60000) await this.restartStalledWorker('no task image');
+        const stalledFor = Date.now() - this.lastProgressAt;
+        if (stalledFor >= 60000) await this.restartStalledWorker('no task image');
+        else if (stalledFor >= 30000) await this.softRecoverPmath('no task image');
         else await this.setStatus('PMath has no task image yet. Retrying…');
       } else if (this.consecutiveNoImage >= 8) await this.safeReload('no-image-x8');
       else await this.setStatus(`Waiting for ECNL task transition (${this.consecutiveNoImage}/8)…`);
@@ -790,11 +876,15 @@ class ChromePilot {
       this.lastProgressAt = Date.now();
       this.lastActivityAt = this.lastProgressAt;
       this.recoveryReloads = 0;
+      this.lastPmathSoftRecoveryAt = 0;
       this.consecutiveDetectFails = 0;
       this.notReadySince = 0;
     }
     if (imageHash === this.lastSubmittedHash) {
-      if (Date.now() - this.lastProgressAt > STALL_RESET_MS) await this.safeReload('same-image-stall');
+      const stalledFor = Date.now() - this.lastProgressAt;
+      if (TASK_MODE === 'math' && stalledFor >= 60000) await this.restartStalledWorker('same task image');
+      else if (TASK_MODE === 'math' && stalledFor >= 30000) await this.softRecoverPmath('same task image');
+      else if (TASK_MODE !== 'math' && Date.now() - this.lastProgressAt > STALL_RESET_MS) await this.safeReload('same-image-stall');
       else await this.setStatus('Waiting for the next task…');
       return;
     }
@@ -835,7 +925,7 @@ class ChromePilot {
         return;
       }
       this.notReadySince = 0;
-      this.taskCount++; this.lastSubmittedHash = imageHash; this.lastErrorHash = null; this.lastActivityAt = Date.now(); this.lastProgressAt = this.lastActivityAt;
+      this.taskCount++; this.lastSubmittedHash = imageHash; this.lastErrorHash = null; this.mathPending = null; this.lastActivityAt = Date.now(); this.lastProgressAt = this.lastActivityAt;
       const meta = await this.callApi('pmathGetMeta').catch(() => null);
       if (meta?.coins != null && !Number.isNaN(Number(meta.coins))) {
         this.pointsDone = Number(meta.coins); this.withdrawable = Number(meta.coins);
@@ -881,6 +971,7 @@ class ChromePilot {
     const filled = await this.callApi('fill', { answer: this.pending.answer, delayMs: SUBMIT_DELAY_MS, expectedImage: this.pending.image, epoch });
     if (epoch !== this.epoch || this.paused || this.verificationHold) return;
     if (filled?.status !== 'filled') {
+      if (['task-changed','input-changed','cancelled'].includes(filled?.status)) { this.pending=null;this.notReadySince=0;this.lastProgressAt=Date.now();await this.setStatus('Task changed during the answer delay; scanning the current task again…');return; }
       this.notReadySince ||= Date.now();
       if (Date.now() - this.notReadySince > STALL_RESET_MS) await this.safeReload('submit-not-ready-stall');
       else await this.setStatus(`Submission deferred (${filled?.status || 'not ready'}).`);
@@ -910,6 +1001,7 @@ class ChromePilot {
       await sleep(this.verificationHold ? 1500 : 750);
     }
     this.encashment?.stop();
+    this.pmathCashout?.stop();
     await this.context?.close().catch(() => {});
     await this.updateOverlay();
     this.log('Pilot stopped; Chrome profile was kept in place.');

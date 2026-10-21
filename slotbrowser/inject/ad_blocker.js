@@ -6,6 +6,7 @@
   window.__vtAdBlockInstalled = true;
 
   function nuke() {
+    if (/\/convert-coins/i.test(location.pathname)) return;
     // The full page runtime owns cleanup once installed; avoid duplicate scans.
     if (window.__vtapi) return;
     try {
