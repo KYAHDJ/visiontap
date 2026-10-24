@@ -640,7 +640,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;backgrou
 @media(max-width:860px){.mini-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.mini-summary-grid{grid-template-columns:1fr 1fr;gap:7px}.mini-slot{padding:10px}.mini-slot-head{align-items:flex-start;flex-direction:column;gap:2px}.mini-slot-values{grid-template-columns:1fr}.mini-slot-when{grid-column:1}}
 @media(max-width:390px){.mini-summary-grid{grid-template-columns:1fr}.mini-slot-head{align-items:center;flex-direction:row}}
-.overview{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}.ov{min-height:110px;background:#fff;border:1px solid var(--border);border-radius:17px;padding:16px;box-shadow:var(--shadow);display:flex;flex-direction:column}.ov.primary{background:var(--accent);border-color:var(--accent);color:#fff}.ov small{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}.ov.primary small{color:#dcd8ff}.ov strong{font-size:26px;letter-spacing:-.05em;margin-top:auto}.ov span{font-size:9px;color:var(--muted);margin-top:3px}.ov.primary span{color:#d7d3ff}.ov.next strong{font-size:18px}.ovicon{width:29px;height:29px;border-radius:9px;background:#eceaff;color:var(--accent);display:grid;place-items:center;font-size:14px;margin-bottom:12px}.primary .ovicon{background:rgba(255,255,255,.16);color:#fff}.ov.health .ovicon{background:#e7f7ef;color:var(--green)}.ov.next .ovicon{background:#fff0e5;color:#d96f2e}
+.overview{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}.ov{min-height:110px;background:#fff;border:1px solid var(--border);border-radius:17px;padding:16px;box-shadow:var(--shadow);display:flex;flex-direction:column}.ov.primary{background:var(--accent);border-color:var(--accent);color:#fff}.ov small{font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}.ov.primary small{color:#dcd8ff}.ov strong{font-size:26px;letter-spacing:-.05em;margin-top:auto}.ov span{font-size:9px;color:var(--muted);margin-top:3px}.ov.primary span{color:#d7d3ff}.ov.next strong{font-size:18px}.ov.next strong.multi{font-size:14px;line-height:1.25;letter-spacing:-.02em;white-space:normal;overflow-wrap:anywhere}@media(max-width:520px){.ov.next strong.multi{font-size:11px}}.ovicon{width:29px;height:29px;border-radius:9px;background:#eceaff;color:var(--accent);display:grid;place-items:center;font-size:14px;margin-bottom:12px}.primary .ovicon{background:rgba(255,255,255,.16);color:#fff}.ov.health .ovicon{background:#e7f7ef;color:var(--green)}.ov.next .ovicon{background:#fff0e5;color:#d96f2e}
 .pills{justify-content:flex-start;margin:0 0 12px}.pill{background:#fff;border-color:var(--border);box-shadow:0 3px 10px rgba(25,17,77,.03);color:#4b4a68;padding:6px 10px;border-radius:8px}
 .stitle{font-size:11px;color:var(--midnight);margin:30px 0 11px;letter-spacing:.08em}.section-aiko-title,.section-danica-title,.section-darlene-title{color:var(--midnight);background:transparent;border:0;border-bottom:1px solid #dcdaeb;border-radius:0;padding:0 0 10px}.section-aiko-title:before,.section-danica-title:before,.section-darlene-title:before{content:'';display:inline-block;width:3px;height:14px;border-radius:4px;background:var(--accent);margin-right:8px;vertical-align:-2px}.section-danica-title:before{background:var(--coral)}.section-darlene-title:before{background:var(--green)}
 #slots-aiko,#slots-danica,#slots-darlene{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
@@ -830,8 +830,11 @@ function nextEncashment(slots,now){
     if(days===0&&minutes>=end*60)days=7;
     var date=new Date(base+days*86400000),dateText=new Intl.DateTimeFormat('en-PH',{timeZone:'UTC',month:'short',day:'numeric'}).format(date);
     return {slot:slot,schedule:schedule,days:days,sort:days*1440+(days===0?Math.max(0,start*60-minutes):start*60),dateText:dateText};
-  }).filter(Boolean).sort(function(a,b){return a.sort-b.sort});
-  return candidates[0]||null;
+  }).filter(Boolean).sort(function(a,b){return a.sort-b.sort||String(a.slot.accountName||a.slot.name||'').toLowerCase().localeCompare(String(b.slot.accountName||b.slot.name||'').toLowerCase())});
+  var first=candidates[0]||null;
+  if(!first)return null;
+  first.group=candidates.filter(function(c){return c.days===first.days&&Number(c.schedule.startHour)===Number(first.schedule.startHour)&&Number(c.schedule.endHour)===Number(first.schedule.endHour)});
+  return first;
 }
 
 function nextCashoutProjection(slot,now){
@@ -858,9 +861,9 @@ function nextCashoutProjection(slot,now){
       var thresholdWeekday=new Intl.DateTimeFormat('en-US',{timeZone:PH_TIME_ZONE,weekday:'short'}).format(thresholdDate);
       if(thresholdWeekday==='Sat')thresholdDate=new Date(thresholdDate.getTime()+2*86400000);
       if(thresholdWeekday==='Sun')thresholdDate=new Date(thresholdDate.getTime()+86400000);
-      var thresholdDay=new Intl.DateTimeFormat('en-US',{timeZone:PH_TIME_ZONE,weekday:'long'}).format(thresholdDate);
+      var thresholdDay=new Intl.DateTimeFormat('en-US',{timeZone:PH_TIME_ZONE,weekday:'long'}).format(thresholdDate),thresholdSortDay=weekdays[new Intl.DateTimeFormat('en-US',{timeZone:PH_TIME_ZONE,weekday:'short'}).format(thresholdDate)];
       var thresholdDateText=new Intl.DateTimeFormat('en-PH',{timeZone:PH_TIME_ZONE,month:'short',day:'numeric'}).format(thresholdDate);
-      return {amount:thresholdAmount,netAmount:thresholdAmount*0.90,deductionRate:0.10,hoursUntil:thresholdHours,eligible:thresholdAmount>=300,whenText:thresholdDay+' · '+thresholdDateText+' · projected ₱300 eligibility'};
+      return {amount:thresholdAmount,netAmount:thresholdAmount*0.90,deductionRate:0.10,hoursUntil:thresholdHours,eligible:thresholdAmount>=300,sortDay:thresholdSortDay,sortStart:8,whenText:thresholdDay+' · '+thresholdDateText+' · projected ₱300 eligibility'};
     }
     days=(scheduledDay-today+7)%7;
     if(days===0&&minutes>=end*60)days=7;
@@ -888,7 +891,7 @@ function nextCashoutProjection(slot,now){
   var whenText=(amount>=300?dayLabel:'Not yet predictable')+' · '+start+':00–'+end+':00 AM PH';
   var payoutType=String(schedule.type||'task').toLowerCase();
   var deductionRate=payoutType==='network'?0.15:0.10;
-  return {amount:amount,netAmount:amount*(1-deductionRate),deductionRate:deductionRate,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
+  return {amount:amount,netAmount:amount*(1-deductionRate),deductionRate:deductionRate,hoursUntil:hoursUntil,eligible:amount>=300,sortDay:scheduledDay,sortStart:start,whenText:whenText};
 }
 
 function updateEarningsForecast(slots,now){
@@ -934,6 +937,20 @@ function refreshBalanceChangeTimers(){
   document.querySelectorAll('[data-balance-start]').forEach(function(element){
     element.textContent=formatBalanceChangeTimer(element.getAttribute('data-balance-start'),now);
   });
+}
+
+// Order accounts by payout weekday (Mon, Mon, Tue, Tue ... Fri). PayMath (Kyaiko) is not
+// an ECNL account, so it is always placed at the very end of the dashboard.
+function sortSlotsByPayout(slots,now){
+  var rank=function(day){return day==null||!Number.isFinite(Number(day))?99:(Number(day)===0?7:Number(day))};
+  var keyed=(slots||[]).map(function(slot,index){
+    var projection=null;try{projection=nextCashoutProjection(slot,now)}catch(e){}
+    var schedule=slot.encashmentSchedule||{},start=Number(projection&&projection.sortStart!=null?projection.sortStart:schedule.startHour);
+    var isPmath=String(slot.id)==='14'||String(slot.accountName||slot.name||'').toLowerCase()==='kyaiko';
+    return {slot:slot,index:index,day:isPmath?1000:rank(projection?projection.sortDay:null),start:Number.isFinite(start)?start:99,name:String(slot.accountName||slot.name||'').toLowerCase()};
+  });
+  keyed.sort(function(a,b){return a.day-b.day||a.start-b.start||a.name.localeCompare(b.name)||a.index-b.index});
+  return keyed.map(function(item){return item.slot});
 }
 
 function renderMiniSummary(slots,pilots,now){
@@ -1032,7 +1049,7 @@ function renderDailyPayout(slots,pmathPayouts,now){
   wrap.hidden=false;
 }
 function render(d){
-  var slots=(d.slots||[]).filter(function(s){return String(s.accountName||'').toLowerCase()!=='darlenejoyce'});
+  var slots=sortSlotsByPayout((d.slots||[]).filter(function(s){return String(s.accountName||'').toLowerCase()!=='darlenejoyce'}),new Date());
   var pilots=d.chromePilots||[],pilot=d.chromePilot||{};
   var aikoSlots = slots;
   document.getElementById('scnt-aiko').textContent=aikoSlots.length;
@@ -1046,7 +1063,9 @@ function render(d){
   document.getElementById('app-state-text').textContent=healthy?'System Online':'System Needs Attention';
   document.getElementById('app-live-dot').style.background=healthy?'var(--green)':'var(--red)';
   var now=new Date(),next=nextEncashment(slots,now),dayNames={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
-  document.getElementById('ov-next-day').textContent=next?(next.days===0?'Today':dayNames[next.schedule.weekday])+' · '+String(next.slot.accountName||next.slot.name):'Not scheduled';
+  var nextDayEl=document.getElementById('ov-next-day');
+  nextDayEl.textContent=next?(next.days===0?'Today':dayNames[next.schedule.weekday])+' · '+next.group.map(function(c){return String(c.slot.accountName||c.slot.name)}).join(' + '):'Not scheduled';
+  nextDayEl.className=next&&next.group.length>1?'multi':'';
   document.getElementById('ov-next-time').textContent=next?next.dateText+' · '+next.schedule.startHour+':00–'+next.schedule.endHour+':00 AM PH':'No payout schedule configured';
   updateEarningsForecast(slots,now);
   renderMiniSummary(slots,pilots,now);
