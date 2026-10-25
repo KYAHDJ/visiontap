@@ -24,7 +24,7 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','castiel','aannadiaa','alexander1001','elizabeth1001','deartheodosia','aaronburr','kyaiko','jerrytomaton'];
+const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','castiel','aannadiaa','alexander1001','elizabeth1001','deartheodosia','aaronburr','kyaiko'];
 const CHROME_ACCOUNTS = String(process.env.VT_ACCOUNTS || DEFAULT_CHROME_ACCOUNTS.join(','))
   .split(',').map(account => account.trim().toLowerCase()).filter((account, index, all) => account && all.indexOf(account) === index);
 const ENCASHMENT_ACCOUNTS = new Set(CHROME_ACCOUNTS.filter(account => account !== 'kyaiko'));
@@ -51,12 +51,12 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '21':'castiel', '22':'aannadiaa', '19':'alexander1001', '20':'elizabeth1001', '12':'deartheodosia', '15':'aaronburr', '14':'kyaiko', '23':'jerrytomaton' };
+const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '21':'castiel', '22':'aannadiaa', '19':'alexander1001', '20':'elizabeth1001', '12':'deartheodosia', '15':'aaronburr', '14':'kyaiko' };
 const DASHBOARD_GROUPS = {
   'danica-niki':['danicajgb','nnnikkikim','dncjnnpabo22'],
   'darlene':['darlenejoyce','castiel'],
   'diana':['dianajanelle','aannadiaa'],
-  'theodosia-aaron':['kyaiko','jerrytomaton','alexander1001','elizabeth1001','deartheodosia','aaronburr']
+  'theodosia-aaron':['kyaiko','alexander1001','elizabeth1001','deartheodosia','aaronburr']
 };
 function normalizeDashboardGroup(group = '') {
   const key = String(group || '').toLowerCase();
