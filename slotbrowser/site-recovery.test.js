@@ -33,7 +33,6 @@ test('healthy probe releases task retries separately, not six at once',async t=>
 test('website groups are independent',async t=>{
   const h=setup(t,false);
   await h.clients[0].failure(work,'HTTP 503');
-  await h.clients[1].failure('https://pmath100.com/games-mathproblem','HTTP 503');
   assert.equal(h.count(),2);
 });
 test('progress removes recovered account from shared failure detection',async t=>{

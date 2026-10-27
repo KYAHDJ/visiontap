@@ -34,7 +34,7 @@ class SiteRecovery {
   }
   async failure(workUrl, reason) {
     const host = new URL(workUrl).hostname;
-    if (!['ecnlmediamarket.com', 'pmath100.com'].includes(host)) throw Error('Unknown recovery host');
+    if (!['ecnlmediamarket.com'].includes(host)) throw Error('Unknown recovery host');
     const now = this.now();
     const claim = this.transaction(host, state => {
       state.failures ||= {};

@@ -11,8 +11,7 @@
   const signal = (msg) => { if (host && host.signal) { try { host.signal(msg); } catch (e) {} } };
 
   const COLOR_WORK_URL = "https://ecnlmediamarket.com/solving-colors";
-  const PMATH_WORK_URL = "https://pmath100.com/games-mathproblem#";
-  const WORK_RE = /\/solving-colors|pmath100\.com\/games-mathproblem|pmath100\.com\/convert-coins/;
+  const WORK_RE = /\/solving-colors/;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- Stay on work page (colors or math) ----
@@ -28,13 +27,13 @@
   // ---- EXACT Chrome extension: findAnswerInput ----
   function findAnswerInput() {
     const inputs = Array.from(document.querySelectorAll('input, textarea'));
-    // pmath: TYPE HERE huge placeholder
+    // large "TYPE HERE" placeholder input
     let found = inputs.find(el => {
       const p = ((el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('data-placeholder')||'')).toLowerCase();
       return p.includes('type') || p.includes('answer') || p.includes('type here');
     });
     if (found) return found;
-    // pmath: look for input near TYPE HERE text
+    // input near a "TYPE HERE" label
     const typeHereEl = Array.from(document.querySelectorAll('*')).find(el => (el.innerText||'').trim().toLowerCase() === 'type here');
     if (typeHereEl) {
       const near = typeHereEl.closest('form') || typeHereEl.parentElement;
@@ -43,7 +42,7 @@
         if (inp) return inp;
       }
     }
-    // fallback: any visible input with large size (pmath TYPE HERE is huge)
+    // fallback: any visible input with large size
     const visibles = inputs.filter(el => {
       const st = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
@@ -70,13 +69,7 @@
       return txt.includes('submit') || txt.includes('solve') || txt.includes('answer');
     });
     if (found) return found;
-    // pmath: Convert All / Convert Coins also are submit
-    found = btns.find(b => {
-      const txt = (b.textContent || '').toLowerCase();
-      return txt.includes('convert');
-    });
-    if (found) return found;
-    // pmath fallback: green submit button
+    // fallback: green submit button
     const all = Array.from(document.querySelectorAll('button, [class*="submit"], [class*="Submit"]'));
     for (const b of all) {
       const t = (b.innerText||b.textContent||'').toLowerCase();
@@ -646,9 +639,7 @@
       vt._blankNoTaskLogged = false;
     }
 
-    // pmath: TYPE HERE huge text, allow ready even if isUIFullyLoaded is strict
-    const isPmathPage = /pmath100\.com/i.test(window.location.href);
-    const ready = isPmathPage ? (!!box && !boxHidden && !!btn && !btnHidden && !isBlank2026) : (loaded && imgOk && !boxHidden && !btnHidden && !isBlank2026 && !isBlankNoTask);
+    const ready = loaded && imgOk && !boxHidden && !btnHidden && !isBlank2026 && !isBlankNoTask;
     const boxRect = box ? box.getBoundingClientRect() : null;
     const btnRect = btn ? btn.getBoundingClientRect() : null;
     const newVal = box ? ('' + (box.value || box.textContent || '')).trim() : '';
@@ -918,121 +909,11 @@
     return out;
   };
 
-  // PMATH helpers
-  vt.pmathGetMeta = () => {
-    const out = { coins: null, convertible: null };
-    try {
-      const txt = (document.body ? document.body.innerText : "") || "";
-      // Primary: Coins Balance
-      let m = txt.match(/Coins Balance\s*([0-9,]+)/i);
-      if (m) out.coins = m[1].replace(/,/g,'');
-      if (!out.coins) {
-        m = txt.match(/Balance\s*[:\-]?\s*([0-9,]+)\s*coins?/i);
-        if (m) out.coins = m[1].replace(/,/g,'');
-      }
-      if (!out.coins) {
-        m = txt.match(/([0-9,]+)\s*coins/i);
-        if (m) {
-          // Ensure not convertible, but take first plausible (0-99999)
-          const v = m[1].replace(/,/g,'');
-          if (Number(v) < 100000) out.coins = v;
-        }
-      }
-      if (!out.coins) {
-        m = txt.match(/Coins\D*([0-9,]+)/i);
-        if (m) out.coins = m[1].replace(/,/g,'');
-      }
-      const m2 = txt.match(/Convertible now:\s*([0-9,]+)/i);
-      if (m2) out.convertible = m2[1].replace(/,/g,'');
-      // Fallback: look for element with Coins text
-      if (!out.coins) {
-        const els = Array.from(document.querySelectorAll('*'));
-        for (const el of els) {
-          const t = (el.innerText||'').trim();
-          if (/^\d+$/.test(t) && t.length<5) {
-            const parent = el.parentElement ? el.parentElement.innerText : "";
-            if (/Coins/i.test(parent)) { out.coins = t; break; }
-          }
-        }
-      }
-      // Last resort: any standalone number near top bar with coin icon
-      if (!out.coins) {
-        const top = document.querySelector('[class*="coin"],[class*="balance"],header');
-        if (top) {
-          const mm = (top.innerText||'').match(/([0-9,]+)/);
-          if (mm) out.coins = mm[1].replace(/,/g,'');
-        }
-      }
-    } catch(e){}
-    return out;
-  };
-  vt.pmathDoConvert = async (opts) => {
-    const amount = (opts && opts.amount) ? String(opts.amount) : "100";
-    try {
-      // Find convert input (placeholder Example: 100, 500, 1000)
-      const inputs = Array.from(document.querySelectorAll('input, textarea'));
-      let inp = inputs.find(el => (el.placeholder||'').toLowerCase().includes('example')) || inputs.find(el => el.type==='number' || el.type==='text') || inputs[0];
-      if (!inp) return { status: "no-input" };
-      inp.focus(); inp.click();
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(inp, amount);
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
-      inp.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise(r=>setTimeout(r, 500));
-      // Find Convert All or Convert Coins button
-      const btns = Array.from(document.querySelectorAll('button, a.btn, input[type="button"], input[type="submit"]'));
-      let btn = btns.find(b => (b.textContent||b.value||'').toLowerCase().includes('convert all'));
-      if (!btn) btn = btns.find(b => (b.textContent||b.value||'').toLowerCase().includes('convert coins'));
-      if (!btn) btn = btns.find(b => (b.textContent||'').toLowerCase().includes('convert'));
-      if (btn) { if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' }; btn.click(); return { status: "converted", amount }; }
-      // fallback Enter
-      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-      return { status: "converted", amount };
-    } catch(e){ return { status: "error", error: e.message }; }
-  };
-  vt.pmathDoConvertAll = async () => {
-    const btns = Array.from(document.querySelectorAll('button, a.btn'));
-    let btn = btns.find(b => (b.textContent||'').toLowerCase().includes('convert all'));
-    if (btn) { if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status: 'cancelled' }; btn.click(); return { status: "clicked" }; }
-    return { status: "no-btn" };
-  };
-  vt.pmathConfirmPreparedConversion = async () => {
-    const visible = el => {
-      if (!el) return false;
-      const style = getComputedStyle(el), rect = el.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-    };
-    const buttons = () => Array.from(document.querySelectorAll('button,a.btn,input[type="button"],input[type="submit"],[role="button"]')).filter(visible);
-    const dismiss = buttons().find(el => /^(cancel|close|×|x)$/i.test((el.innerText || el.value || el.getAttribute('aria-label') || '').trim())) ||
-      Array.from(document.querySelectorAll('.btn-close,.close,[data-bs-dismiss="modal"],[data-dismiss="modal"]')).find(visible);
-    let confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
-    if (!confirm) {
-      if (dismiss) { dismiss.click(); await sleep(400); }
-      let convert = null;
-      for (let i = 0; i < 40 && !convert && !confirm; i++) {
-        confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
-        convert = buttons().find(el => /^convert coins$/i.test((el.innerText || el.value || '').trim()) && !el.disabled);
-        if (!convert && !confirm) await sleep(250);
-      }
-      if (!convert && !confirm) return { status:'no-convert-coins' };
-      if (!confirm) convert.click();
-    }
-    for (let i = 0; i < 20 && !confirm; i++) {
-      await sleep(250);
-      confirm = buttons().find(el => /^yes\s*,?\s*convert$/i.test((el.innerText || el.value || '').trim()));
-    }
-    if (!confirm) return { status:'no-yes-convert' };
-    if (window.__vtAutomation && !window.__vtAutomation.enabled) return { status:'cancelled' };
-    confirm.click();
-    return { status:'confirmed' };
-  };
-
   vt.pageReady = () => ({
     url: window.location.href,
-    isECNL: /ecnlmediamarket\.com|pmath100\.com/i.test(window.location.href),
+    isECNL: /ecnlmediamarket\.com/i.test(window.location.href),
     isWork: WORK_RE.test(window.location.href),
     isAuth: /login|signin|auth|account|password/i.test(window.location.href) || !!(document && document.querySelector('input[type="password"]')),
-    isPmath: /pmath100\.com/i.test(window.location.href),
     grabDebug: vt._grabDebug || null
   });
 

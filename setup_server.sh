@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_DIR=/home/opc/VisionTap
 OPC_HOME=/home/opc
-VT_ACCOUNTS=${VT_ACCOUNTS:-danicajgb,nnnikkikim,dncjnnpabo22,dianajanelle,darlenejoyce,castiel,aannadiaa,alexander1001,elizabeth1001,deartheodosia,aaronburr,kyaiko}
+VT_ACCOUNTS=${VT_ACCOUNTS:-danicajgb,nnnikkikim,dncjnnpabo22,dianajanelle,darlenejoyce,castiel,aannadiaa,alexander1001,elizabeth1001,deartheodosia,aaronburr,}
 IFS=',' read -r -a accounts <<< "$VT_ACCOUNTS"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -44,8 +44,8 @@ chown -R opc:opc "$APP_DIR"
 
 systemctl daemon-reload
 systemctl enable --now visiontap-xvfb visiontap-openbox visiontap-vnc visiontap-novnc visiontap-scanner visiontap-dashboard
-if printf '%s\n' "${accounts[@]}" | grep -qx kyaiko; then
-  systemctl enable --now visiontap-pmath-scanner
+if printf '%s\n' "${accounts[@]}" | grep -qx; then
+  systemctl enable --now
 fi
 for account in "${accounts[@]}"; do
   systemctl enable --now "visiontap-chrome@$account"
