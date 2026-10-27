@@ -6,6 +6,8 @@
   window.__vtAdBlockInstalled = true;
 
   function nuke() {
+    // The full page runtime owns cleanup once installed; avoid duplicate scans.
+    if (window.__vtapi) return;
     try {
       document.querySelectorAll('iframe').forEach(el => {
         try {

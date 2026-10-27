@@ -37,6 +37,12 @@ test('HUD updates do not trigger whole-page scans or scrolling', () => {
   h.observers.forEach(fn => fn(hudChange));
   assert.equal(h.timers.length, 0);
 });
+test('countdown text updates do not scan or recenter the whole page', () => {
+  const h = harness();
+  const changes = [{ target: { nodeType: 1, closest: () => null }, addedNodes: [{ nodeType: 3 }], removedNodes: [{ nodeType: 3 }] }];
+  for (let i = 0; i < 100; i++) h.observers.forEach(fn => fn(changes));
+  assert.equal(h.timers.length, 0);
+});
 test('off-center task still scrolls into view', () => {
   const h = harness();
   h.target.getBoundingClientRect = () => ({ top: 1200, height: 30 });
