@@ -3,9 +3,15 @@ import json
 import re
 import os
 import time
+import threading
+import hashlib
+from collections import OrderedDict, deque
+# Small task images do not benefit from competing OpenMP/BLAS thread pools.
+os.environ.setdefault('OMP_THREAD_LIMIT', '1')
+os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
 import numpy as np
 import cv2
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 
 try:
@@ -25,15 +31,122 @@ except Exception as e:
     print(f"[TESSERACT FAIL] {e} – scanner will reject but not crash")
     reader = None
 
-# Startup self-check: ensure slots taskMode integrity helper
-def ensure_pmath_slot_integrity():
-    try:
-        # This is for slotbrowser state, not scanner, but log hint
-        pass
-    except: pass
-
 app = Flask(__name__)
 CORS(app)
+
+# One image can require several Tesseract reads.  Never allow
+# abandoned/timed-out browser requests to create an unbounded OCR backlog.
+MATH_OCR_LOCK = threading.Lock()
+TESSERACT_PROCESS_LOCK = threading.Lock()
+OCR_PROCESS_TIMEOUT = float(os.environ.get('VT_OCR_TIMEOUT', '2'))
+OCR_QUEUE = deque()
+OCR_CONDITION = threading.Condition()
+RESULT_CACHE = OrderedDict()
+RESULT_CACHE_LOCK = threading.Lock()
+GLYPH_CACHE = OrderedDict()
+GLYPH_CACHE_LOCK = threading.Lock()
+STATS_LOCK = threading.RLock()
+cv2.setNumThreads(1)
+
+class ScannerBusy(Exception):
+    pass
+
+@app.errorhandler(ScannerBusy)
+def scanner_busy(error):
+    return jsonify(error=str(error), retryable=True), 503
+
+def bounded_ocr(image, config):
+    """Run at most one Tesseract child at a time and never leave it unbounded."""
+    cache_key = None
+    if isinstance(image, np.ndarray):
+        cache_key = (str(image.shape), config, hashlib.sha256(image.tobytes()).hexdigest())
+        with GLYPH_CACHE_LOCK:
+            if cache_key in GLYPH_CACHE:
+                GLYPH_CACHE.move_to_end(cache_key)
+                return GLYPH_CACHE[cache_key]
+    ticket = object()
+    deadline = time.monotonic() + 8
+    with OCR_CONDITION:
+        if len(OCR_QUEUE) >= 8:
+            raise ScannerBusy('Scanner busy; queue full')
+        OCR_QUEUE.append(ticket)
+        while OCR_QUEUE[0] is not ticket:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                OCR_QUEUE.remove(ticket)
+                OCR_CONDITION.notify_all()
+                raise ScannerBusy('Scanner busy; queue deadline')
+            OCR_CONDITION.wait(remaining)
+    try:
+        try:
+            text = pytesseract.image_to_string(image, config=config, timeout=OCR_PROCESS_TIMEOUT).strip()
+            if cache_key and text:
+                with GLYPH_CACHE_LOCK:
+                    GLYPH_CACHE[cache_key] = text
+                    GLYPH_CACHE.move_to_end(cache_key)
+                    while len(GLYPH_CACHE) > 1024:
+                        GLYPH_CACHE.popitem(last=False)
+            return text
+        except RuntimeError as error:
+            if 'timeout' in str(error).lower():
+                raise ScannerBusy('Scanner busy; OCR timeout') from error
+            raise
+    finally:
+        with OCR_CONDITION:
+            OCR_QUEUE.popleft()
+            OCR_CONDITION.notify_all()
+
+@app.before_request
+def prepare_request():
+    if request.endpoint in ('report', 'stats', 'earnings'):
+        STATS_LOCK.acquire()
+        g.stats_lock_held = True
+    if request.endpoint not in ('detect', 'solve_math'):
+        return None
+    data = request.get_json(silent=True) or {}
+    payload = data.get('image')
+    if not isinstance(payload, str):
+        return None
+    g.scan_started = time.monotonic()
+    g.cache_key = (request.endpoint, hashlib.sha256(payload.encode()).hexdigest(), str(data.get('target_num')))
+    with RESULT_CACHE_LOCK:
+        cached = RESULT_CACHE.get(g.cache_key)
+        if cached and time.monotonic() - cached[0] < 120:
+            RESULT_CACHE.move_to_end(g.cache_key)
+            return jsonify(cached[1])
+
+@app.after_request
+def remember_result(response):
+    if hasattr(g, 'cache_key') and response.status_code == 200:
+        with RESULT_CACHE_LOCK:
+            RESULT_CACHE[g.cache_key] = (time.monotonic(), response.get_json())
+            RESULT_CACHE.move_to_end(g.cache_key)
+            while len(RESULT_CACHE) > 128:
+                RESULT_CACHE.popitem(last=False)
+    if hasattr(g, 'scan_started'):
+        response.headers['Server-Timing'] = 'scan;dur=%.1f' % ((time.monotonic() - g.scan_started) * 1000)
+    return response
+
+@app.teardown_request
+def release_stats_lock(_error):
+    if getattr(g, 'stats_lock_held', False):
+        g.stats_lock_held = False
+        STATS_LOCK.release()
+
+@app.before_request
+def acquire_math_ocr_slot():
+    if request.endpoint != 'solve_math':
+        return None
+    if not MATH_OCR_LOCK.acquire(blocking=False):
+        return jsonify({"error": "Math scanner busy; retry shortly"}), 429
+    g.math_ocr_lock_held = True
+    return None
+
+@app.teardown_request
+def release_math_ocr_slot(_error):
+    if getattr(g, 'math_ocr_lock_held', False):
+        g.math_ocr_lock_held = False
+        MATH_OCR_LOCK.release()
 
 DEBUG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug")
 os.makedirs(DEBUG_DIR, exist_ok=True)
@@ -86,10 +199,12 @@ def ocr_read_badge_number(img):
     scaled = cv2.resize(inv, None, fx=4.0, fy=4.0, interpolation=cv2.INTER_CUBIC)
 
     try:
-        text = pytesseract.image_to_string(scaled, config='--psm 7 -c tessedit_char_whitelist=0123456789').strip()
+        text = bounded_ocr(scaled, '--psm 7 -c tessedit_char_whitelist=0123456789')
         digits = re.findall(r'\b([1-9]|[12][0-9]|3[0-6])\b', text)
         if digits:
             return int(digits[0])
+    except ScannerBusy:
+        raise
     except Exception as e:
         print(f" -> [OCR Error]: {e}")
 
@@ -242,6 +357,8 @@ def detect():
             "cell": {"row": target_row, "col": target_col}
         })
 
+    except ScannerBusy:
+        raise
     except Exception as e:
         print(f"[EXCEPT] {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -282,12 +399,11 @@ def solve_math():
             scaled = cv2.resize(padded, None, fx=4.0, fy=4.0, interpolation=cv2.INTER_CUBIC)
             cfg_digit = '--psm 8 -c tessedit_char_whitelist=0123456789'
             cfg_op = '--psm 8 -c tessedit_char_whitelist=-+xX'
-            txt_digit = pytesseract.image_to_string(scaled, config=cfg_digit).strip()
-            txt_op = pytesseract.image_to_string(scaled, config=cfg_op).strip()
             is_square_op = abs(w - h) < 15 and w > 20 and h > 20 and 150 < white < 500
             if h < 10:
                 txt = '-'
             elif is_square_op:
+                txt_op = bounded_ocr(scaled, cfg_op)
                 low = txt_op.lower()
                 if 'x' in low:
                     txt = 'x'
@@ -300,12 +416,23 @@ def solve_math():
                 if txt == 'x' and white < 280:
                     txt = '+'
             else:
-                txt = txt_digit if txt_digit.isdigit() else txt_op if txt_op.isdigit() else '?'
-                if len(txt) > 1:
-                    txt = ''.join(filter(str.isdigit, txt))[:1] or '?'
+                txt_digit = bounded_ocr(scaled, cfg_digit)
+                if not re.fullmatch(r'[0-9]', txt_digit):
+                    txt_digit = bounded_ocr(scaled, '--psm 10 -c tessedit_char_whitelist=0123456789')
+                if not re.fullmatch(r'[0-9]', txt_digit):
+                    smaller = cv2.resize(padded, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LINEAR)
+                    alternate = bounded_ocr(smaller, '--psm 10 -c tessedit_char_whitelist=0123456789')
+                    linear = cv2.resize(padded, None, fx=4.0, fy=4.0, interpolation=cv2.INTER_LINEAR)
+                    corroboration = bounded_ocr(linear, '--psm 13 -c tessedit_char_whitelist=0123456789')
+                    if alternate == corroboration and re.fullmatch(r'[0-9]', alternate):
+                        txt_digit = alternate
+                txt = txt_digit if re.fullmatch(r'[0-9]', txt_digit) else '?'
             symbols.append((x, txt))
         expr = ''.join(t for _, t in sorted(symbols))
         print(f"[MATH OCR contour] '{expr}' from {len(rects)} symbols")
+        if not re.fullmatch(r'\d{1,5}[+\-xX*/]\d{1,5}', expr):
+            cv2.imwrite(os.path.join(DEBUG_DIR, 'math_unreadable_latest.png'), img)
+            return jsonify({"error": "Incomplete or ambiguous equation"}), 400
         cleaned = re.sub(r'[^0-9+\-xX*/]', '', expr)
         cleaned = cleaned.replace('x', '*').replace('X', '*')
         m = re.search(r'(\d{1,5})\s*([+\-*/])\s*(\d{1,5})', cleaned)
@@ -334,6 +461,8 @@ def solve_math():
             ans = 1  # avoid 0 per requirement, never return "0"
         print(f"[MATH SOLVED] {a} {op} {b} = {ans} (from '{text}')")
         return jsonify({"answer": str(ans), "expression": f"{a}{op}{b}", "raw": text, "cleaned": cleaned})
+    except ScannerBusy:
+        raise
     except Exception as e:
         print(f"[MATH EXCEPT] {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -398,6 +527,19 @@ def report():
         })
         old_withdrawable = s.get('withdrawable', 0) or 0
         old_pointsDone = s.get('pointsDone', 0) or 0
+        if data.get('countMode') == 'observed-points':
+            new_points = data.get('pointsDone')
+            if s.get('countMode') != 'observed-points':
+                s['correctCount'] = 0
+                s['wrongCount'] = None
+                s['countMode'] = 'observed-points'
+                s['confirmationStartedAt'] = int(time.time())
+            elif new_points is not None:
+                delta = int(new_points) - int(old_pointsDone)
+                if data.get('platform') != 'math' and int(old_pointsDone) >= 230 and int(new_points) <= 20 and float(data.get('withdrawable') or 0) > old_withdrawable:
+                    delta = 250 - int(old_pointsDone) + int(new_points)
+                if 0 < delta <= 20:
+                    s['correctCount'] = int(s.get('correctCount') or 0) + delta
 
         if data.get('pointsDone') is not None:
             try: s['pointsDone'] = int(data['pointsDone'])
@@ -435,7 +577,7 @@ def report():
         if data.get('pointsDone') is not None:
             try:
                 new_pd = int(data['pointsDone'])
-                if (old_pointsDone >= 100 and 0 <= new_pd <= 10) or (old_pointsDone >= 150 and 0 <= new_pd <= 20) or (old_pointsDone >= 50 and new_pd == 0):
+                if data.get('countMode') != 'observed-points' and ((old_pointsDone >= 100 and 0 <= new_pd <= 10) or (old_pointsDone >= 150 and 0 <= new_pd <= 20) or (old_pointsDone >= 50 and new_pd == 0)):
                     # Reset to current cycle counts (data's counts should be small, but if data still has old large, reset to 0)
                     s['taskCount'] = 0
                     s['correctCount'] = 0
@@ -483,7 +625,7 @@ def report():
         # Track earnings history
         new_withdrawable = s.get('withdrawable', 0) or 0
         correct = data.get('correct')
-        if correct is True and new_withdrawable > old_withdrawable and old_withdrawable > 0:
+        if (correct is True or data.get('countMode') == 'observed-points') and new_withdrawable > old_withdrawable and old_withdrawable > 0:
             earning = round(new_withdrawable - old_withdrawable, 4)
             earnings = {}
             try:
@@ -530,5 +672,6 @@ def stats():
         return jsonify({"slots": {}})
 
 if __name__ == '__main__':
-    print("=== VISIONTAP STRICT COLOR ENGINE ONLINE (PORT 5566) ===")
-    app.run(host='0.0.0.0', port=5566, debug=False)
+    scanner_port = int(os.environ.get('VT_SCANNER_PORT', '5566'))
+    print(f"=== VISIONTAP STRICT COLOR ENGINE ONLINE (PORT {scanner_port}) ===")
+    app.run(host='127.0.0.1', port=scanner_port, debug=False)

@@ -2,10 +2,12 @@
 
 `slotbrowser/chrome-pilot.js` launches a persistent Playwright-controlled Chrome profile for one account. Environment variables select the account, slot, task mode, profile path, submit delay, and window bounds.
 
-Color workers call scanner endpoint `/detect`; Kyaiko calls `/solve_math`. All workers publish counters and balances through `/report`. Recovery is isolated per worker: three scanner/image failures or a 15-second unchanged/not-ready stall reload only that work page. Reloads are suppressed during manual verification and adaihbi withdrawal.
+Color workers call scanner endpoint `/detect`. All workers publish counters and balances through `/report`. Recovery is isolated per worker: three scanner/image failures or a 15-second unchanged/not-ready stall reload only that work page. Reloads are suppressed during manual verification and adaihbi withdrawal.
 
 `slotbrowser/chrome-encashment.js` runs inside all five ECNL accounts. It uses `Asia/Manila`, isolated private encashment configuration/state per account, the configured weekday-only 8–10 AM payout windows (Monday ClarenceBopis, Tuesday ConnorMofu, Wednesday adaihbi, Thursday Temi, Friday Axceling1001), five-minute retries, and payout-history state.
 
 `slotbrowser/dashboard.js` merges configured slots, scanner statistics, and the six Chrome state files. Dashboard controls write per-account Chrome command files. Verification covers only the affected card.
 
 Shared browser scripts remain in `slotbrowser/inject/`; the Flask scanner remains in `pcapp/scanner/server.py`.
+
+For local visual testing, set `VT_HIDE_CONTENT_HOSTS` to a comma-separated hostname allowlist (for example, `example.com,www.example.org`). Matching pages and subdomains hide all `<p>` and `<footer>` elements with an injected style; the page content is not deleted or changed on the server. The setting is disabled when unset.

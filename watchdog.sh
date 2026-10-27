@@ -63,6 +63,7 @@ while true; do
     sudo systemctl restart visiontap-scanner >> $LOG 2>&1
     should_restart scanner
   fi
+  # The dedicated reader needs its own health probe; a live process can hang.
   # Syntax check for server.py
   if ! python3 -m py_compile $SCANNER_DIR/server.py 2>/dev/null; then
     echo "[$(date)] server.py syntax error - git pull auto-fix" >> $LOG
@@ -82,7 +83,7 @@ while true; do
   fi
 
   # 6. Chrome pilots - each account heals independently.
-  for account in kyaiko adaihbi temi axceling1001 clarencebopis connormofu jinninijin; do
+  for account in adaihbi temi axceling1001 clarencebopis connormofu jinninijin; do
     svc="visiontap-chrome@$account"
     if ! sudo systemctl is-active --quiet "$svc"; then
       echo "[$(date)] $account Chrome pilot down - restarting" >> $LOG

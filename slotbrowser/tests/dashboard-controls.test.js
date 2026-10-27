@@ -22,18 +22,7 @@ test('restart all restarts Chrome workers while refresh only reloads pages', () 
   assert.match(source, /action === 'restart' \|\| action === 'refresh' \? 'reload'/);
 });
 
-test('Kyaiko has direct working Play Pause and Restart controls', () => {
-  assert.match(source, /isKyaikoCard\s*\?[^;]*runDashboardControl\(&quot;pause&quot;/s);
-  assert.match(source, /runDashboardControl\(&quot;resume&quot;/);
-  assert.match(source, /runDashboardControl\(&quot;restart&quot;/);
-  assert.match(source, /title="Play"/);
-  assert.match(source, /title="Restart"/);
-});
 
-test('Kyaiko uses balance history without a duplicate earnings history', () => {
-  assert.match(source, /if\(!isKyaikoCard&&s\.earningsHistory&&s\.earningsHistory\.length>0\)/);
-  assert.match(source, /Balance History \(10\)/);
-});
 
 test('dashboard includes all six ECNL slots and their controls', () => {
   for (const account of ['adaihbi', 'temi', 'axceling1001', 'clarencebopis', 'connormofu', 'jinninijin']) {
@@ -57,7 +46,6 @@ test('dashboard uses fixed distinct slot colors without a color picker', () => {
 test('dashboard highlights todays payout and pending receipt reminder', () => {
   assert.match(source, /id="daily-payout"/);
   assert.match(source, /function renderDailyPayout\(/);
-  assert.match(source, /pmathPayouts/);
   assert.match(source, /records\.map/);
   assert.match(source, /Today’s Payout Information/);
   assert.match(source, /Not received yet\? Sign in online and check the payout history or GCash status\./);
@@ -66,11 +54,6 @@ test('dashboard highlights todays payout and pending receipt reminder', () => {
   assert.match(source, /Waiting For ₱300/);
 });
 
-test('Kyaiko balance mirrors the live PMath coin count', () => {
-  assert.match(source, /const pilotCoins = Number\(pilotState\.withdrawable/);
-  assert.match(source, /const dashboardWithdrawable = currentWithdrawable/);
-  assert.match(source, /pointsDone = currentWithdrawable/);
-});
 
 test('every slot shows a live next payout earnings estimate after ETA', () => {
   assert.match(source, /function nextCashoutProjection\(/);
@@ -138,11 +121,8 @@ test('top summary highlights slot errors and attention states', () => {
 });
 
 test('earnings estimates reject short-history spikes and use the real minimum schedule', () => {
-  assert.match(source, /function balanceHistoryPesosPerHour\(history, isPmath\)/);
   assert.match(source, /MAX_REASONABLE_ECNL_PPM = 6/);
-  assert.match(source, /MAX_REASONABLE_PMATH_CPM = 6/);
   assert.match(source, /const estimatedPesosPerHour = Math\.round/);
-  assert.match(source, /pointRate=Math\.min\(isPmath\?3\.6:4\.32,pointRate\)/);
   assert.match(source, /etaHours = pesosNeeded \/ estimatedPesosPerHour/);
   assert.match(source, /estimatedPesosPerHour: estimatedPesosPerHour/);
   assert.match(source, /const tp = 300/);

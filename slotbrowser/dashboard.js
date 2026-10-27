@@ -5,19 +5,16 @@ const os = require("os");
 const { execSync } = require("child_process");
 
 const PORT = 6260;
-const PMATH_CONVERT_THRESHOLD = 30000;
 const ECNL_PESOS_PER_CYCLE = 3;
 const ECNL_POINTS_PER_CYCLE = 250;
 const MAX_REASONABLE_ECNL_PPM = 6;
-const MAX_REASONABLE_PMATH_CPM = 6;
 const PH_TIME_ZONE = "Asia/Manila";
 const STATE_DIR = path.join(os.homedir(), ".config", "VisionTap Slots", "state");
 const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
-const PMATH_PAYOUT_HISTORY_FILE = path.join(STATE_DIR, "pmath_payout_history.json");
-const CHROME_ACCOUNTS = ['kyaiko','adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'];
+const CHROME_ACCOUNTS = ['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'];
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin']);
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, account === 'adaihbi' ? 'encashment_config.json' : `encashment_${account}_config.json`); }
@@ -25,7 +22,7 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '14':'kyaiko', '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin' };
+const CHROME_SLOT_ACCOUNTS = { '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin' };
 function sendChromeControl(action, slot = 'all') {
   const mapped = action === 'restart' || action === 'refresh' ? 'reload' : action;
   if (!['pause','resume','reload','stop'].includes(mapped)) throw new Error('Invalid control action');
@@ -94,30 +91,14 @@ function getSlotMetrics(id) {
   }
   return ms;
 }
-function pointsDelta(cur, start, isPmath) {
+function pointsDelta(cur, start) {
   cur = Number(cur) || 0;
   start = Number(start) || 0;
   if (cur >= start) return cur - start;
-  // wrap: 0-250 for ecnl, 0-100 for pmath
-  const max = isPmath ? 100 : 250;
+  const max = 250;
   return (max - start) + cur;
 }
 
-function balanceHistoryPesosPerHour(history, isPmath) {
-  const entries = (Array.isArray(history) ? history : []).filter(entry => Number.isFinite(Number(entry?.value)) && Number.isFinite(Number(entry?.time)));
-  if (entries.length < 2) return 0;
-  let startIndex = 0;
-  for (let i = 1; i < entries.length; i++) {
-    if (Number(entries[i].value) < Number(entries[i - 1].value)) startIndex = i;
-  }
-  const first = entries[startIndex];
-  const last = entries[entries.length - 1];
-  const elapsedHours = (Number(last.time) - Number(first.time)) / 3600000;
-  const rawGain = Number(last.value) - Number(first.value);
-  if (!(elapsedHours > 0) || !(rawGain > 0)) return 0;
-  const pesoGain = isPmath ? rawGain / 100 : rawGain;
-  return Math.round((pesoGain / elapsedHours) * 10000) / 10000;
-}
 
 function rollingPointsPerMinute(history, nowMs, windowMs = 300000) {
   const rows = (Array.isArray(history) ? history : [])
@@ -133,7 +114,7 @@ function rollingPointsPerMinute(history, nowMs, windowMs = 300000) {
   if (sample.length < 2) return 0;
   let gained = 0;
   for (let i = 1; i < sample.length; i++) {
-    if (sample[i].points !== sample[i - 1].points) gained += pointsDelta(sample[i].points, sample[i - 1].points, false);
+    if (sample[i].points !== sample[i - 1].points) gained += pointsDelta(sample[i].points, sample[i - 1].points);
   }
   const elapsedMinutes = (sample[sample.length - 1].time - sample[0].time) / 60000;
   if (!(elapsedMinutes > 0.5) || !(gained > 0)) return 0;
@@ -171,12 +152,17 @@ function getEarnings() {
   try { return JSON.parse(run("curl -s http://127.0.0.1:5566/earnings")); }
   catch (e) { return {}; }
 }
+let statusSnapshot = null;
+let statusSnapshotAt = 0;
 function getStatus() {
+  if (statusSnapshot && Date.now() - statusSnapshotAt < 1000) return statusSnapshot;
   const scannerUp = run("curl -s http://127.0.0.1:5566/health").includes("online");
   const stats = getStats();
   const earnings = getEarnings();
   const loopPaused = isLoopPaused();
-  return { scannerUp, stats, earnings, loopPaused };
+  statusSnapshot = { scannerUp, stats, earnings, loopPaused };
+  statusSnapshotAt = Date.now();
+  return statusSnapshot;
 }
 function getMergedSlots(status) {
   const configuredSlots = getConfiguredSlots();
@@ -215,57 +201,14 @@ function getMergedSlots(status) {
     // --- Persistent per-slot metrics — personal file per slot (no leaking) ---
     let ms = getSlotMetrics(String(id));
     const nowMs = Date.now();
-    const isPmath = String(id) === "14" || String(name).toLowerCase() === "kyaiko";
     const pilotCoins = Number(pilotState.withdrawable != null ? pilotState.withdrawable : pilotState.pointsDone);
     const scannerWithdrawable = sc.withdrawable != null ? Number(sc.withdrawable) : 0;
-    const currentWithdrawable = isPmath && Number.isFinite(pilotCoins) ? pilotCoins : scannerWithdrawable;
-    // ECNL tracks cycle points; Kyaiko tracks its live cumulative coin balance.
-    const curPoints = isPmath ? currentWithdrawable : pointsDone;
+    const currentWithdrawable = scannerWithdrawable;
+    const curPoints = pointsDone;
     let dirty = false;
 
-    // PMath moves complete 100-coin groups into its peso wallet. Keep that
-    // converted value in the dashboard total while the live coin counter
-    // starts again from the small remainder.
-    if (isPmath && ms.pmathWalletVersion !== 1) {
-      let convertedCoins = 0;
-      let previousRaw = null;
-      ms.balanceHistory = (Array.isArray(ms.balanceHistory) ? ms.balanceHistory : []).map(entry => {
-        const raw = Number(entry && entry.value) || 0;
-        if (previousRaw >= PMATH_CONVERT_THRESHOLD && raw < 1000 && previousRaw - raw >= PMATH_CONVERT_THRESHOLD - 100) {
-          convertedCoins += Math.floor(previousRaw / 100) * 100;
-        }
-        previousRaw = raw;
-        return { ...entry, value: raw + convertedCoins };
-      });
-      ms.pmathConvertedCoins = convertedCoins;
-      ms.lastPmathRawCoins = currentWithdrawable;
-      ms.pmathWalletVersion = 1;
-      dirty = true;
-    }
-    if (isPmath) {
-      const previousRaw = Number(ms.lastPmathRawCoins);
-      if (Number.isFinite(previousRaw) && previousRaw >= PMATH_CONVERT_THRESHOLD && currentWithdrawable < 1000 && previousRaw - currentWithdrawable >= PMATH_CONVERT_THRESHOLD - 100) {
-        ms.pmathConvertedCoins = (Number(ms.pmathConvertedCoins) || 0) + Math.floor(previousRaw / 100) * 100;
-      }
-      if (ms.lastPmathRawCoins !== currentWithdrawable) {
-        ms.lastPmathRawCoins = currentWithdrawable;
-        dirty = true;
-      }
-    }
-    // Kyaiko's live dashboard balance mirrors the coins currently shown by PMath.
-    // Converted/cashed-out coins are represented by payout records instead.
     const dashboardWithdrawable = currentWithdrawable;
 
-    // Migrate Kyaiko from the old points-based rate source without creating a false spike.
-    if (isPmath && ms.rateUnit !== "coins") {
-      ms.rateUnit = "coins";
-      ms.windowStart = 0;
-      ms.prevPoints = curPoints;
-      ms.pointsAtStart = curPoints;
-      ms.ppm = 0;
-      ms.pph = 0;
-      dirty = true;
-    }
 
     // Init prevPoints on first sight (avoid inflated delta)
     if (ms.prevPoints === null) {
@@ -308,25 +251,8 @@ function getMergedSlots(status) {
       }
     }
 
-    // Target logic: ecnl 250 pts = 3 pesos (83.33), pmath 100 coins = 1 peso → 100 pesos = 10000 coins, 300 pesos = 30000 coins
+    // Target logic: ecnl 250 pts = 3 pesos.
     let targetPesos, pesosNeeded, pointsUntilMid, pointsUntilLow, pointsUntilHigh, currentTargetPoints, pointsUntilTarget;
-    if (isPmath) {
-      // pmath: coins instantly from web (withdrawable = coins), 100 coins =1 peso → 300₱ =30,000 coins
-      // For instant center display, use currentWithdrawable as coins (same as pointsDone for pmath)
-      pointsDone = currentWithdrawable;
-      const tp = 300;
-      // Fixed goal: 100 coins = ₱1, so ₱300 = 30,000 coins.
-      ms.targetPesos = tp;
-      if (ms.targetPoints) { delete ms.targetPoints; dirty = true; }
-      targetPesos = tp;
-      const targetCoinsFinal = 30000;
-      pesosNeeded = Math.max(0, (targetCoinsFinal - currentWithdrawable)/100);
-      pointsUntilMid = Math.max(0, Math.trunc(targetCoinsFinal - currentWithdrawable));
-      pointsUntilLow = pointsUntilMid;
-      pointsUntilHigh = pointsUntilMid;
-      currentTargetPoints = targetCoinsFinal;
-      pointsUntilTarget = pointsUntilMid;
-    } else {
       const POINTS_PER_CYCLE = 250;
       const PESOS_PER_CYCLE = 3;
       const POINTS_PER_PESO = POINTS_PER_CYCLE / PESOS_PER_CYCLE;
@@ -342,7 +268,6 @@ function getMergedSlots(status) {
       pointsUntilHigh = pointsUntilMid;
       currentTargetPoints = Math.trunc(tp * POINTS_PER_PESO);
       pointsUntilTarget = pointsUntilMid;
-    }
 
     // Per-minute: continuous 60s window, truncated whole number, live without reset to 1
     // Window starts on first increment, every 60s compute ppm and immediately start next window
@@ -367,10 +292,8 @@ function getMergedSlots(status) {
     } else {
       const elapsed = nowMs - ms.windowStart;
       if (elapsed >= 60000) {
-        const count = pointsDelta(curPoints, ms.pointsAtStart, isPmath);
-        const ppm = isPmath
-          ? Math.round(Math.max(0, count * 60000 / elapsed) * 100) / 100
-          : Math.trunc(Math.max(0, count));
+        const count = pointsDelta(curPoints, ms.pointsAtStart);
+        const ppm = Math.trunc(Math.max(0, count));
         const pph = Math.round(ppm * 60 * 100) / 100;
         ms.ppm = ppm;
         ms.pph = pph;
@@ -391,31 +314,23 @@ function getMergedSlots(status) {
     let displayPpm = ms.ppm || 0;
     let displayPph = ms.pph || 0;
     if (ms.windowStart > 0 && ms.ppm === 0) {
-      const running = Math.max(0, pointsDelta(curPoints, ms.pointsAtStart, isPmath));
-      if (isPmath) {
-        const runningMs = Math.max(1000, nowMs - ms.windowStart);
-        displayPpm = Math.round(running * 60000 / runningMs * 100) / 100;
-        displayPph = Math.round(displayPpm * 60 * 100) / 100;
-      } else {
+      const running = Math.max(0, pointsDelta(curPoints, ms.pointsAtStart));
         displayPpm = Math.trunc(running);
         displayPph = displayPpm * 60;
-      }
     }
 
-    if (!isPmath) {
       const rollingPpm = rollingPointsPerMinute(sc.pointsHistory || slot.pointsHistory || [], nowMs);
       displayPpm = rollingPpm > 0 ? rollingPpm : Math.max(0, Math.round(displayPpm * 100) / 100);
       displayPph = Math.round(displayPpm * 60 * 100) / 100;
-    }
 
     // Project from the rolling task rate, with a hard plausible ceiling. Balance
     // history advances in batches and can otherwise turn a very short interval
     // into a large, false hourly spike.
     const safeLiveRate = Math.min(
-      isPmath ? MAX_REASONABLE_PMATH_CPM : MAX_REASONABLE_ECNL_PPM,
+      MAX_REASONABLE_ECNL_PPM,
       Math.max(0, Number(displayPpm) || 0)
     );
-    const estimatedPesosPerHour = Math.round((safeLiveRate * 60 * (isPmath ? 1 / 100 : ECNL_PESOS_PER_CYCLE / ECNL_POINTS_PER_CYCLE)) * 10000) / 10000;
+    const estimatedPesosPerHour = Math.round((safeLiveRate * 60 * (ECNL_PESOS_PER_CYCLE / ECNL_POINTS_PER_CYCLE)) * 10000) / 10000;
 
     // ETA — live adjusting from the persisted peso/coin balance history.
     let etaHours = 0;
@@ -449,11 +364,12 @@ function getMergedSlots(status) {
       paused: !!(slot.paused || slot.stopRequested),
       user: cred.user || "", pass: cred.pass || "",
       correctCount: sc.correctCount || 0,
-      wrongCount: sc.wrongCount || 0,
+      wrongCount: sc.countMode === 'observed-points' ? null : (sc.wrongCount || 0),
+      countMode: sc.countMode || 'legacy',
+      confirmationStartedAt: sc.confirmationStartedAt || null,
       errorCount: sc.errorCount || 0,
       taskCount: sc.taskCount || 0,
       withdrawable: dashboardWithdrawable,
-      pmathCoinBalance: isPmath ? currentWithdrawable : null,
       pointsDone: pointsDone,
       pointsTotal: pointsTotal,
       totalEarned: Math.round(totalEarned * 10000) / 10000,
@@ -800,23 +716,17 @@ function nextEncashment(slots,now){
 function nextCashoutProjection(slot,now){
   var parts=new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(now).reduce(function(out,item){out[item.type]=item.value;return out},{});
   var weekdays={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6},today=weekdays[parts.weekday],minutes=(Number(parts.hour)%24)*60+Number(parts.minute)+Number(parts.second)/60;
-  var account=String(slot.accountName||slot.name||'').toLowerCase(),isPmath=String(slot.id)==='14'||account==='kyaiko';
+  var account=String(slot.accountName||slot.name||'').toLowerCase();
   var schedule=slot.encashmentSchedule||{},scheduledDay=weekdays[schedule.weekday],start=Number(schedule.startHour),end=Number(schedule.endHour);
   var days=0;
-  if(isPmath){
-    start=8;end=10;
-    if(today>=1&&today<=5&&minutes<end*60)scheduledDay=today;
-    else { scheduledDay=today; do{days++;scheduledDay=(scheduledDay+1)%7}while(scheduledDay===0||scheduledDay===6); }
-  }else{
     if(scheduledDay==null||!Number.isFinite(start)||!Number.isFinite(end))return null;
     days=(scheduledDay-today+7)%7;
     if(days===0&&minutes>=end*60)days=7;
-  }
-  var currentPesos=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
-  var pointRate=Math.max(0,Number(slot.pointsPerHour||0))*(isPmath?1/100:3/250);
-  pointRate=Math.min(isPmath?3.6:4.32,pointRate);
+  var currentPesos=Number(slot.withdrawable||0);
+  var pointRate=Math.max(0,Number(slot.pointsPerHour||0))*(3/250);
+  pointRate=Math.min(4.32,pointRate);
   var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0));
-  var pesosPerHour=pointRate>0?pointRate:Math.min(isPmath?3.6:4.32,historyRate);
+  var pesosPerHour=pointRate>0?pointRate:Math.min(4.32,historyRate);
   function candidate(){
     var candidateMinutes=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
     var candidateHours=Math.max(0,candidateMinutes/60);
@@ -824,9 +734,7 @@ function nextCashoutProjection(slot,now){
   }
   var projected=candidate(),guard=0;
   while(projected.amount<300&&pesosPerHour>0&&guard++<104){
-    if(isPmath){
-      do{days++;scheduledDay=(scheduledDay+1)%7}while(scheduledDay===0||scheduledDay===6);
-    }else days+=7;
+    days+=7;
     projected=candidate();
   }
   var hoursUntil=projected.hours,amount=projected.amount;
@@ -885,9 +793,9 @@ function renderMiniSummary(slots,pilots,now){
   var root=document.getElementById('mini-summary');
   if(!root)return;
   root.innerHTML=(slots||[]).map(function(slot){
-    var account=String(slot.accountName||slot.name||'Unknown'),key=account.toLowerCase(),isPmath=String(slot.id)==='14'||key==='kyaiko';
+    var account=String(slot.accountName||slot.name||'Unknown');
     var pilot=(pilots||[]).find(function(item){return item&&String(item.slot)===String(slot.id)})||{};
-    var current=isPmath?Number(slot.withdrawable||0)/100:Number(slot.withdrawable||0);
+    var current=Number(slot.withdrawable||0);
     var liveRate=Number(slot.pointsPerMinute||0);
     var projection=nextCashoutProjection(slot,now),estimate=projection?projection.amount:current;
     var history=Array.isArray(slot.balanceHistory)?slot.balanceHistory:[],changeStart=balanceHistoryTimerStart(history),change=formatBalanceChangeTimer(changeStart,now);
@@ -900,7 +808,7 @@ function renderMiniSummary(slots,pilots,now){
       +'<div class="mini-slot-head"><span class="mini-slot-name">'+esc(account)+'</span><span class="mini-slot-change" data-balance-start="'+changeStart+'">'+esc(change)+'</span></div>'
       +'<div class="mini-slot-values"><div class="mini-slot-stat"><small>Current balance</small><strong>&#8369;'+current.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-stat estimate"><small>Next payout</small><strong>&#8369;'+estimate.toFixed(2)+'</strong></div>'
-      +'<div class="mini-slot-stat rate"><small>'+(isPmath?'Coins':'Points')+' / minute</small><strong>'+liveRate.toFixed(2)+'</strong></div>'
+      +'<div class="mini-slot-stat rate"><small>'+('Points')+' / minute</small><strong>'+liveRate.toFixed(2)+'</strong></div>'
       +'<div class="mini-slot-when"><b>When:</b> '+esc(projection?projection.whenText:'Schedule unavailable')+esc(eligibility)+'</div>'+alertHtml+'</div></article>';
   }).join('');
 }
@@ -930,7 +838,6 @@ function runDashboardControl(action,slot,label){
 function confirmControl(event,action,slot,title,message,label,tone){if(event)event.preventDefault();askConfirm(title,message,label,function(){runDashboardControl(action,slot,label).catch(function(){})},tone);return false}
 function slotTheme(account){
   var themes={
-    kyaiko:['#8b5cf6','rgba(139,92,246,.15)','rgba(139,92,246,.25)'],
     clarencebopis:['#0ea5e9','rgba(14,165,233,.15)','rgba(14,165,233,.25)'],
     connormofu:['#14b8a6','rgba(20,184,166,.15)','rgba(20,184,166,.25)'],
     adaihbi:['#22c55e','rgba(34,197,94,.15)','rgba(34,197,94,.25)'],
@@ -941,13 +848,12 @@ function slotTheme(account){
   return themes[String(account||'').toLowerCase()]||['#64748b','rgba(100,116,139,.15)','rgba(100,116,139,.25)'];
 }
 function phDayParts(now){return new Intl.DateTimeFormat('en-CA',{timeZone:PH_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'}).formatToParts(now).reduce(function(out,item){out[item.type]=item.value;return out},{})}
-function renderDailyPayout(slots,pmathPayouts,now){
+function renderDailyPayout(slots,now){
   var parts=phDayParts(now),today=parts.weekday,dateKey=parts.year+'-'+parts.month+'-'+parts.day;
   var wrap=document.getElementById('daily-payout');
   if(!wrap)return;
   var records=[];
   (slots||[]).forEach(function(slot){var state=slot.encashment||{},hasSubmission=!!(state.amount||state.netAmount||state.reference||state.transactionId||/submitted|pending|processing|approved|paid|transferred|completed|success/i.test(String(state.status||'')+' '+String(state.payoutStatus||'')));if(String(state.date||'')===dateKey&&hasSubmission)records.push({account:slot.accountName||slot.name,state:state,schedule:slot.encashmentSchedule||null,platform:'ECNL'})});
-  (pmathPayouts||[]).forEach(function(state){if(String(state.date||'')===dateKey)records.push({account:state.account||'kyaiko',state:state,schedule:null,platform:'PMath'})});
   if(!records.length){(slots||[]).filter(function(slot){return slot.encashmentSchedule&&slot.encashmentSchedule.weekday===today}).forEach(function(slot){records.push({account:slot.accountName||slot.name,state:{status:'Scheduled',amount:slot.withdrawable},schedule:slot.encashmentSchedule,platform:'ECNL'})})}
   if(!records.length){wrap.hidden=true;wrap.innerHTML='';return}
   wrap.innerHTML=records.map(function(record){
@@ -984,7 +890,7 @@ function render(d){
     '<div class="pill"><div class="dot" style="background:'+(d.scannerUp?'var(--green)':'var(--red)')+'"></div>Scanner '+(d.scannerUp?'Online':'Offline')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(workerUp?'var(--green)':'var(--red)')+'"></div>'+(runningPilots?runningPilots+' Chrome Pilots Running':'Automation Stopped')+'</div>'+
     '<div class="pill"><div class="dot" style="background:'+(d.loopPaused?'var(--yellow)':'var(--green)')+'"></div>Loop '+(d.loopPaused?'Paused':'Running')+'</div>';
-  renderDailyPayout(slots,d.pmathPayouts||[],now);
+  renderDailyPayout(slots,now);
   var hAiko='';
   for(var i=0;i<slots.length;i++){
     var s=slots[i];
@@ -993,22 +899,15 @@ function render(d){
     var slotPilot=pilots.find(function(p){return p&&String(p.slot)===String(s.id)})||{};
     var slotPaused=slotPilot.running?!!slotPilot.paused:!!s.paused;
     var verifyHtml=slotPilot.verificationHold?'<div class="slotverify"><div class="slotverify-title">Manual verification required <span>'+esc(String(s.accountName||s.name).toUpperCase())+'</span></div><p>'+esc(slotPilot.status||'Complete verification in this account’s Oracle Chrome window. Auto-refresh is paused.')+'</p><div class="slotverify-stats"><span>Tasks<b>'+esc(slotPilot.tasks||0)+'</b></span><span>Errors<b>'+esc(slotPilot.errors||0)+'</b></span><span>Time<b>'+esc(slotPilot.time||'00:00')+'</b></span></div><div class="slotverify-actions"><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;pause&quot;)">Pause</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;resume&quot;)">Resume after verify</button><button type="button" onclick="pilotControl(&quot;'+esc(slotPilot.account||s.accountName)+'&quot;,&quot;reload&quot;)">Safe reload</button></div></div>':'';
-    var isKyaiko=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko',conversion=slotPilot.pmathConversion||{},conversionClass=conversion.status==='converted'?'yes':conversion.status==='failed'?'no':'waiting';
-    var conversionHtml=isKyaiko?'<div class="encoutstatus '+conversionClass+'" style="display:flex;margin:0 0 12px;width:100%;justify-content:center">'+esc(conversion.message||'Auto-convert enabled at 30,000 coins')+'</div>':'';
     var st=slotPaused?'PAUSED':(slotPilot.verificationHold?'VERIFY':'RUNNING');
     var pts=s.pointsTotal>0?s.pointsDone+'/'+s.pointsTotal:s.taskCount+' tasks';
     var pct=s.pointsTotal>0?Math.round((s.pointsDone/s.pointsTotal)*100):0;
     var sid=encodeURIComponent(s.id);
     var eh='';
-    var isKyaikoCard=String(s.id)==='14'||String(s.accountName||'').toLowerCase()==='kyaiko';
-    var controlsHtml=isKyaikoCard
-      ? '<button class="ibtn" type="button" title="Pause" onclick="runDashboardControl(&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause&quot;).catch(function(){})">&#9646;&#9646;</button>'+
-        '<button class="ibtn" type="button" title="Play" onclick="runDashboardControl(&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Play&quot;).catch(function(){})">&#9654;</button>'+
-        '<button class="ibtn" type="button" title="Restart" onclick="runDashboardControl(&quot;restart&quot;,&quot;'+sid+'&quot;,&quot;Restart&quot;).catch(function(){})">&#8634;</button>'
-      : '<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmControl(event,&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
+    var controlsHtml='<a class="ibtn" href="/cmd?action=pause&slot='+sid+'" title="Pause" onclick="return confirmControl(event,&quot;pause&quot;,&quot;'+sid+'&quot;,&quot;Pause this account?&quot;,&quot;Automation for this account will stop until resumed.&quot;,&quot;Pause&quot;)">&#9646;&#9646;</a>'+
         '<a class="ibtn" href="/cmd?action=resume&slot='+sid+'" title="Resume" onclick="return confirmControl(event,&quot;resume&quot;,&quot;'+sid+'&quot;,&quot;Resume this account?&quot;,&quot;Automation for this account will start again.&quot;,&quot;Resume&quot;)">&#9654;</a>'+
         '<a class="ibtn" href="/cmd?action=refresh&slot='+sid+'" title="Refresh" onclick="return confirmControl(event,&quot;refresh&quot;,&quot;'+sid+'&quot;,&quot;Refresh this account?&quot;,&quot;The account page will reload.&quot;,&quot;Refresh&quot;)">&#8634;</a>';
-    if(!isKyaikoCard&&s.earningsHistory&&s.earningsHistory.length>0){
+    if(s.earningsHistory&&s.earningsHistory.length>0){
       eh='<div class="ehd">Earnings History</div><div class="elst">';
       for(var j=0;j<s.earningsHistory.length;j++){
         var e=s.earningsHistory[j];
@@ -1019,28 +918,21 @@ function render(d){
     var cardHtml='<div class="card '+cardClass+'" style="--section-accent:'+theme[0]+';--section-soft:'+theme[1]+';--section-glow:'+theme[2]+'">'+
       '<div class="card-hd"><span class="card-nm">'+esc(s.accountName||s.name)+'</span><span class="card-bg state-'+(slotPaused?'paused':'running')+'">'+st+'</span></div>'+
       verifyHtml+
-      conversionHtml+
       '<div class="sgrid">'+
-        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (Number(s.withdrawable||0)/100).toFixed(2) : s.withdrawable )+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Balance (₱)" : "Balance")+'</div></div>'+
-        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? (s.pointsDone||0)+" coins" : pts)+'</div><div class="sl">'+( (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") ? "Coins":"Points")+'</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+s.withdrawable+'</div><div class="sl">'+"Balance"+'</div></div>'+
+        '<div class="sbox"><div class="sv" style="color:#a78bfa">'+pts+'</div><div class="sl">'+"Points"+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#38bdf8" id="timer-'+esc(s.id)+'">'+esc(liveTimerText(s.loopStartTime,s.timerText))+'</div><div class="sl">Time</div></div>'+
       '</div>'+
-      ((s.pointsTotal>0 && ! (String(s.id)==="14"||String(s.accountName).toLowerCase()==="kyaiko") )?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
+      ((s.pointsTotal>0)?'<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>':'')+
       (function(){
-        var isPmathCard = String(s.id)==="14" || String(s.accountName).toLowerCase()==="kyaiko";
         var ptsPerMin = (s.pointsPerMinute != null ? s.pointsPerMinute : 0);
         var ptsPerHour = (s.pointsPerHour != null ? s.pointsPerHour : 0);
         var ptsUntilMid = (s.pointsUntilTarget != null ? s.pointsUntilTarget : 0);
         var targetPesos = (s.targetPesos != null ? s.targetPesos : 300);
         var pesosNeeded = (s.pesosNeeded != null ? s.pesosNeeded : Math.max(0, targetPesos - Number(s.withdrawable||0)));
-        if (isPmathCard) {
-          targetPesos = 300;
-          ptsUntilMid = Math.max(0, 30000 - Number(s.withdrawable||0));
-          pesosNeeded = ptsUntilMid / 100;
-        }
         var etaText = (s.etaText != null && s.etaText !== "" ? s.etaText : "-");
         var cashoutProjection = nextCashoutProjection(s,new Date());
-        var cashoutAmount = cashoutProjection ? cashoutProjection.amount : (isPmathCard?Number(s.withdrawable||0)/100:Number(s.withdrawable||0));
+        var cashoutAmount = cashoutProjection ? cashoutProjection.amount : Number(s.withdrawable||0);
         var cashoutNote = cashoutProjection && !cashoutProjection.eligible ? ' <span style="color:var(--muted)">(below &#8369;300 minimum)</span>' : '';
         var nextCashoutLine = '<div class="bcalc-line next-cashout-line">Next payout estimate: <span class="bcalc-em" style="color:#10b981">&#8369;'+Number(cashoutAmount).toFixed(2)+'</span>'+cashoutNote+'</div>';
         var balHist = Array.isArray(s.balanceHistory) ? s.balanceHistory : [];
@@ -1055,38 +947,24 @@ function render(d){
           for(var k=balHist.length-1;k>=0;k--){
             var h=balHist[k];
             var raw = (h.value!=null?Number(h.value):null);
-            var hv = (raw!=null ? (isPmathCard ? (raw/100).toFixed(2) : raw.toFixed(2)) : '-');
+            var hv = (raw!=null ? raw.toFixed(2) : '-');
             var ht = h.time?fmtPH(h.time):'';
             histHtml += '<div class="bhist-row"><span class="bhist-val">&#8369;'+hv+'</span><span class="bhist-time">'+esc(ht)+'</span></div>';
           }
         }
-        var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/(isPmathCard?100:250)).toFixed(1) : '0';
+        var cyclesNeeded = ptsUntilMid>0? (ptsUntilMid/250).toFixed(1) : '0';
         var leftCol = '<div class="bcol"><div class="bcol-hd-row"><div class="bcol-hd">Balance History (10)</div><span class="balance-age" data-balance-start="'+balanceTimerStart+'">'+esc(balanceAgeText)+'</span></div><div class="bhist-list">'+histHtml+'</div></div>';
         var avgSecondsPerPoint = ptsPerMin>0 ? (60/ptsPerMin) : 0;
         var rightCol;
-        if (isPmathCard) {
-          rightCol = '<div class="bcol"><div class="bcol-hd">Kyaiko Goal (100 coins = 1&#8369;)</div>'
-            +'<div class="bcalc-line">Goal: <span class="bcalc-em">&#8369;300 = 30,000 coins</span></div>'
-            +'<div class="bcalc-line">Remaining: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' coins</span> (&#8369;'+Number(pesosNeeded).toFixed(2)+')</div>'
-            +'<div class="bcalc-line">Rate: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' coins/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
-            +'<div class="bcalc-line">Average: <span class="bcalc-em">'+(avgSecondsPerPoint>0?avgSecondsPerPoint.toFixed(2)+' sec/coin':'—')+'</span></div>'
-            +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
-            +nextCashoutLine+'</div>';
-        } else {
           rightCol = '<div class="bcol"><div class="bcol-hd">Calculation (250=3&#8369;)</div>'
             +'<div class="bcalc-line">&#8369;'+targetPesos+': <span class="bcalc-em">&#8369;'+Number(pesosNeeded).toFixed(2)+' needed</span></div>'
             +'<div class="bcalc-line">Points: <span class="bcalc-em" style="color:#38bdf8">'+ptsUntilMid+' pts</span> <span style="color:var(--muted)">('+cyclesNeeded+' cycles)</span></div>'
             +'<div class="bcalc-line">Getting: <span class="bcalc-em" style="color:#facc15">'+ptsPerMin+' pts/min</span> <span style="color:var(--muted)">('+ptsPerHour+'/hr)</span></div>'
             +'<div class="bcalc-line" style="color:var(--muted)">ETA: <span class="bcalc-em" style="color:#facc15">'+esc(etaText)+'</span></div>'
             +nextCashoutLine+'</div>';
-        }
         var grid = '<div class="b2col">'+leftCol+rightCol+'</div>';
         return grid;
       })() +
-      '<form class="crow" method="GET" action="/save-creds" onchange="this.submit()"><input type="hidden" name="slot" value="'+esc(s.id)+'">'+
-      '<input type="text" name="user" placeholder="Username" value="'+esc(s.user)+'" list="hu">'+
-      '<input type="text" name="pass" placeholder="Password" value="'+esc(s.pass)+'">'+
-      '</form>'+
       eh+
       '<div class="sacts">'+        (function(){if(!['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin'].includes(String(s.accountName).toLowerCase()))return '';return '<span class="payout-control"><button class="ibtn encbtn" type="button" onclick="showEncash(&quot;'+esc(s.id)+'&quot;)">Payout Information</button></span><span class="action-break"></span>'})()+
         controlsHtml+
@@ -1196,13 +1074,11 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/api/stats" && req.method === "GET") {
     const status = getStatus();
-    const slots = getMergedSlots(status);
+    const slots = getMergedSlots(status).map(({ pass, ...slot }) => slot);
     const chromePilots = getChromePilots();
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Cache-Control", "no-store");
-    const pmathPayoutsRaw = readJson(PMATH_PAYOUT_HISTORY_FILE, []);
-    const pmathPayouts = Array.isArray(pmathPayoutsRaw) ? pmathPayoutsRaw : (Array.isArray(pmathPayoutsRaw.records) ? pmathPayoutsRaw.records : []);
-    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, pmathPayouts, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
+    res.end(JSON.stringify({ scannerUp: status.scannerUp, loopPaused: status.loopPaused, slots, chromePilots, chromePilot: chromePilots.find(p => p.account === 'adaihbi') || {}, theme: readJson(THEME_PREF_FILE, { aikoColor: "#725CFF", danicaColor: "#FF4F78" }) }));
     return;
   }
 
@@ -1293,7 +1169,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@kyaiko visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin");
+    run("sudo systemctl restart visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");
