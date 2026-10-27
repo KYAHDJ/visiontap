@@ -112,7 +112,7 @@ while true; do
 
   if ! /usr/bin/node --check "$APP_DIR/dashboard.js" >/dev/null 2>&1; then
     log 'dashboard syntax check failed; automatic restart skipped'
-  elif ! curl -fsS --max-time 5 http://127.0.0.1:6260/api/stats 2>/dev/null | grep -q '"scannerUp"'; then
+  elif ! curl -fsS --max-time 15 http://127.0.0.1:6260/api/stats 2>/dev/null | grep -q '"scannerUp"'; then
     restart_service visiontap-dashboard 'API health check failed'
   elif ! service_active visiontap-dashboard; then
     restart_service visiontap-dashboard 'service stopped'

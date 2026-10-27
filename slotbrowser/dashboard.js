@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
-const { execSync } = require("child_process");
+const { exec, execSync } = require("child_process");
 
 const PORT = 6260;
 const DASHBOARD_USER = String(process.env.VT_DASHBOARD_USER || 'visiontap');
@@ -228,6 +228,31 @@ function getStatus() {
   const loopPaused = isLoopPaused();
   return { scannerUp, stats, earnings, loopPaused };
 }
+let statusSnapshot = null;
+let statusRefreshBusy = false;
+function refreshStatusSnapshot() {
+  if (statusRefreshBusy) return;
+  statusRefreshBusy = true;
+  const previous = statusSnapshot || { scannerUp: false, stats: { slots: {} }, earnings: {} };
+  let pending = 3, health = null, stats = null, earnings = null;
+  const finish = () => {
+    if (--pending > 0) return;
+    statusRefreshBusy = false;
+    let parsedStats = previous.stats, parsedEarnings = previous.earnings;
+    try { const value = JSON.parse(stats || ''); if (value && value.slots) parsedStats = value; } catch (e) {}
+    try { const value = JSON.parse(earnings || ''); if (value) parsedEarnings = value; } catch (e) {}
+    let scannerUp = previous.scannerUp;
+    if (health && String(health).trim()) scannerUp = String(health).includes("online");
+    statusSnapshot = { scannerUp, stats: parsedStats, earnings: parsedEarnings, loopPaused: isLoopPaused(), at: Date.now() };
+  };
+  const fetchPart = (url, maxBuffer, assign) => exec(`curl -s --max-time 25 ${url}`, { timeout: 30000, maxBuffer }, (error, stdout) => { assign(stdout || ''); finish(); });
+  fetchPart('http://127.0.0.1:5566/health', 1048576, out => { health = out; });
+  fetchPart('http://127.0.0.1:5566/stats', 67108864, out => { stats = out; });
+  fetchPart('http://127.0.0.1:5566/earnings', 67108864, out => { earnings = out; });
+}
+refreshStatusSnapshot();
+setInterval(refreshStatusSnapshot, 3000).unref();
+function cachedStatus() { return statusSnapshot || getStatus(); }
 function getMergedSlots(status) {
   const configuredSlots = getConfiguredSlots();
   const scannerSlots = (status.stats && status.stats.slots) || {};
@@ -1306,7 +1331,7 @@ const server = http.createServer(async (req, res) => {
     const group = normalizeDashboardGroup(url.searchParams.get('group'));
     const allowedAccounts = dashboardAccounts(group);
     const allowed = new Set(allowedAccounts);
-    const status = getStatus();
+    const status = cachedStatus();
     const slots = getMergedSlots(status).filter(slot => allowed.has(String(slot.accountName || slot.name || '').toLowerCase()));
     const chromePilots = getChromePilots().filter(pilot => allowed.has(String(pilot && pilot.account || '').toLowerCase()));
     res.setHeader("Content-Type", "application/json");
