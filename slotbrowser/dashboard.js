@@ -3,13 +3,14 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
-const { execSync } = require("child_process");
+const { exec, execSync } = require("child_process");
 
 const PORT = 6260;
 const DASHBOARD_USER = String(process.env.VT_DASHBOARD_USER || 'visiontap');
 const DASHBOARD_PASSWORD = String(process.env.VT_DASHBOARD_PASSWORD || '');
 const DASHBOARD_READ_ONLY = process.env.VT_DASHBOARD_READ_ONLY === '1';
 const DASHBOARD_ADMIN_PASSWORD = String(process.env.VT_DASHBOARD_ADMIN_PASSWORD || '');
+const REMOTE_CONTROL_TOKEN = String(process.env.VT_REMOTE_CONTROL_TOKEN || '');
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const adminSessions = new Map();
 const ECNL_PESOS_PER_CYCLE = 3;
@@ -21,10 +22,12 @@ const CREDS_FILE = path.join(STATE_DIR, "credentials.json");
 const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
-const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','alexander1001','elizabeth1001','deartheodosia','aaronburr'];
+const DEFAULT_CHROME_ACCOUNTS = ['danicajgb','nnnikkikim','dncjnnpabo22','dianajanelle','darlenejoyce','alexander1001','elizabeth1001','deartheodosia','aaronburr','jerrytomaton'];
 const CHROME_ACCOUNTS = String(process.env.VT_ACCOUNTS || DEFAULT_CHROME_ACCOUNTS.join(','))
   .split(',').map(account => account.trim().toLowerCase()).filter((account, index, all) => account && all.indexOf(account) === index);
 const ENCASHMENT_ACCOUNTS = new Set(CHROME_ACCOUNTS);
+const HIDDEN_ACCOUNTS = String(process.env.VT_HIDDEN_ACCOUNTS || '')
+  .split(',').map(account => account.trim().toLowerCase()).filter(account => account && CHROME_ACCOUNTS.includes(account));
 function encashmentStateFile(account) { return path.join(STATE_DIR, `encashment_${account}.json`); }
 function encashmentLedgerFile(account) { return path.join(STATE_DIR, `encashment_${account}_history.json`); }
 function encashmentConfigFile(account) { return path.join(STATE_DIR, `encashment_${account}_config.json`); }
@@ -48,26 +51,12 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-function publicEncodraState() {
-  const state = readJson(chromePilotStateFile('encodra'), { account:'encodra', slot:'21', running:false, status:'Offline' });
-  return {
-    account:'encodra', slot:'21', running:state.running === true, paused:state.paused === true,
-    status:String(state.status || 'Offline').slice(0,240), tasks:Number(state.tasks || state.taskCount) || 0,
-    taskCount:Number(state.taskCount || state.tasks) || 0, correctCount:Number(state.correctCount || state.tasks) || 0,
-    sessionTasks:Number(state.sessionTasks) || 0,
-    errors:Number(state.errors) || 0, time:String(state.time || '00:00:00'), loopStartTime:Number(state.loopStartTime) || 0,
-    pointsDone:Number(state.pointsDone) || 0, withdrawable:Number(state.withdrawable) || 0,
-    totalWithdrawn:Number(state.totalWithdrawn) || 0,
-    answer:state.answer || null, shapeNumber:state.shapeNumber || null, lastSubmittedAt:state.lastSubmittedAt || null,
-    updatedAt:Number(state.updatedAt) || 0
-  };
-}
-const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '19':'alexander1001', '20':'elizabeth1001', '12':'deartheodosia', '15':'aaronburr' };
+const CHROME_SLOT_ACCOUNTS = { '13':'danicajgb', '16':'nnnikkikim', '18':'dncjnnpabo22', '17':'dianajanelle', '11':'darlenejoyce', '19':'alexander1001', '20':'elizabeth1001', '12':'deartheodosia', '15':'aaronburr', '22':'jerrytomaton', '21':'harukio1001', '23':'shino1001' };
 const DASHBOARD_GROUPS = {
   'danica-niki':['danicajgb','nnnikkikim','dncjnnpabo22'],
   'darlene':['darlenejoyce'],
   'diana':['dianajanelle'],
-  'theodosia-aaron':['alexander1001','elizabeth1001','deartheodosia','aaronburr']
+  'theodosia-aaron':['alexander1001','elizabeth1001','deartheodosia','aaronburr','jerrytomaton']
 };
 function normalizeDashboardGroup(group = '') {
   const key = String(group || '').toLowerCase();
@@ -216,6 +205,31 @@ function getStatus() {
   const loopPaused = isLoopPaused();
   return { scannerUp, stats, earnings, loopPaused };
 }
+let statusSnapshot = null;
+let statusRefreshBusy = false;
+function refreshStatusSnapshot() {
+  if (statusRefreshBusy) return;
+  statusRefreshBusy = true;
+  const previous = statusSnapshot || { scannerUp: false, stats: { slots: {} }, earnings: {} };
+  let pending = 3, health = null, stats = null, earnings = null;
+  const finish = () => {
+    if (--pending > 0) return;
+    statusRefreshBusy = false;
+    let parsedStats = previous.stats, parsedEarnings = previous.earnings;
+    try { const value = JSON.parse(stats || ''); if (value && value.slots) parsedStats = value; } catch (e) {}
+    try { const value = JSON.parse(earnings || ''); if (value) parsedEarnings = value; } catch (e) {}
+    let scannerUp = previous.scannerUp;
+    if (health && String(health).trim()) scannerUp = String(health).includes("online");
+    statusSnapshot = { scannerUp, stats: parsedStats, earnings: parsedEarnings, loopPaused: isLoopPaused(), at: Date.now() };
+  };
+  const fetchPart = (url, maxBuffer, assign) => exec(`curl -s --max-time 25 ${url}`, { timeout: 30000, maxBuffer }, (error, stdout) => { assign(stdout || ''); finish(); });
+  fetchPart('http://127.0.0.1:5566/health', 1048576, out => { health = out; });
+  fetchPart('http://127.0.0.1:5566/stats', 67108864, out => { stats = out; });
+  fetchPart('http://127.0.0.1:5566/earnings', 67108864, out => { earnings = out; });
+}
+refreshStatusSnapshot();
+setInterval(refreshStatusSnapshot, 3000).unref();
+function cachedStatus() { return statusSnapshot || getStatus(); }
 function getMergedSlots(status) {
   const configuredSlots = getConfiguredSlots();
   const scannerSlots = (status.stats && status.stats.slots) || {};
@@ -1176,6 +1190,12 @@ function passwordMatches(value) {
   const expected = crypto.createHash('sha256').update(DASHBOARD_ADMIN_PASSWORD).digest();
   return crypto.timingSafeEqual(actual, expected);
 }
+function remoteTokenMatches(value) {
+  if (!REMOTE_CONTROL_TOKEN) return false;
+  const actual = crypto.createHash('sha256').update(String(value || '')).digest();
+  const expected = crypto.createHash('sha256').update(REMOTE_CONTROL_TOKEN).digest();
+  return crypto.timingSafeEqual(actual, expected);
+}
 function safeReturnPath(value) {
   const target = String(value || '/');
   return target.startsWith('/') && !target.startsWith('//') ? target : '/';
@@ -1242,19 +1262,16 @@ const server = http.createServer(async (req, res) => {
     res.end();
     return;
   }
-  if (url.pathname === '/api/encodra/control' && req.method === 'POST') {
-    const remoteAddress = String(req.socket.remoteAddress || '');
-    const allowedController = remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress.endsWith('169.58.134.171');
-    if (!allowedController) { res.writeHead(403); res.end('Encodra control is restricted to the main VisionTap server'); return; }
-    const action = String(url.searchParams.get('action') || '').toLowerCase();
-    if (!['pause','resume','reload','restart'].includes(action)) { res.writeHead(400); res.end('Invalid Encodra control action'); return; }
-    writeJson(chromePilotCommandFile('encodra'), { action, nonce:`${Date.now()}-${Math.random()}` });
-    res.setHeader('Content-Type','application/json');
-    res.setHeader('Cache-Control','no-store');
-    res.end(JSON.stringify({ok:true,account:'encodra',action}));
+  if (url.pathname === '/api/remote/control' && req.method === 'POST') {
+    if (!remoteTokenMatches(req.headers['x-visiontap-token'])) { res.writeHead(403); res.end('Forbidden'); return; }
+    const account=String(url.searchParams.get('account')||'').toLowerCase(),action=String(url.searchParams.get('action')||'').toLowerCase();
+    if(!dashboardAccounts('theodosia-aaron').includes(account)&&!HIDDEN_ACCOUNTS.includes(account)){res.writeHead(400);res.end('Invalid account');return;}
+    if(!['pause','resume','reload','refresh','restart','stop'].includes(action)){res.writeHead(400);res.end('Invalid action');return;}
+    try { const slot=Object.keys(CHROME_SLOT_ACCOUNTS).find(id=>CHROME_SLOT_ACCOUNTS[id]===account);const result=action==='restart'?restartChromeServices(slot,'theodosia-aaron'):sendChromeControl(action,slot,'theodosia-aaron');res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify({ok:true,...result})); }
+    catch(error){res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:error.message||'Control failed'}));}
     return;
   }
-  if (DASHBOARD_READ_ONLY && !isAdmin && !(req.method === "GET" && (url.pathname === "/" || url.pathname === "/api/stats" || url.pathname === "/api/encodra"))) {
+  if (DASHBOARD_READ_ONLY && !isAdmin && !(req.method === "GET" && (url.pathname === "/" || url.pathname === "/api/stats"))) {
     res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     res.end("Public dashboard is read-only");
     return;
@@ -1285,9 +1302,10 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/api/stats" && req.method === "GET") {
     const group = normalizeDashboardGroup(url.searchParams.get('group'));
-    const allowedAccounts = dashboardAccounts(group);
+    const includeHidden = url.searchParams.get('include_hidden') === '1';
+    const allowedAccounts = includeHidden ? Array.from(new Set([...dashboardAccounts(group), ...HIDDEN_ACCOUNTS])) : dashboardAccounts(group);
     const allowed = new Set(allowedAccounts);
-    const status = getStatus();
+    const status = cachedStatus();
     const slots = getMergedSlots(status).filter(slot => allowed.has(String(slot.accountName || slot.name || '').toLowerCase()));
     const chromePilots = getChromePilots().filter(pilot => allowed.has(String(pilot && pilot.account || '').toLowerCase()));
     res.setHeader("Content-Type", "application/json");
@@ -1296,12 +1314,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url.pathname === "/api/encodra" && req.method === "GET") {
-    res.setHeader("Content-Type", "application/json");
-    res.setHeader("Cache-Control", "no-store");
-    res.end(JSON.stringify(publicEncodraState()));
-    return;
-  }
 
   if (url.pathname === "/chrome-pilot-control" && req.method === "POST") {
     const action = String(url.searchParams.get("action") || "");
