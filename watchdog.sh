@@ -12,7 +12,7 @@ MAX_RESTARTS=8
 RESTART_WINDOW=600
 WORKER_HEARTBEAT_MS=90000
 
-IFS=',' read -r -a accounts <<< "${VT_ACCOUNTS:-alexander1001,elizabeth1001,deartheodosia,aaronburr,kyaiko}"
+IFS=',' read -r -a accounts <<< "${VT_ACCOUNTS:-alexander1001,elizabeth1001,deartheodosia,aaronburr}"
 declare -A restart_count
 declare -A restart_time
 
@@ -68,7 +68,6 @@ status = str(state.get('status') or '').lower()
 protected = (
     state.get('paused') or state.get('verificationHold') or
     state.get('encashmentBusy') or
-    (state.get('pmathConversion') or {}).get('status') in ('checking', 'converting', 'failed') or
     int(state.get('siteRecoveryWaitUntil') or 0) > int(time.time() * 1000) or
     int(state.get('recoveryResumeUntil') or 0) > int(time.time() * 1000)
 )
@@ -109,12 +108,6 @@ while true; do
     restart_service visiontap-scanner 'health endpoint failed'
   elif ! service_active visiontap-scanner; then
     restart_service visiontap-scanner 'service stopped'
-  fi
-
-  if systemctl cat visiontap-pmath-scanner.service >/dev/null 2>&1; then
-    if ! curl -fsS --max-time 5 http://127.0.0.1:5567/health 2>/dev/null | grep -qi online; then
-      restart_service visiontap-pmath-scanner 'dedicated scanner health endpoint failed'
-    fi
   fi
 
   if ! /usr/bin/node --check "$APP_DIR/dashboard.js" >/dev/null 2>&1; then
