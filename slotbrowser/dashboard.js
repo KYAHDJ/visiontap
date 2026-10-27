@@ -144,7 +144,32 @@ function pointsDelta(cur, start) {
 }
 
 
-function rollingPointsPerMinute(history, nowMs, windowMs = 300000) {
+function pointsPerHour24(history, nowMs, hours = 24) {
+  const rows = (Array.isArray(history) ? history : [])
+    .map(row => ({ points:Number(row?.pointsDone), time:Number(row?.ts) * 1000 }))
+    .filter(row => Number.isFinite(row.points) && Number.isFinite(row.time) && row.time <= nowMs)
+    .sort((a, b) => a.time - b.time);
+  if (rows.length < 2) return 0;
+  const cutoff = nowMs - hours * 3600000;
+  let startIndex = rows.findIndex(row => row.time >= cutoff);
+  if (startIndex < 0) startIndex = 0;
+  if (startIndex > 0) startIndex--;
+  const sample = rows.slice(startIndex).filter((row, i, all) => i === 0 || row.points !== all[i - 1].points);
+  if (sample.length < 2) return 0;
+  const byHour = new Map();
+  for (let i = 1; i < sample.length; i++) {
+    const bucket = Math.floor(sample[i].time / 3600000) * 3600000;
+    byHour.set(bucket, (byHour.get(bucket) || 0) + Math.max(0, pointsDelta(sample[i].points, sample[i - 1].points)));
+  }
+  const perHour = Array.from(byHour.values());
+  if (!perHour.length) return 0;
+  const sorted = perHour.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return Math.round(median * 100) / 100;
+}
+
+function rollingPointsPerMinute(history, nowMs, windowMs = 3600000) {
   const rows = (Array.isArray(history) ? history : [])
     .map(row => ({ points:Number(row?.pointsDone), time:Number(row?.ts) * 1000 }))
     .filter(row => Number.isFinite(row.points) && Number.isFinite(row.time) && row.time <= nowMs)
@@ -416,6 +441,7 @@ function getMergedSlots(status) {
       // Live metrics (PH dashboard time, persisted) — 250 pts = 3 pesos
       pointsPerMinute: displayPpm,
       pointsPerHour: displayPph,
+      pointsPerHour24: pointsPerHour24(sc.pointsHistory || slot.pointsHistory || [], nowMs),
       estimatedPesosPerHour: estimatedPesosPerHour,
       pointsUntilTarget: pointsUntilTarget,
       currentTargetPoints: currentTargetPoints,
@@ -767,7 +793,8 @@ function nextCashoutProjection(slot,now){
   var pointRate=Math.max(0,Number(slot.pointsPerHour||0))*(3/250);
   pointRate=Math.min(4.32,pointRate);
   var historyRate=Math.max(0,Number(slot.estimatedPesosPerHour||0));
-  var pesosPerHour=pointRate;
+  var stableRate=Math.min(4.32,Math.max(0,Number(slot.pointsPerHour24||0))*(3/250));
+  var pesosPerHour=stableRate>0?stableRate:(pointRate>0?pointRate:Math.min(4.32,historyRate));
   function candidate(){
     var candidateMinutes=days*1440+(days===0?Math.max(0,start*60-minutes):start*60-minutes);
     var startHours=Math.max(0,candidateMinutes/60),windowHours=Math.max(0,end-start);
@@ -995,7 +1022,6 @@ function render(d){
     var cardHtml='<div class="card '+cardClass+'" style="--section-accent:'+theme[0]+';--section-soft:'+theme[1]+';--section-glow:'+theme[2]+'">'+
       '<div class="card-hd"><span class="card-nm">'+esc(s.accountName||s.name)+'</span><span class="card-bg state-'+(slotPaused?'paused':'running')+'">'+st+'</span></div>'+
       verifyHtml+
-      conversionHtml+
       '<div class="sgrid">'+
         '<div class="sbox"><div class="sv" style="color:#facc15">&#8369;'+s.withdrawable+'</div><div class="sl">'+"Balance"+'</div></div>'+
         '<div class="sbox"><div class="sv" style="color:#a78bfa">'+pts+'</div><div class="sl">'+"Points"+'</div></div>'+
