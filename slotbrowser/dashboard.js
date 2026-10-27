@@ -15,16 +15,23 @@ const HISTORY_FILE = path.join(STATE_DIR, "cred_history.json");
 const SLOTS_FILE = path.join(STATE_DIR, "slots.json");
 const THEME_PREF_FILE = path.join(STATE_DIR, "dashboard_theme.json");
 const CHROME_ACCOUNTS = ['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko'];
+const REMOTE_JERRY_URL = process.env.VT_REMOTE_JERRY_URL || 'http://91.230.110.15:6260';
 const REMOTE_CONTROL_TOKEN = String(process.env.VT_REMOTE_CONTROL_TOKEN || '');
-const REMOTE_WORKERS = { jerrytomaton:'19' };
+const REMOTE_WORKERS = { jerrytomaton:'19', harukio1001:'20', shino1001:'21' };
+const REMOTE_SOURCES = [
+  { url: REMOTE_JERRY_URL, accounts: ['jerrytomaton','harukio1001','shino1001'], payouts: false }
+];
+function remoteSourceFor(account){for(const source of REMOTE_SOURCES){if(source.accounts.includes(account))return source;}return REMOTE_SOURCES[0];}
 const remoteWorkers = Object.fromEntries(Object.entries(REMOTE_WORKERS).map(([account,slot])=>[account,{slot:null,pilot:{account,slot,running:false,status:'Connecting to Theodosia server…'},updatedAt:0}]));
 function refreshRemoteWorkers() {
-  const request=http.get(`${REMOTE_WORKER_URL}/api/stats?group=theodosia-aaron`,{timeout:4000},response=>{
-    let body='';response.setEncoding('utf8');response.on('data',chunk=>{if(body.length<262144)body+=chunk;});response.on('end',()=>{
-      try{const value=JSON.parse(body);if(response.statusCode!==200)return;for(const [account,displaySlot] of Object.entries(REMOTE_WORKERS)){const slot=(value.slots||[]).find(item=>String(item.accountName||'').toLowerCase()===account),pilot=(value.chromePilots||[]).find(item=>String(item.account||'').toLowerCase()===account);if(slot&&pilot)remoteWorkers[account]={slot:{...slot,id:displaySlot,accountName:account,name:account},pilot:{...pilot,account,slot:displaySlot},updatedAt:Date.now()};}}catch(_){}
+  for(const source of REMOTE_SOURCES){
+    const request=http.get(`${source.url}/api/stats?group=theodosia-aaron&include_hidden=1`,{timeout:20000},response=>{
+      let body='';response.setEncoding('utf8');response.on('data',chunk=>{if(body.length<8388608)body+=chunk;});response.on('end',()=>{
+        try{if(response.statusCode!==200)return;const value=JSON.parse(body);for(const account of source.accounts){const displaySlot=REMOTE_WORKERS[account];const slot=(value.slots||[]).find(item=>String(item.accountName||'').toLowerCase()===account),pilot=(value.chromePilots||[]).find(item=>String(item.account||'').toLowerCase()===account);if(slot&&pilot)remoteWorkers[account]={slot:{...slot,id:displaySlot,accountName:account,name:account},pilot:{...pilot,account,slot:displaySlot},updatedAt:Date.now()};}}catch(_){}
+      });
     });
-  });
-  request.on('timeout',()=>request.destroy());request.on('error',()=>{});
+    request.on('timeout',()=>request.destroy());request.on('error',()=>{});
+  }
 }
 refreshRemoteWorkers();setInterval(refreshRemoteWorkers,2000).unref();
 const ENCASHMENT_ACCOUNTS = new Set(['adaihbi','temi','axceling1001','clarencebopis','connormofu','jinninijin','yaminiko','jerrytomaton']);
@@ -37,11 +44,11 @@ function currentPhDateKey() { const parts=new Intl.DateTimeFormat('en-CA',{timeZ
 function chromePilotStateFile(account) { return path.join(STATE_DIR, `chrome_${account}_state.json`); }
 function chromePilotCommandFile(account) { return path.join(STATE_DIR, `chrome_${account}_command.json`); }
 function getChromePilots() { return CHROME_ACCOUNTS.map(account => readJson(chromePilotStateFile(account), { account, running:false })).filter(Boolean); }
-const CHROME_SLOT_ACCOUNTS = { '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin', '18':'yaminiko', '19':'jerrytomaton' };
+const CHROME_SLOT_ACCOUNTS = { '11':'adaihbi', '12':'temi', '15':'axceling1001', '13':'clarencebopis', '16':'connormofu', '17':'jinninijin', '18':'yaminiko', '19':'jerrytomaton', '20':'harukio1001', '21':'shino1001' };
 function sendRemoteWorkerControl(account, action) {
   if(!REMOTE_CONTROL_TOKEN)throw new Error('Remote worker control is not configured');
   const mapped=action==='refresh'?'reload':action;
-  const output=execFileSync('curl',['-fsS','-X','POST','-H',`X-VisionTap-Token: ${REMOTE_CONTROL_TOKEN}`,`${REMOTE_WORKER_URL}/api/remote/control?account=${encodeURIComponent(account)}&action=${encodeURIComponent(mapped)}`],{timeout:30000,encoding:'utf8'});
+  const output=execFileSync('curl',['-fsS','-X','POST','-H',`X-VisionTap-Token: ${REMOTE_CONTROL_TOKEN}`,`${remoteSourceFor(account).url}/api/remote/control?account=${encodeURIComponent(account)}&action=${encodeURIComponent(mapped)}`],{timeout:30000,encoding:'utf8'});
   const result=JSON.parse(output||'{}');if(!result.ok)throw new Error(`Remote ${account} control failed`);return result;
 }
 function sendChromeControl(action, slot = 'all') {
@@ -1258,7 +1265,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/restart") {
     log("Restarting VisionTap...");
-    run("sudo systemctl restart visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin visiontap-chrome@yaminiko visiontap-chrome@jerrytomaton");
+    run("sudo systemctl restart visiontap-chrome@adaihbi visiontap-chrome@temi visiontap-chrome@axceling1001 visiontap-chrome@clarencebopis visiontap-chrome@connormofu visiontap-chrome@jinninijin visiontap-chrome@yaminiko");
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Refresh", "3; url=/");
     res.end("<html><body style='background:#0a0e1a;color:#e2e8f0;font-family:system-ui;text-align:center;padding:40px'><h2>Restarting VisionTap...</h2><p>Page will reload in 3 seconds</p></body></html>");
