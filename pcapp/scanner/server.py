@@ -32,29 +32,6 @@ except Exception as e:
     reader = None
 
 # Startup self-check: ensure slots taskMode integrity helper
-def ensure_pmath_slot_integrity():
-    try:
-        # This is for slotbrowser state, not scanner, but log hint
-        pass
-    except: pass
-
-app = Flask(__name__)
-CORS(app)
-
-# PayMath can require several Tesseract reads for one image.  Never allow
-# abandoned/timed-out browser requests to create an unbounded OCR backlog.
-MATH_OCR_LOCK = threading.Lock()
-TESSERACT_PROCESS_LOCK = threading.Lock()
-OCR_PROCESS_TIMEOUT = float(os.environ.get('VT_OCR_TIMEOUT', '2'))
-OCR_QUEUE = deque()
-OCR_CONDITION = threading.Condition()
-RESULT_CACHE = OrderedDict()
-RESULT_CACHE_LOCK = threading.Lock()
-GLYPH_CACHE = OrderedDict()
-GLYPH_CACHE_LOCK = threading.Lock()
-STATS_LOCK = threading.RLock()
-cv2.setNumThreads(1)
-
 class ScannerBusy(Exception):
     pass
 

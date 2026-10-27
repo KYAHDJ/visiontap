@@ -38,24 +38,7 @@ test('persistent stalls escalate after bounded recovery reloads', () => {
   assert.match(source, /process\.exitCode = 75/);
 });
 
-test('PMath restores the Electron 60-second inactivity restart and host signal', () => {
-  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
-  assert.match(pilot.restartStalledWorker.toString(), /INACTIVITY-GUARD/);
-  assert.match(pilot.handlePageSignal.toString(), /lastProgressAt < 60000/);
-  assert.match(pilot.installPageRuntime.toString(), /__vtHost/);
-});
 
-test('PMath host failures refresh immediately with no waiting screen', () => {
-  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
-  assert.match(pilot.detectPmathHostError.toString(), /520\|521\|522\|523\|524/);
-  assert.match(pilot.detectPmathHostError.toString(), /cloudflare/i);
-  assert.match(pilot.detectPmathHostError.toString(), /namedHostFailure/);
-  assert.doesNotMatch(pilot.detectPmathHostError.toString(), /\(520\|521\|522\|523\|524\)\|web server/);
-  assert.match(pilot.guardPmathHost.toString(), /refreshing PMath immediately/);
-  assert.match(pilot.guardPmathHost.toString(), /page\.reload/);
-  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
-  assert.doesNotMatch(source, /PMath is temporarily unavailable|PMATH_OUTAGE_RETRY|nextPmathHostRetryAt/);
-});
 
 test('all slots recover server-down and runtime-error pages every 10 seconds', () => {
   const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
@@ -74,15 +57,6 @@ test('pilot loads the shared ad blocker and never disables cleanup', () => {
   assert.doesNotMatch(pilot.injectSource, /__vtDisableAdCleanup\s*=\s*true/);
 });
 
-test('Kyaiko auto-converts PMath coins at the 30,000 threshold', () => {
-  const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });
-  assert.match(pilot.iteration.toString(), /convertPmathCoins/);
-  assert.match(pilot.convertPmathCoins.toString(), /pmathDoConvertAll/);
-  assert.match(pilot.convertPmathCoins.toString(), /pmathConfirmPreparedConversion/);
-  assert.match(pilot.convertPmathCoins.toString(), /expectedRemainder/);
-  assert.match(pilot.convertPmathCoins.toString(), /PMATH_CONVERT_THRESHOLD/);
-  assert.match(pilot.convertPmathCoins.toString(), /PMATH_CONVERT_RETRY_MS/);
-});
 
 test('all eight ECNL accounts have isolated payout controllers', () => {
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
@@ -103,19 +77,6 @@ test('ECNL submission delays are staggered across the eight accounts', () => {
   assert.match(source, /jerrytomaton: 1050/);
 });
 
-test('ECNL advances after a short 500ms post-submit settle without changing PMath', () => {
-  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'chrome-pilot.js'), 'utf8');
-  assert.match(source, /this\.nextIterationAt = Date\.now\(\) \+ 500/);
-  for (const delay of ['adaihbi:0', 'temi:300', 'axceling1001:600', 'clarencebopis:900', 'connormofu:1100', 'jinninijin:450', 'yaminiko:750', 'jerrytomaton:1050']) {
-    const [account, milliseconds] = delay.split(':');
-    assert.match(source, new RegExp(`${account}:\\s*${milliseconds}`));
-  }
-  assert.match(source, /ready\?\.checking && TASK_MODE !== 'math'/);
-  assert.match(source, /Waiting for ECNL to present the next task/);
-  assert.match(source, /consecutiveDetectFails >= 5/);
-  assert.match(source, /consecutiveNoImage >= 8/);
-  assert.match(source, /Waiting for ECNL task transition/);
-});
 
 test('ECNL checking state reloads only after a genuine 30-second stall', () => {
   const pilot = new ChromePilot({ userDataDir: 'x', executablePath: 'x' });

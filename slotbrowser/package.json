@@ -2,7 +2,7 @@
   "name": "visiontap-chrome-pilots",
   "productName": "VisionTap Chrome Pilots",
   "version": "0.1.0",
-  "description": "Isolated Chrome pilots for VisionTap color and PMath automation.",
+  "description": "Isolated Chrome pilots for VisionTap color automation.",
   "main": "chrome-pilot.js",
   "private": true,
   "scripts": {

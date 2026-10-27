@@ -1,2 +1,0 @@
-# Allow only the dedicated PayMath scanner restart used by the health check.
-opc ALL=(root) NOPASSWD: /usr/bin/systemctl restart visiontap-pmath-scanner.service

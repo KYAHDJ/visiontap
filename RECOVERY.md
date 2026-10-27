@@ -24,7 +24,7 @@ attempts are capped at eight per service per ten-minute window.
 
 The watchdog runs as opc and uses existing exact sudo permissions for VisionTap
 service restarts, including the `.service` suffix. The supplementary
-`visiontap-recovery.sudoers` permits only the dedicated PayMath scanner restart;
+`visiontap-recovery.sudoers` permits only the dedicated scanner restart;
 validate with `visudo -cf` before installation. It grants no general root shell.
 
 Run recovery regression tests from slotbrowser with:

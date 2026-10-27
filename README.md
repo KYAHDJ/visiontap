@@ -1,6 +1,6 @@
 # VisionTap Chrome Pilots
 
-Chrome-only Oracle automation for six isolated accounts: Kyaiko (PMath) plus five ECNL accounts—ClarenceBopis, ConnorMofu, adaihbi, Temi, and Axceling1001. Each account has its own persistent Chrome profile, systemd service, recovery watchdog, dashboard state, and manual-verification hold.
+Chrome-only Oracle automation for five isolated ECNL accounts: ClarenceBopis, ConnorMofu, adaihbi, Temi, and Axceling1001. Each account has its own persistent Chrome profile, systemd service, recovery watchdog, dashboard state, and manual-verification hold.
 
 ## Runtime
 
@@ -8,9 +8,9 @@ Chrome-only Oracle automation for six isolated accounts: Kyaiko (PMath) plus fiv
 - Dashboard: port `6260`
 - Scanner: localhost port `5566`
 - Time zone: `Asia/Manila`
-- Chrome workers: `visiontap-chrome@{kyaiko,adaihbi,temi,axceling1001,clarencebopis,connormofu}`
+- Chrome workers: `visiontap-chrome@{adaihbi,temi,axceling1001,clarencebopis,connormofu}`
 
-The six windows are forced into equal non-overlapping columns. Manual verification is never clicked automatically; the affected dashboard card is covered until the user verifies it, while other workers continue.
+The five windows are forced into equal non-overlapping columns. Manual verification is never clicked automatically; the affected dashboard card is covered until the user verifies it, while other workers continue.
 
 ## Install and test
 

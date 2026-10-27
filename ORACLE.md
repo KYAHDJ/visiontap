@@ -13,7 +13,6 @@ visiontap-openbox
 visiontap-vnc
 visiontap-scanner
 visiontap-dashboard
-visiontap-chrome@kyaiko
 visiontap-chrome@adaihbi
 visiontap-chrome@temi
 visiontap-chrome@axceling1001
@@ -32,7 +31,7 @@ git pull --ff-only origin main
 npm --prefix slotbrowser ci --omit=dev
 sudo install -m 0644 visiontap-chrome@.service /etc/systemd/system/
 sudo install -m 0644 visiontap-{xvfb,openbox,vnc,scanner,dashboard,watchdog}.service /etc/systemd/system/
-for account in kyaiko adaihbi temi axceling1001 clarencebopis connormofu; do
+for account in adaihbi temi axceling1001 clarencebopis connormofu; do
   install -m 0600 "chrome-$account.env" "$HOME/.config/VisionTap-Chrome/$account.env"
 done
 sudo systemctl daemon-reload
