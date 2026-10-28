@@ -804,12 +804,16 @@ function nextCashoutProjection(slot,now){
     return {hours:payoutHours,amount:Math.max(0,currentPesos+pesosPerHour*payoutHours),endAmount:endAmount};
   }
   var projected=candidate(),guard=0;
+  while(projected.endAmount<300&&pesosPerHour>0&&guard++<104){
+    days+=7;
+    projected=candidate();
+  }
   var hoursUntil=projected.hours,amount=projected.amount;
   var dayNames=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   var base=Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day)),cashoutDate=new Date(base+days*86400000);
   var dateText=new Intl.DateTimeFormat('en-PH',{timeZone:'UTC',month:'short',day:'numeric'}).format(cashoutDate);
   var dayLabel=days===0?'Today':days===1?'Tomorrow':dayNames[scheduledDay]+' · '+dateText;
-  var whenText=dayLabel+' · '+start+':00–'+end+':00 AM PH';
+  var whenText=(amount>=300?dayLabel:'Not yet predictable')+' · '+start+':00–'+end+':00 AM PH';
   var payoutType=String(schedule.type||'task').toLowerCase();
   var deductionRate=payoutType==='network'?0.15:0.10;
   return {amount:amount,netAmount:amount*(1-deductionRate),deductionRate:deductionRate,hoursUntil:hoursUntil,eligible:amount>=300,whenText:whenText};
