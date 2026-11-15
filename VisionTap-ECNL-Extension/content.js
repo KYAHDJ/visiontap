@@ -62,13 +62,58 @@
       'div[id*="google_ads"]','div[id*="ad_container"]','.adsbygoogle','ins.adsbygoogle',
       'div[class*="adslot"]','div[class*="ad-banner"]','div[class*="advert"]',
       '[aria-label*="advertisement" i]','#google_vignette','.google-auto-placed',
-      'div[class*="allow-ads"]','div[id*="allow-ads"]','div[class*="please-allow"]'
+      'div[class*="allow-ads"]','div[id*="allow-ads"]','div[class*="please-allow"]',
+      // Nov 2026 site update: Google Funding Choices wall + ad frames
+      'iframe[src*="googlesyndication"]','iframe[src*="adservice"]','div[id^="aswift"]',
+      '.fc-monetization-dialog-container','.fc-dialog-overlay','.fc-ab-root','div[class*="fc-dialog"]',
+      // Google "anno" cards (bottom strip #google-anno-sa, "Join Clubs" pill ...)
+      '[id^="google-anno"]','[class*="google-anno-sc"]','[class*="google-anno-sa"]'
     ];
-    for (const selector of selectors) document.querySelectorAll(selector).forEach(element => element.remove());
+    // HIDE instead of remove: the Next.js site manages some of these nodes itself,
+    // and deleting them makes the page show "Something went wrong".
+    const hide = element => {
+      if (element.dataset && element.dataset.vtHidden) return;
+      element.style.setProperty('display', 'none', 'important');
+      element.style.setProperty('pointer-events', 'none', 'important');
+      if (element.dataset) element.dataset.vtHidden = '1';
+    };
+    // Google-injected wall elements are not managed by the site: delete them for good.
+    const googleOwned = new Set(['.fc-monetization-dialog-container', '.fc-dialog-overlay', '.fc-dialog-container', '.fc-ab-root', 'div[class*="fc-dialog"]', '#google_vignette', '[id^="google-anno"]', '[class*="google-anno-sc"]', '[class*="google-anno-sa"]']);
+    for (const selector of selectors) {
+      document.querySelectorAll(selector).forEach(googleOwned.has(selector) ? (el => { try { el.remove(); } catch (_) { hide(el); } }) : hide);
+    }
+    // Google puts its bottom cards / anchors in bare iframes directly under <body>. Hide them,
+    // but never touch security-check frames (Cloudflare / reCAPTCHA / hCaptcha).
+    if (document.body) {
+      for (const frame of Array.from(document.body.children)) {
+        if (frame.tagName !== 'IFRAME') continue;
+        if (/challenges\.cloudflare|recaptcha|turnstile|hcaptcha/i.test(frame.src || '')) continue;
+        hide(frame);
+      }
+    }
+    // Google adds #google_vignette to trigger a full-screen ad; clear it.
+    if (/google/i.test(location.hash)) { try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {} }
+    // Google "auto-rewarded" ad dialog ("Unlock more content"): a bare <div> under <body> holding a
+    // shadow root, plus focus-trap helper divs. Google-owned, so delete.
+    document.querySelectorAll('.auto-rewarded-focus-trap').forEach(el => { try { el.remove(); } catch (_) { hide(el); } });
+    if (document.body) {
+      for (const el of Array.from(document.body.children)) {
+        try {
+          if (el.shadowRoot && el.shadowRoot.querySelector('.auto-rewarded-dialog, .ipr-container')) el.remove();
+        } catch (_) {}
+      }
+    }
     document.querySelectorAll('div,section,aside').forEach(element => {
+      if (element.closest('#__next, main, [role="main"]') === element) return;
       const text = (element.innerText || '').toLowerCase();
-      if (/unlock more contents|view a short ad|watch ad to unlock|please allow ads|disable.{0,12}ad.?block/.test(text) && text.length < 500) element.remove();
+      if (/unlock more content|take action to continue|view a short ad|watch ad to unlock|please allow ads|disable.{0,12}ad.?block/.test(text) && text.length < 500) {
+        if (element.className && /fc-/.test(String(element.className))) { try { element.remove(); } catch (_) { hide(element); } }
+        else hide(element);
+      }
     });
+    // The Funding Choices wall locks page scrolling; undo that.
+    document.documentElement.style.removeProperty('overflow');
+    if (document.body) document.body.style.removeProperty('overflow');
   }
 
   async function grabTaskImage() {
