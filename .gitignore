@@ -1,0 +1,5 @@
+encodra.env
+.env
+node_modules/
+state/
+*.log
