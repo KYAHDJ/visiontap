@@ -1,0 +1,6 @@
+state/
+.contabo/
+oracle_key
+*.env
+node_modules/
+*.bak
